@@ -60,96 +60,53 @@ class Block(nn.Module):
         self.ln1 = nn.LayerNorm(cfg.n_embd)
         self.attn = CausalSelfAttention(cfg)
         self.ln2 = nn.LayerNorm(cfg.n_embd)
-        self.mlp = nn.Sequential(
-            nn.Linear(cfg.n_embd, 4 * cfg.n_embd),
-            nn.GELU(),
-            nn.Linear(4 * cfg.n_embd, cfg.n_embd),
-            nn.Dropout(cfg.dropout),
-        )
+        self.mlp = nn.Sequential(nn.Linear(cfg.n_embd, 4 * cfg.n_embd), nn.GELU(), nn.Linear(4 * cfg.n_embd, cfg.n_embd), nn.Dropout(cfg.dropout))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.attn(self.ln1(x))
-        return x + self.mlp(self.ln2(x))
+        x = x + self.attn(self.ln1(x)); return x + self.mlp(self.ln2(x))
 
 
 class OrbituneGPT(nn.Module):
     architecture = ARCHITECTURE_ABI
 
     def __init__(self, cfg: OrbituneConfig) -> None:
-        super().__init__()
-        self.config = cfg
-        self.base_sha256: str | None = None
-        self.token_emb = nn.Embedding(cfg.vocab_size, cfg.n_embd)
-        self.pos_emb = nn.Embedding(cfg.max_seq_len, cfg.n_embd)
-        self.drop = nn.Dropout(cfg.dropout)
-        self.blocks = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layer)])
-        self.ln_f = nn.LayerNorm(cfg.n_embd)
-        self.lm_head = nn.Linear(cfg.n_embd, cfg.vocab_size, bias=False)
-        self.lm_head.weight = self.token_emb.weight
-        self.apply(self._init_weights)
+        super().__init__(); self.config = cfg; self.base_sha256: str | None = None
+        self.token_emb = nn.Embedding(cfg.vocab_size, cfg.n_embd); self.pos_emb = nn.Embedding(cfg.max_seq_len, cfg.n_embd); self.drop = nn.Dropout(cfg.dropout); self.blocks = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layer)]); self.ln_f = nn.LayerNorm(cfg.n_embd); self.lm_head = nn.Linear(cfg.n_embd, cfg.vocab_size, bias=False); self.lm_head.weight = self.token_emb.weight; self.apply(self._init_weights)
 
     @staticmethod
     def _init_weights(module: nn.Module) -> None:
-        if isinstance(module, (nn.Linear, nn.Embedding)):
-            nn.init.normal_(module.weight, mean=0.0, std=0.02)
-        if isinstance(module, nn.Linear) and module.bias is not None:
-            nn.init.zeros_(module.bias)
+        if isinstance(module, (nn.Linear, nn.Embedding)): nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        if isinstance(module, nn.Linear) and module.bias is not None: nn.init.zeros_(module.bias)
 
     def forward(self, input_ids: torch.Tensor, targets: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
-        if input_ids.ndim != 2:
-            raise ValueError("input_ids must have shape [batch, time]")
+        if input_ids.ndim != 2: raise ValueError("input_ids must have shape [batch, time]")
         _, t = input_ids.shape
-        if t > self.config.max_seq_len:
-            raise ValueError(f"sequence length {t} exceeds max_seq_len={self.config.max_seq_len}")
-        pos = torch.arange(t, device=input_ids.device)
-        x = self.drop(self.token_emb(input_ids) + self.pos_emb(pos)[None, :, :])
-        for block in self.blocks:
-            x = block(x)
-        logits = self.lm_head(self.ln_f(x))
-        loss = None
-        if targets is not None:
-            loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=-100)
-        return logits, loss
+        if t > self.config.max_seq_len: raise ValueError(f"sequence length {t} exceeds max_seq_len={self.config.max_seq_len}")
+        pos = torch.arange(t, device=input_ids.device); x = self.drop(self.token_emb(input_ids) + self.pos_emb(pos)[None, :, :])
+        for block in self.blocks: x = block(x)
+        logits = self.lm_head(self.ln_f(x)); loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=-100) if targets is not None else None; return logits, loss
 
     @torch.no_grad()
     def generate(self, input_ids: torch.Tensor, *, max_new_tokens: int, temperature: float = 0.85, top_p: float = 0.92, eos_id: int | None = None) -> torch.Tensor:
-        if temperature <= 0:
-            raise ValueError("temperature must be > 0")
+        if temperature <= 0: raise ValueError("temperature must be > 0")
         for _ in range(max_new_tokens):
-            context = input_ids[:, -self.config.max_seq_len :]
-            logits, _ = self(context)
-            logits = logits[:, -1, :] / temperature
-            probs = torch.softmax(logits, dim=-1)
+            context = input_ids[:, -self.config.max_seq_len:]; logits, _ = self(context); logits = logits[:, -1, :] / temperature; probs = torch.softmax(logits, dim=-1)
             if top_p < 1.0:
-                sorted_probs, sorted_idx = torch.sort(probs, descending=True, dim=-1)
-                cumulative = sorted_probs.cumsum(dim=-1)
-                remove = cumulative - sorted_probs > top_p
-                sorted_probs = sorted_probs.masked_fill(remove, 0.0)
-                sorted_probs = sorted_probs / sorted_probs.sum(dim=-1, keepdim=True)
-                next_sorted = torch.multinomial(sorted_probs, 1)
-                next_id = sorted_idx.gather(-1, next_sorted)
-            else:
-                next_id = torch.multinomial(probs, 1)
+                sorted_probs, sorted_idx = torch.sort(probs, descending=True, dim=-1); cumulative = sorted_probs.cumsum(dim=-1); remove = cumulative - sorted_probs > top_p; sorted_probs = sorted_probs.masked_fill(remove, 0.0); sorted_probs = sorted_probs / sorted_probs.sum(dim=-1, keepdim=True); next_id = sorted_idx.gather(-1, torch.multinomial(sorted_probs, 1))
+            else: next_id = torch.multinomial(probs, 1)
             input_ids = torch.cat([input_ids, next_id], dim=1)
-            if eos_id is not None and bool(torch.all(next_id == eos_id)):
-                break
+            if eos_id is not None and bool(torch.all(next_id == eos_id)): break
         return input_ids
 
-    def parameter_count(self) -> int:
-        return sum(p.numel() for p in self.parameters())
+    def parameter_count(self) -> int: return sum(p.numel() for p in self.parameters())
 
     def save_checkpoint(self, path: str | Path) -> None:
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save({"architecture": self.architecture, "config": asdict(self.config), "state_dict": self.state_dict()}, path)
+        path = Path(path); path.parent.mkdir(parents=True, exist_ok=True); torch.save({"architecture": self.architecture, "config": asdict(self.config), "state_dict": self.state_dict()}, path)
 
     @classmethod
     def load_checkpoint(cls, path: str | Path, *, map_location: str | torch.device = "cpu") -> "OrbituneGPT":
-        path = Path(path)
-        payload = torch.load(path, map_location=map_location, weights_only=True)
-        if payload.get("architecture") != cls.architecture:
-            raise ValueError("checkpoint architecture mismatch")
-        model = cls(OrbituneConfig(**payload["config"]))
-        model.load_state_dict(payload["state_dict"])
-        model.base_sha256 = sha256_file(path)
-        return model
+        path = Path(path); payload = torch.load(path, map_location=map_location, weights_only=True)
+        if payload.get("architecture") != cls.architecture: raise ValueError("checkpoint architecture mismatch")
+        model = cls(OrbituneConfig(**payload["config"])); model.load_state_dict(payload["state_dict"]); model.base_sha256 = sha256_file(path); return model
+
+# CI-only marker for the 10M continuous-training verification PR.
