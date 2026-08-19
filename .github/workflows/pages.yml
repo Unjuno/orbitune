@@ -23,6 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Build static site artifact
+        run: |
+          mkdir -p web/data
+          cp registry/adapters.json web/data/adapters.json
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
