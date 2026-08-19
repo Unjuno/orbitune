@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Unjuno/orbitune/schemas/base_manifest.schema.json",
+  "title": "Orbitune Base Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifact_type", "id", "display_name", "architecture", "tokenizer", "parameter_count", "checkpoint", "web_onnx", "license", "training_data", "tags"],
+  "properties": {
+    "artifact_type": {"const": "orbitune_base"},
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "display_name": {"type": "string", "minLength": 1},
+    "description": {"type": "string"},
+    "author": {"type": "string"},
+    "architecture": {"type": "string", "minLength": 1},
+    "tokenizer": {"type": "string", "minLength": 1},
+    "parameter_count": {"type": "integer", "minimum": 1, "maximum": 100000000},
+    "checkpoint": {"$ref": "#/$defs/artifact"},
+    "web_onnx": {"$ref": "#/$defs/artifact"},
+    "license": {"type": "string", "minLength": 1},
+    "training_data": {
+      "type": "object",
+      "required": ["source_type", "license", "rights_confirmed"],
+      "properties": {
+        "source_type": {"type": "string", "minLength": 1},
+        "license": {"type": "string", "minLength": 1},
+        "rights_confirmed": {"const": true},
+        "notes": {"type": "string"}
+      }
+    },
+    "tags": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "sha256", "bytes"],
+      "properties": {
+        "filename": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1, "maximum": 99614720}
+      }
+    }
+  }
+}
