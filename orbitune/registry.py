@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from orbitune.adapter import load_manifest, validate_manifest_file
+from orbitune.adapter import validate_adapter_directory
 
 
 def discover_adapter_directories(root: str | Path = "adapters") -> list[Path]:
@@ -25,15 +25,7 @@ def build_registry(root: str | Path = "adapters") -> dict[str, Any]:
     seen: set[str] = set()
     root = Path(root)
     for directory in discover_adapter_directories(root):
-        manifest_path = directory / "manifest.json"
-        validate_manifest_file(manifest_path)
-        weights = directory / "adapter.safetensors"
-        demo = directory / "demo.mid"
-        readme = directory / "README.md"
-        missing = [str(path.name) for path in (weights, demo, readme) if not path.exists()]
-        if missing:
-            raise ValueError(f"{directory}: missing required adapter files: {', '.join(missing)}")
-        manifest = load_manifest(manifest_path)
+        manifest = validate_adapter_directory(directory)
         adapter_id = str(manifest["name"])
         if adapter_id in seen:
             raise ValueError(f"duplicate adapter id: {adapter_id}")
