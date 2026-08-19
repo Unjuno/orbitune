@@ -55,15 +55,24 @@ orbitune detokenize examples/generated/demo.tokens --out examples/generated/demo
 orbitune inspect examples/generated --out examples/generated/inspect.json
 ```
 
-## Train a base model
+## Prepare a MIDI corpus
 
-Tokenize one or more MIDI files first, then train the fixed Orbitune architecture:
+For a directory of MIDI files, build one training token corpus and a data-quality report:
 
 ```bash
-orbitune tokenize song.mid --out data/song.tokens
+orbitune prepare-corpus data/raw \
+  --out data/tokens/base.tokens \
+  --report data/tokens/base-report.json \
+  --min-events 8
+```
 
+Bad or unsupported files are recorded in the report instead of aborting the entire corpus conversion.
+
+## Train a base model
+
+```bash
 orbitune train-base \
-  --tokens data/song.tokens \
+  --tokens data/tokens/base.tokens \
   --out models/orbitune-tiny-v0.pt \
   --steps 1000 \
   --batch-size 8 \
@@ -77,7 +86,7 @@ The model checkpoint is intentionally ignored by Git. Base weights should be dis
 ```bash
 orbitune train-adapter \
   --base models/orbitune-tiny-v0.pt \
-  --tokens data/my-style.tokens \
+  --tokens data/tokens/my-style.tokens \
   --out adapters/community/my-style-v0/adapter.safetensors \
   --rank 4 \
   --steps 500
@@ -98,6 +107,20 @@ orbitune generate \
 
 Generation uses a small grammar constraint so the model emits `BAR / POSITION / PITCH / DURATION / VELOCITY` sequences that can be converted back into MIDI.
 
+## Reproducible CPU smoke training
+
+The full 3.34M-parameter architecture can be exercised without reducing the model size:
+
+```bash
+python scripts/smoke_train.py \
+  --base-steps 100 \
+  --adapter-steps 100 \
+  --device cpu \
+  --out smoke-training-report.json
+```
+
+Measured container results and limitations are documented in [`docs/CONTAINER_TRAINING.md`](docs/CONTAINER_TRAINING.md). This smoke test uses synthetic grammar-valid patterns and therefore verifies the pipeline and compute scale, not music quality.
+
 ## Adapter validation
 
 ```bash
@@ -113,6 +136,7 @@ Small compatible adapters may be committed directly under `adapters/official/` o
 orbitune generate-demo
 orbitune inspect
 orbitune tokenize
+orbitune prepare-corpus
 orbitune detokenize
 orbitune model-info
 orbitune train-base
