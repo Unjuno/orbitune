@@ -43,7 +43,7 @@ def main() -> None:
     args = parser.parse_args()
 
     vocab = TheoryRemiVocab()
-    model_cfg = OrbituneConfig(vocab_size=len(vocab), max_seq_len=512, n_layer=4, n_embd=256, n_head=4, dropout=0.1)
+    model_cfg = OrbituneConfig(vocab_size=len(vocab), max_seq_len=512, n_layer=4, n_embd=240, n_head=4, dropout=0.1)
 
     with tempfile.TemporaryDirectory(prefix="orbitune-smoke-") as temp:
         root = Path(temp)
