@@ -4,51 +4,31 @@
   "title": "Orbitune Adapter Manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "artifact_type", "name", "version", "display_name", "base_model", "base_sha256",
-    "architecture", "parameter_scale", "tokenizer", "adapter_type", "rank",
-    "target_modules", "generation_defaults", "license", "training_data", "tags"
-  ],
+  "required": ["artifact_type", "name", "version", "display_name", "base_model", "base_sha256", "architecture", "parameter_scale", "tokenizer", "adapter_type", "rank", "target_modules", "generation_defaults", "license", "training_data", "tags"],
   "properties": {
-    "artifact_type": { "const": "orbitune_adapter" },
-    "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*-v[0-9]+$" },
-    "version": { "type": "string", "minLength": 1 },
-    "display_name": { "type": "string", "minLength": 1 },
-    "description": { "type": "string" },
-    "adapter_family": { "type": "string", "enum": ["style", "genre", "texture-like", "control", "instrument", "experimental"] },
-    "base_model": { "const": "orbitune-base" },
-    "base_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
-    "architecture": { "const": "orbitune-midi-gpt-v0" },
-    "parameter_scale": { "const": "3m" },
-    "tokenizer": { "const": "theory-remi-v0" },
-    "adapter_type": { "const": "lora" },
-    "rank": { "const": 4 },
-    "target_modules": { "const": ["q_proj", "v_proj"] },
+    "artifact_type": {"const": "orbitune_adapter"},
+    "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*-v[0-9]+$"},
+    "version": {"type": "string", "minLength": 1},
+    "display_name": {"type": "string", "minLength": 1},
+    "description": {"type": "string"},
+    "adapter_family": {"type": "string", "enum": ["style", "genre", "texture-like", "control", "instrument", "experimental"]},
+    "base_model": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "base_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "architecture": {"const": "orbitune-midi-gpt-v0"},
+    "parameter_scale": {"const": "3m"},
+    "tokenizer": {"const": "theory-remi-v0"},
+    "adapter_type": {"const": "lora"},
+    "rank": {"const": 4},
+    "target_modules": {"const": ["q_proj", "v_proj"]},
     "generation_defaults": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["bpm", "bars", "temperature"],
-      "properties": {
-        "bpm": { "type": "integer", "minimum": 40, "maximum": 220 },
-        "bars": { "type": "integer", "enum": [4, 8, 16] },
-        "temperature": { "type": "number", "minimum": 0.6, "maximum": 1.2 },
-        "top_p": { "type": "number", "minimum": 0.5, "maximum": 1.0 }
-      }
+      "type": "object", "additionalProperties": false, "required": ["bpm", "bars", "temperature"],
+      "properties": {"bpm": {"type": "integer", "minimum": 40, "maximum": 220}, "bars": {"type": "integer", "enum": [4, 8, 16]}, "temperature": {"type": "number", "minimum": 0.6, "maximum": 1.2}, "top_p": {"type": "number", "minimum": 0.5, "maximum": 1.0}}
     },
-    "license": { "type": "string", "minLength": 1 },
+    "license": {"type": "string", "minLength": 1},
     "training_data": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["source_type", "license", "rights_confirmed"],
-      "properties": {
-        "source_type": { "type": "string", "minLength": 1 },
-        "license": { "type": "string", "minLength": 1 },
-        "num_files": { "type": "integer", "minimum": 0 },
-        "num_tokens": { "type": "integer", "minimum": 0 },
-        "rights_confirmed": { "const": true },
-        "notes": { "type": "string" }
-      }
+      "type": "object", "additionalProperties": false, "required": ["source_type", "license", "rights_confirmed"],
+      "properties": {"source_type": {"type": "string", "minLength": 1}, "license": {"type": "string", "minLength": 1}, "num_files": {"type": "integer", "minimum": 0}, "num_tokens": {"type": "integer", "minimum": 0}, "rights_confirmed": {"const": true}, "notes": {"type": "string"}}
     },
-    "tags": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+    "tags": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
   }
 }
