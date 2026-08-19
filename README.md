@@ -102,9 +102,23 @@ Once the dataset gate is armed, each run restores the previous model **and AdamW
 1. Actions cache for fast restoration.
 2. The mutable `continuous-training` prerelease attached to this repository for durable recovery.
 
+Continuous state is separated by purpose:
+
+```text
+state.pt       latest resumable model + optimizer + RNG state
+healthy.pt     last health-confirmed rollback point
+best.pt        model checkpoint with best held-out validation loss
+report.json    health metrics, tokens seen, spikes and snapshot records
+snapshots/     full immutable training states created by token milestones
+```
+
+A full training snapshot is created every **10,000,000 tokens seen**. Release asset names additionally include the training step and GitHub Actions run id so a later rollback/retrain cannot overwrite an older forensic snapshot.
+
+The health monitor records training loss, rolling loss z-score, pre-clipping gradient norm, validation loss, spike events and cumulative tokens. A single difficult batch does not trigger rollback. Orbitune rolls back to `healthy.pt` when it encounters a non-finite loss/gradient/validation value, persistent loss spikes, or a loss spike accompanied by a severe gradient spike. The state and forensic report are persisted first; the workflow then fails visibly so the anomaly cannot pass silently.
+
 The prerelease is training state only. It is not a published Base compatibility target. Final accepted Bases still enter `bases/<base-id>/` with immutable checkpoint bytes and SHA-256 identities.
 
-`continuous-smoke.yml` verifies actual continuation by training one step, serializing state, restoring it, and training the next step.
+`continuous-smoke.yml` verifies actual continuation by training one step, serializing model/optimizer/RNG state, restoring it, advancing another step, and checking cumulative `tokens_seen`, token snapshots and the healthy checkpoint.
 
 ## Export and contribute a Base
 
@@ -158,8 +172,8 @@ The browser context limit is 1024 tokens. Base ONNX bytes are verified by SHA-25
 - `test.yml`: Python unit/integration tests
 - `web-test.yml`: browser runtime tests
 - `ml-smoke.yml`: full 10.2M Base + LoRA CPU training smoke
-- `continuous-smoke.yml`: resumable optimizer/model state smoke
-- `continuous-train.yml`: six-hour scheduled continuation loop once real data is configured
+- `continuous-smoke.yml`: resumable model/optimizer state, tokens-seen, health-state and snapshot smoke
+- `continuous-train.yml`: six-hour scheduled continuation loop with spike monitoring, automatic rollback and 10M-token snapshots once real data is configured
 - `export-smoke.yml`: ONNX export and runtime execution
 - `validate-adapters.yml`: Base/Adapter manifest, hash, dependency and size validation
 - `pages.yml`: generated Base/Adapter registries and static browser assets
