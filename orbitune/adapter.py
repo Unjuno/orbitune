@@ -94,6 +94,63 @@ def validate_manifest_file(path: str | Path) -> None:
         raise ValueError("invalid adapter manifest: " + "; ".join(errors))
 
 
+def create_adapter_scaffold(
+    directory: str | Path,
+    *,
+    name: str,
+    display_name: str,
+    adapter_family: str = "style",
+    rank: int = 4,
+    bpm: int = 84,
+    bars: int = 8,
+    temperature: float = 0.85,
+) -> Path:
+    root = Path(directory)
+    root.mkdir(parents=True, exist_ok=False)
+    manifest = {
+        "artifact_type": "orbitune_adapter",
+        "name": name,
+        "version": "0.1.0",
+        "display_name": display_name,
+        "description": "TODO: describe the generation tendency of this adapter.",
+        "adapter_family": adapter_family,
+        "base_model": "orbitune-tiny-v0",
+        "architecture": "orbitune-midi-gpt-v0",
+        "parameter_scale": "3m",
+        "tokenizer": "theory-remi-v0",
+        "adapter_type": "lora",
+        "rank": rank,
+        "target_modules": ["q_proj", "v_proj"],
+        "generation_defaults": {
+            "bpm": bpm,
+            "bars": bars,
+            "temperature": temperature,
+        },
+        "license": "TODO",
+        "training_data": {
+            "source_type": "user_provided_midi",
+            "license": "TODO",
+            "num_files": 0,
+            "num_tokens": 0,
+            "rights_confirmed": False,
+            "notes": "Set rights_confirmed=true only after checking the training-data rights.",
+        },
+        "tags": [],
+    }
+    (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (root / "README.md").write_text(
+        f"# {display_name}\n\n"
+        "Orbitune community adapter scaffold.\n\n"
+        "## Before publishing\n\n"
+        "- Train and place `adapter.safetensors` in this directory.\n"
+        "- Add at least one generated demo MIDI, normally `demo.mid`.\n"
+        "- Complete `manifest.json`, including license and training-data rights.\n"
+        "- Run `orbitune validate-adapter manifest.json`.\n",
+        encoding="utf-8",
+    )
+    return root
+
+
 def package_adapter(adapter_dir: str | Path, manifest_path: str | Path, out_path: str | Path) -> None:
     adapter_dir = Path(adapter_dir)
     manifest_path = Path(manifest_path)
