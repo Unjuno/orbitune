@@ -1,21 +1,24 @@
-# Base model weights
+# Local training outputs
 
-Base model weights are intentionally not committed to this repository.
+`models/` is a local workspace for checkpoints that are still being trained, compared, or rejected.
 
-The public Base identity is `orbitune-base`. It is an immutable checkpoint: once published, the checkpoint bytes and SHA-256 compatibility key must never be replaced under that identity.
+Accepted Base models are committed under:
 
 ```text
-Base:             orbitune-base
-Parameters:       2,945,760
-Architecture ABI: orbitune-midi-gpt-v0
-Tokenizer ABI:    theory-remi-v0
-Compatibility:    exact checkpoint SHA-256
+bases/<base-id>/
+  manifest.json
+  model.pt
+  web.onnx
+  README.md
 ```
 
-After release, download and verify it with:
+Typical flow:
 
-```bash
-python scripts/download_base_model.py --out models
+```text
+models/candidate.pt
+  -> evaluate / export
+  -> python scripts/add_base.py ...
+  -> bases/<base-id>/
 ```
 
-Adapters under `adapters/` may be committed only when their manifest and Safetensors metadata both target the exact published Base SHA-256. A future different Base must use a separate compatibility lineage rather than replacing this one.
+The `.gitignore` policy keeps arbitrary training outputs under `models/` out of Git history. Only deliberately staged Base artifacts under `bases/` are repository-managed.
