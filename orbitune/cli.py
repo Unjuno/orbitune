@@ -9,6 +9,7 @@ from orbitune.adapter import create_adapter_scaffold, package_adapter, validate_
 from orbitune.dataset import prepare_corpus
 from orbitune.demo import make_demo_events
 from orbitune.evaluation import write_evaluation
+from orbitune.exporting import export_onnx
 from orbitune.inference import generate_midi
 from orbitune.lora import LoRAConfig
 from orbitune.midi import read_midi, write_midi
@@ -128,6 +129,11 @@ def _cmd_generate(args: argparse.Namespace) -> None:
     print(f"wrote {args.out} with {events} note events")
 
 
+def _cmd_export_onnx(args: argparse.Namespace) -> None:
+    out = export_onnx(args.base, args.out, example_seq_len=args.example_seq_len)
+    print(f"wrote {out}")
+
+
 def _cmd_model_info(args: argparse.Namespace) -> None:
     if args.checkpoint:
         model = OrbituneGPT.load_checkpoint(args.checkpoint)
@@ -233,6 +239,12 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--max-new-tokens", type=int, default=256)
     generate.add_argument("--device", default="cpu")
     generate.set_defaults(func=_cmd_generate)
+
+    export_cmd = subparsers.add_parser("export-onnx", help="export a base checkpoint for browser/runtime integration")
+    export_cmd.add_argument("--base", required=True)
+    export_cmd.add_argument("--out", required=True)
+    export_cmd.add_argument("--example-seq-len", type=int, default=64)
+    export_cmd.set_defaults(func=_cmd_export_onnx)
 
     model_info = subparsers.add_parser("model-info", help="print model parameter count and configuration")
     model_info.add_argument("--checkpoint")
