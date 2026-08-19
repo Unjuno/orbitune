@@ -1,0 +1,103 @@
+name: continuous-train
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: continuous-reference-training
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check whether the real training corpus is configured
+        id: data
+        shell: bash
+        run: |
+          if [[ -s data/continuous/train.tokens && -s data/continuous/validation.tokens ]]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'Continuous training is armed but idle: add data/continuous/train.tokens and validation.tokens after dataset research.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.data.outputs.ready == 'true'
+        with:
+          python-version: '3.12'
+
+      - name: Install CPU PyTorch
+        if: steps.data.outputs.ready == 'true'
+        run: python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install Orbitune
+        if: steps.data.outputs.ready == 'true'
+        run: python -m pip install -e .
+
+      - name: Restore fast training-state cache
+        if: steps.data.outputs.ready == 'true'
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .orbitune-ci-state
+          key: continuous-10m-${{ github.run_id }}
+          restore-keys: |
+            continuous-10m-
+
+      - name: Restore durable state from repository prerelease when cache is empty
+        if: steps.data.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p .orbitune-ci-state
+          if [[ ! -s .orbitune-ci-state/state.pt ]] && gh release view continuous-training >/dev/null 2>&1; then
+            gh release download continuous-training --dir .orbitune-ci-state --pattern 'state.pt' --pattern 'best.pt' --pattern 'report.json' || true
+          fi
+
+      - name: Continue the 10M Base training
+        if: steps.data.outputs.ready == 'true'
+        run: |
+          python scripts/continuous_train.py \
+            --train data/continuous/train.tokens \
+            --validation data/continuous/validation.tokens \
+            --state .orbitune-ci-state/state.pt \
+            --best .orbitune-ci-state/best.pt \
+            --report .orbitune-ci-state/report.json \
+            --max-seconds 18000 \
+            --validation-interval 250 \
+            --batch-size 8 \
+            --seq-len 256 \
+            --device cpu
+
+      - name: Save fast training-state cache
+        if: always() && steps.data.outputs.ready == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .orbitune-ci-state
+          key: continuous-10m-${{ github.run_id }}
+
+      - name: Persist latest state in this repository's prerelease
+        if: steps.data.outputs.ready == 'true' && success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if ! gh release view continuous-training >/dev/null 2>&1; then
+            gh release create continuous-training --prerelease --title 'Continuous training state' --notes 'Mutable training state. Not a published Base compatibility target.'
+          fi
+          gh release upload continuous-training \
+            .orbitune-ci-state/state.pt \
+            .orbitune-ci-state/best.pt \
+            .orbitune-ci-state/report.json \
+            --clobber
+          cat .orbitune-ci-state/report.json >> "$GITHUB_STEP_SUMMARY"
