@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import defaultdict
 from pathlib import Path
 
 from orbitune.midi import read_midi
@@ -27,6 +28,8 @@ def _collect_records(
     rejected: list[dict[str, str]] = []
     for midi_path in files:
         try:
+            payload = midi_path.read_bytes()
+            content_sha256 = hashlib.sha256(payload).hexdigest()
             metadata = inspect_midi_metadata(midi_path)
             if require_4_4 and not is_4_4_compatible(metadata):
                 rejected.append({"path": str(midi_path), "reason": f"unsupported_time_signature:{metadata.time_signatures}"})
@@ -42,6 +45,7 @@ def _collect_records(
             accepted.append(
                 {
                     "path": str(midi_path),
+                    "sha256": content_sha256,
                     "events": len(events),
                     "tokens": tokens,
                     "midi_format": metadata.midi_format,
@@ -66,6 +70,7 @@ def _merge_records(records: list[dict[str, object]]) -> list[str]:
 def _public_record(record: dict[str, object]) -> dict[str, object]:
     return {
         "path": record["path"],
+        "sha256": record["sha256"],
         "events": record["events"],
         "tokens": len(record["tokens"]),
         "midi_format": record["midi_format"],
@@ -97,12 +102,15 @@ def prepare_corpus(
     out_report.parent.mkdir(parents=True, exist_ok=True)
     tokenizer.write_tokens(merged, out_tokens)
 
+    unique_hashes = {str(item["sha256"]) for item in accepted}
     report: dict[str, object] = {
         "source": str(source),
         "require_4_4": require_4_4,
         "files_seen": len(files),
         "files_accepted": len(accepted),
         "files_rejected": len(rejected),
+        "unique_content_files": len(unique_hashes),
+        "duplicate_files": len(accepted) - len(unique_hashes),
         "song_boundaries": max(0, len(accepted) - 1),
         "total_events": sum(int(item["events"]) for item in accepted),
         "total_tokens": len(merged),
@@ -133,15 +141,33 @@ def prepare_split_corpus(
     if len(accepted) < 2:
         raise ValueError("at least two usable MIDI files are required for a train/validation split")
 
-    def split_key(record: dict[str, object]) -> str:
-        payload = f"{split_seed}\0{record['path']}".encode("utf-8")
-        return hashlib.sha256(payload).hexdigest()
+    by_hash: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for record in accepted:
+        by_hash[str(record["sha256"])].append(record)
+    if len(by_hash) < 2:
+        raise ValueError("at least two unique MIDI contents are required for a train/validation split")
 
-    ordered = sorted(accepted, key=split_key)
-    validation_count = max(1, round(len(ordered) * validation_fraction))
-    validation_count = min(validation_count, len(ordered) - 1)
-    validation_records = ordered[:validation_count]
-    train_records = ordered[validation_count:]
+    def group_key(item: tuple[str, list[dict[str, object]]]) -> str:
+        content_hash, _ = item
+        return hashlib.sha256(f"{split_seed}\0{content_hash}".encode("utf-8")).hexdigest()
+
+    groups = sorted(by_hash.items(), key=group_key)
+    target_validation_files = max(1, round(len(accepted) * validation_fraction))
+    validation_groups: list[list[dict[str, object]]] = []
+    validation_file_count = 0
+    # Keep at least one unique content group in training. Whole duplicate groups
+    # move together, preventing exact-copy leakage between train and validation.
+    for _, group in groups[:-1]:
+        if validation_groups and validation_file_count >= target_validation_files:
+            break
+        validation_groups.append(group)
+        validation_file_count += len(group)
+
+    validation_ids = {str(record["sha256"]) for group in validation_groups for record in group}
+    validation_records = [record for record in accepted if str(record["sha256"]) in validation_ids]
+    train_records = [record for record in accepted if str(record["sha256"]) not in validation_ids]
+    if not validation_records or not train_records:
+        raise ValueError("unable to construct non-empty train and validation splits")
 
     tokenizer = TheoryRemiTokenizer()
     train_tokens = _merge_records(train_records)
@@ -154,16 +180,26 @@ def prepare_split_corpus(
     tokenizer.write_tokens(train_tokens, out_train)
     tokenizer.write_tokens(validation_tokens, out_validation)
 
+    train_hashes = {str(item["sha256"]) for item in train_records}
+    validation_hashes = {str(item["sha256"]) for item in validation_records}
+    if train_hashes & validation_hashes:
+        raise AssertionError("duplicate content leaked across train and validation splits")
+
     report: dict[str, object] = {
         "source": str(source),
         "require_4_4": require_4_4,
         "split_seed": split_seed,
+        "split_unit": "MIDI content SHA-256 group",
         "validation_fraction_requested": validation_fraction,
         "files_seen": len(files),
         "files_accepted": len(accepted),
         "files_rejected": len(rejected),
+        "unique_content_files": len(by_hash),
+        "duplicate_files": len(accepted) - len(by_hash),
         "train_files": len(train_records),
         "validation_files": len(validation_records),
+        "train_unique_contents": len(train_hashes),
+        "validation_unique_contents": len(validation_hashes),
         "train_tokens": len(train_tokens),
         "validation_tokens": len(validation_tokens),
         "train": [_public_record(item) for item in train_records],
