@@ -1,5 +1,6 @@
 import { OrbituneBrowserRuntime, eventsToMidiBytes } from './orbitune-runtime.mjs';
 import { createVerifiedModelSession } from './model-loader.mjs';
+import { assertAdapterBaseSha256 } from './adapter-compat.mjs';
 
 const adapterSelect = document.getElementById('adapter');
 const adapterMeta = document.getElementById('adapter-meta');
@@ -12,28 +13,17 @@ const downloadLink = document.getElementById('download');
 const status = document.getElementById('status');
 
 let registry = { adapters: [] };
-let runtimeConfig = { model_url: '', model_sha256: '', execution_providers: ['wasm'] };
+let runtimeConfig = { model_url: '', model_sha256: '', base_sha256: '', execution_providers: ['wasm'] };
 let runtime = null;
 let objectUrl = null;
 
-function setStatus(message) {
-  status.textContent = message;
-}
-
-function selectedAdapter() {
-  return registry.adapters.find((item) => item.id === adapterSelect.value) || null;
-}
-
-function updateTemperatureLabel() {
-  temperatureValue.textContent = Number(temperature.value).toFixed(2);
-}
+function setStatus(message) { status.textContent = message; }
+function selectedAdapter() { return registry.adapters.find((item) => item.id === adapterSelect.value) || null; }
+function updateTemperatureLabel() { temperatureValue.textContent = Number(temperature.value).toFixed(2); }
 
 function applyAdapterDefaults() {
   const adapter = selectedAdapter();
-  if (!adapter) {
-    adapterMeta.textContent = 'Base model only';
-    return;
-  }
+  if (!adapter) { adapterMeta.textContent = 'Base model only'; return; }
   const defaults = adapter.generation_defaults || {};
   if (defaults.bpm) bpmInput.value = defaults.bpm;
   if (defaults.bars) barsSelect.value = defaults.bars;
@@ -57,7 +47,6 @@ async function initialize() {
   updateTemperatureLabel();
   registry = await loadJson('./data/adapters.json', { adapters: [] });
   runtimeConfig = await loadJson('./runtime-config.json', runtimeConfig);
-
   for (const adapter of registry.adapters || []) {
     const option = document.createElement('option');
     option.value = adapter.id;
@@ -65,10 +54,9 @@ async function initialize() {
     adapterSelect.appendChild(option);
   }
   adapterMeta.textContent = registry.adapters?.length ? `${registry.adapters.length} bundled adapter(s)` : 'No bundled adapters yet — base model only';
-
   if (!runtimeConfig.model_url) {
     generateButton.disabled = true;
-    setStatus('Browser runtime is wired, but the official ONNX Base asset has not been published yet.');
+    setStatus('Browser runtime is wired, but the immutable Orbitune Base has not been published yet.');
     return;
   }
   if (!globalThis.ort) {
@@ -76,18 +64,15 @@ async function initialize() {
     setStatus('ONNX Runtime Web failed to load.');
     return;
   }
-
   runtime = new OrbituneBrowserRuntime(globalThis.ort);
-  setStatus('Downloading and verifying orbitune-tiny-v0…');
+  setStatus('Downloading and verifying Orbitune Base…');
   try {
     runtime.session = await createVerifiedModelSession(globalThis.ort, runtimeConfig.model_url, {
       expectedSha256: runtimeConfig.model_sha256 || '',
       executionProviders: runtimeConfig.execution_providers || ['wasm'],
     });
     generateButton.disabled = false;
-    setStatus(runtimeConfig.model_sha256
-      ? 'Base model SHA-256 verified. Ready to generate locally in this browser.'
-      : 'Base model loaded without a configured SHA-256. Ready to generate locally in this browser.');
+    setStatus('Base model verified. Ready to generate locally in this browser.');
   } catch (error) {
     generateButton.disabled = true;
     setStatus(`Failed to load Base model: ${error.message}`);
@@ -100,7 +85,9 @@ async function loadSelectedAdapter() {
   if (!adapter) return;
   const response = await fetch(adapter.adapter_url, { cache: 'force-cache' });
   if (!response.ok) throw new Error(`adapter download failed: HTTP ${response.status}`);
-  runtime.loadAdapter(await response.arrayBuffer());
+  const bytes = await response.arrayBuffer();
+  assertAdapterBaseSha256(bytes, runtimeConfig.base_sha256);
+  runtime.loadAdapter(bytes);
 }
 
 async function generate() {
@@ -109,13 +96,11 @@ async function generate() {
   downloadLink.hidden = true;
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   objectUrl = null;
-
   const bpm = Number(bpmInput.value);
   const bars = Number(barsSelect.value);
   const temp = Number(temperature.value);
   const adapter = selectedAdapter();
   setStatus(`Loading ${adapter?.display_name || 'Base only'} and generating ${bars} bars…`);
-
   try {
     await loadSelectedAdapter();
     const started = performance.now();
@@ -127,14 +112,7 @@ async function generate() {
     downloadLink.href = objectUrl;
     downloadLink.download = `orbitune-${adapter?.id || 'base'}-${bars}bars.mid`;
     downloadLink.hidden = false;
-    setStatus([
-      'Generation complete.',
-      `adapter=${adapter?.id || 'base-only'}`,
-      `bars=${bars}`,
-      `notes=${result.events.length}`,
-      `temperature=${temp.toFixed(2)}`,
-      `elapsed_ms=${elapsed.toFixed(0)}`,
-    ].join('\n'));
+    setStatus(['Generation complete.', `adapter=${adapter?.id || 'base-only'}`, `bars=${bars}`, `notes=${result.events.length}`, `temperature=${temp.toFixed(2)}`, `elapsed_ms=${elapsed.toFixed(0)}`].join('\n'));
   } catch (error) {
     setStatus(`Generation failed: ${error.message}`);
   } finally {
@@ -145,5 +123,4 @@ async function generate() {
 temperature.addEventListener('input', updateTemperatureLabel);
 adapterSelect.addEventListener('change', applyAdapterDefaults);
 generateButton.addEventListener('click', generate);
-
 initialize();
