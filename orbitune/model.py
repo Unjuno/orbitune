@@ -153,3 +153,5 @@ class OrbituneGPT(nn.Module):
         model.load_state_dict(payload["state_dict"])
         model.base_sha256 = sha256_file(path)
         return model
+
+# CI-only marker for final 10M verification.
