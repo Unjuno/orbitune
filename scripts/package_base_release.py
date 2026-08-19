@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Temporary CI trigger branch change; do not merge.
 from __future__ import annotations
 
 import argparse
