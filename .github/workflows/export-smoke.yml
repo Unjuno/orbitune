@@ -8,6 +8,13 @@ on:
       - 'orbitune/exporting.py'
       - 'pyproject.toml'
       - '.github/workflows/export-smoke.yml'
+  pull_request:
+    paths:
+      - 'orbitune/model.py'
+      - 'orbitune/web_model.py'
+      - 'orbitune/exporting.py'
+      - 'pyproject.toml'
+      - '.github/workflows/export-smoke.yml'
   workflow_dispatch:
 
 jobs:
