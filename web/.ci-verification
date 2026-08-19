@@ -1,1 +1,2 @@
 Temporary CI verification marker. Do not merge.
+Retry 2 after setuptools package discovery fix.
