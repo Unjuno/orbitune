@@ -23,6 +23,9 @@ REQUIRED_MANIFEST_FIELDS = {
     "tags",
 }
 
+V0_LORA_RANK = 4
+V0_TARGET_MODULES = ["q_proj", "v_proj"]
+
 
 def load_manifest(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -45,14 +48,10 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
         if manifest.get(key) != value:
             errors.append(f"{key} must be {value}")
 
-    rank = manifest.get("rank")
-    if not isinstance(rank, int) or not 1 <= rank <= 32:
-        errors.append("rank must be an integer between 1 and 32")
-    targets = manifest.get("target_modules")
-    if not isinstance(targets, list) or not targets or any(not isinstance(item, str) for item in targets):
-        errors.append("target_modules must be a non-empty string array")
-    elif any(item not in {"q_proj", "v_proj"} for item in targets):
-        errors.append("v0 target_modules may only contain q_proj and v_proj")
+    if manifest.get("rank") != V0_LORA_RANK:
+        errors.append(f"rank must be {V0_LORA_RANK} for Orbitune v0 browser compatibility")
+    if manifest.get("target_modules") != V0_TARGET_MODULES:
+        errors.append(f"target_modules must be {V0_TARGET_MODULES}")
 
     defaults = manifest.get("generation_defaults", {})
     if isinstance(defaults, dict):
@@ -100,11 +99,13 @@ def create_adapter_scaffold(
     name: str,
     display_name: str,
     adapter_family: str = "style",
-    rank: int = 4,
+    rank: int = V0_LORA_RANK,
     bpm: int = 84,
     bars: int = 8,
     temperature: float = 0.85,
 ) -> Path:
+    if rank != V0_LORA_RANK:
+        raise ValueError(f"Orbitune v0 adapters must use rank {V0_LORA_RANK}")
     root = Path(directory)
     root.mkdir(parents=True, exist_ok=False)
     manifest = {
@@ -119,8 +120,8 @@ def create_adapter_scaffold(
         "parameter_scale": "3m",
         "tokenizer": "theory-remi-v0",
         "adapter_type": "lora",
-        "rank": rank,
-        "target_modules": ["q_proj", "v_proj"],
+        "rank": V0_LORA_RANK,
+        "target_modules": V0_TARGET_MODULES,
         "generation_defaults": {
             "bpm": bpm,
             "bars": bars,
