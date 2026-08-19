@@ -22,11 +22,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/configure-pages@v5
-      - name: Build static site artifact
-        run: |
-          mkdir -p web/data
-          cp registry/adapters.json web/data/adapters.json
+      - name: Build bundled adapter registry and browser assets
+        run: python scripts/build_registry.py --adapters adapters --web-root web
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
