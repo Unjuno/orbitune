@@ -27,6 +27,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate manifests and generate registry
+        env:
+          PYTHONPATH: .
         run: python scripts/build_registry.py --adapters adapters --out /tmp/orbitune-adapters.json
       - name: Enforce adapter directory hard size limit
         run: |
