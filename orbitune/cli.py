@@ -86,7 +86,7 @@ def _cmd_train_base(args: argparse.Namespace) -> None:
         vocab_size=len(vocab),
         max_seq_len=args.max_seq_len,
         n_layer=4,
-        n_embd=256,
+        n_embd=240,
         n_head=4,
         dropout=args.dropout,
     )
