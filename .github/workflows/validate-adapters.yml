@@ -1,20 +1,28 @@
-name: validate-adapters
+name: validate-assets
 
 on:
   pull_request:
     paths:
+      - 'bases/**'
       - 'adapters/**'
+      - 'orbitune/base_registry.py'
       - 'orbitune/adapter.py'
       - 'orbitune/registry.py'
+      - 'schemas/base_manifest.schema.json'
       - 'schemas/adapter_manifest.schema.json'
+      - 'scripts/build_registry.py'
       - '.github/workflows/validate-adapters.yml'
   push:
     branches: [main]
     paths:
+      - 'bases/**'
       - 'adapters/**'
+      - 'orbitune/base_registry.py'
       - 'orbitune/adapter.py'
       - 'orbitune/registry.py'
+      - 'schemas/base_manifest.schema.json'
       - 'schemas/adapter_manifest.schema.json'
+      - 'scripts/build_registry.py'
       - '.github/workflows/validate-adapters.yml'
   workflow_dispatch:
 
@@ -26,19 +34,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Validate manifests and generate registry
+      - name: Validate Bases, Adapters, and dependency graph
         env:
           PYTHONPATH: .
-        run: python scripts/build_registry.py --adapters adapters --out /tmp/orbitune-adapters.json
-      - name: Enforce adapter directory hard size limit
+        run: |
+          python scripts/build_registry.py \
+            --bases bases \
+            --adapters adapters \
+            --base-out /tmp/orbitune-bases.json \
+            --adapter-out /tmp/orbitune-adapters.json
+      - name: Enforce repository artifact size policy
         run: |
           python - <<'PY'
           from pathlib import Path
-          limit = 5 * 1024 * 1024
+          base_limit = 95 * 1024 * 1024
+          adapter_limit = 5 * 1024 * 1024
+          for path in Path('bases').rglob('*'):
+              if path.is_file() and path.name not in {'manifest.json', 'README.md'} and path.stat().st_size > base_limit:
+                  raise SystemExit(f'{path}: exceeds 95 MiB Base artifact limit')
           for manifest in Path('adapters').rglob('manifest.json'):
               directory = manifest.parent
               total = sum(path.stat().st_size for path in directory.rglob('*') if path.is_file())
-              if total > limit:
-                  raise SystemExit(f'{directory}: {total} bytes exceeds the 5 MiB hard limit')
-              print(f'{directory}: {total} bytes')
+              if total > adapter_limit:
+                  raise SystemExit(f'{directory}: exceeds 5 MiB Adapter directory limit')
+          print('repository asset size policy PASS')
           PY
