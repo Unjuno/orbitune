@@ -12,6 +12,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Orbitune contributors" }]
 dependencies = [
+  "numpy>=1.26",
   "torch>=2.3",
   "safetensors>=0.4"
 ]
