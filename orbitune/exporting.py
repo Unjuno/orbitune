@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# Temporary verification-branch touch: exercises the PR ONNX smoke workflow.
 from pathlib import Path
 
 import torch
