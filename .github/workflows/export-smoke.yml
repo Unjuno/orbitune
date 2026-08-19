@@ -1,0 +1,68 @@
+name: export-smoke
+
+on:
+  push:
+    paths:
+      - 'orbitune/model.py'
+      - 'orbitune/web_model.py'
+      - 'orbitune/exporting.py'
+      - 'pyproject.toml'
+      - '.github/workflows/export-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  export-and-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install export runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[export]'
+          python -m pip install onnxruntime
+      - name: Create deterministic random v0 checkpoint
+        run: |
+          python - <<'PY'
+          import torch
+          from orbitune.model import OrbituneConfig, OrbituneGPT
+          from orbitune.tokenizer.vocab import TheoryRemiVocab
+          torch.manual_seed(1234)
+          model = OrbituneGPT(OrbituneConfig(vocab_size=len(TheoryRemiVocab())))
+          assert model.parameter_count() == 2_945_760
+          model.save_checkpoint('orbitune-tiny-v0-smoke.pt')
+          PY
+      - name: Export Base plus external LoRA input graph
+        run: orbitune export-web-onnx --base orbitune-tiny-v0-smoke.pt --out orbitune-tiny-v0-web.onnx
+      - name: Validate and execute dynamic ONNX graph
+        run: |
+          python - <<'PY'
+          import numpy as np
+          import onnx
+          import onnxruntime as ort
+
+          path = 'orbitune-tiny-v0-web.onnx'
+          model = onnx.load(path)
+          onnx.checker.check_model(model)
+          session = ort.InferenceSession(path, providers=['CPUExecutionProvider'])
+          assert [item.name for item in session.get_inputs()] == ['input_ids', 'lora_a', 'lora_b', 'lora_scale']
+          feeds = {
+              'input_ids': np.zeros((1, 13), dtype=np.int64),
+              'lora_a': np.zeros((4, 2, 4, 240), dtype=np.float32),
+              'lora_b': np.zeros((4, 2, 240, 4), dtype=np.float32),
+              'lora_scale': np.ones((1,), dtype=np.float32),
+          }
+          logits = session.run(['logits'], feeds)[0]
+          assert logits.shape == (1, 13, 204), logits.shape
+          feeds['input_ids'] = np.zeros((1, 5), dtype=np.int64)
+          logits = session.run(['logits'], feeds)[0]
+          assert logits.shape == (1, 5, 204), logits.shape
+          print('ONNX dynamic web graph PASS')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbitune-web-onnx-smoke
+          path: orbitune-tiny-v0-web.onnx
+          retention-days: 3
