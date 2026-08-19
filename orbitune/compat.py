@@ -3,11 +3,20 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-# Default official Base id used by scaffolding and legacy helpers only.
-# It is NOT a global compatibility singleton: contributed Bases may coexist.
+# Default official Base id used by scaffolding only. It is NOT a global
+# compatibility singleton: contributed Bases may coexist under other ids.
 DEFAULT_BASE_MODEL_ID = "orbitune-base"
-BASE_MODEL_ID = DEFAULT_BASE_MODEL_ID  # backward-compatible alias
-BASE_PARAMETER_COUNT = 2_945_760
+BASE_MODEL_ID = DEFAULT_BASE_MODEL_ID  # backwards-compatible alias
+
+# Current reference architecture. With the current 204-token vocabulary this
+# is 10,200,960 parameters. The 448-wide design intentionally leaves room for
+# a larger MIDI vocabulary while staying near the 10M class.
+REFERENCE_MAX_SEQ_LEN = 1024
+REFERENCE_N_LAYER = 4
+REFERENCE_N_EMBD = 448
+REFERENCE_N_HEAD = 7
+REFERENCE_PARAMETER_COUNT = 10_200_960
+BASE_PARAMETER_COUNT = REFERENCE_PARAMETER_COUNT
 
 # Protocol / ABI identifiers. A Base declares which ABI it implements.
 ARCHITECTURE_ABI = "orbitune-midi-gpt-v0"
