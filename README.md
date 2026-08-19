@@ -67,7 +67,7 @@ orbitune eval-midi examples/generated/demo.mid --out examples/generated/demo-eva
 
 Orbitune v0 accepts Standard MIDI File type 0 and type 1. Type 1 note tracks are merged. By default corpus preparation rejects unsupported time signatures so the current 16-position-per-4/4-bar representation is not silently corrupted.
 
-For real experiments, split at the **MIDI-file level**, not the token level:
+For real experiments, split at the **MIDI-file content level**, not the token level. Duplicate MIDI bytes are grouped by SHA-256 so renamed copies cannot leak across train and validation:
 
 ```bash
 orbitune prepare-split-corpus data/raw \
@@ -101,7 +101,7 @@ orbitune train-base \
   --seq-len 128
 ```
 
-Training reports include training loss, held-out validation loss when supplied, elapsed time, processed-token count, and token throughput. The Base checkpoint is ignored by Git and should eventually be distributed as a release asset.
+Training reports include training loss, held-out validation loss when supplied, elapsed time, processed-token count, and token throughput. The Base checkpoint is ignored by Git and is distributed separately as a release asset.
 
 ## Train a community Adapter
 
@@ -138,7 +138,7 @@ orbitune generate \
   --out generated.mid
 ```
 
-The generation grammar enforces complete note events, monotonically increasing positions inside each bar, and the requested number of bars before `EOS`. Each completed bar must reach the final quarter of the bar, preventing an 8-bar request from collapsing into eight one-note fragments.
+The generation grammar enforces complete note events and the requested number of bars before `EOS`. Positions are nondecreasing inside a bar: the same position may repeat for a chord, up to eight distinct pitches, while lower positions cannot reappear. Each completed bar must reach the final quarter of the bar, preventing an 8-bar request from collapsing into eight one-note fragments.
 
 ## Reproducible CPU smoke training
 
@@ -156,7 +156,7 @@ Measured container results and limitations are documented in [`docs/CONTAINER_TR
 
 ## Browser deployment contract
 
-Orbitune keeps one Base model and passes LoRA matrices as external runtime inputs. Adapters therefore remain small instead of requiring a separate 3M model export for every style.
+Orbitune keeps one Base model and passes LoRA matrices as external runtime inputs. Adapters therefore remain small instead of requiring a separate Base export for every style.
 
 Install optional export dependencies and export the browser graph:
 
@@ -178,7 +178,52 @@ lora_scale   float32  [1]
 
 `web/orbitune-runtime.mjs` packs a v0 Adapter Safetensors file into those inputs and produces MIDI bytes after grammar-constrained sampling. WASM is the default browser execution provider; acceleration can be evaluated separately after the baseline works.
 
-`web/runtime-config.json` intentionally has an empty `model_url` until an official Base ONNX asset is published. The Pages UI remains disabled until that URL is configured.
+## Stage a verified Base release
+
+After training the real Base and exporting its browser ONNX graph, create a release staging directory:
+
+```bash
+python scripts/package_base_release.py \
+  --base models/orbitune-tiny-v0.pt \
+  --web-onnx orbitune-tiny-v0-web.onnx \
+  --out-dir dist/orbitune-tiny-v0-release \
+  --repository Unjuno/orbitune \
+  --release-tag orbitune-tiny-v0
+```
+
+The staging directory contains:
+
+```text
+orbitune-tiny-v0.pt
+orbitune-tiny-v0-web.onnx
+orbitune-tiny-v0-manifest.json
+runtime-config.json
+```
+
+The packager refuses a checkpoint that is not the fixed 2,945,760-parameter v0 architecture. The manifest records the exact checkpoint and ONNX byte sizes, SHA-256 hashes, and tag-specific GitHub Release URLs. `runtime-config.json` carries the ONNX URL and hash expected by the browser.
+
+After uploading the first three files to the matching GitHub Release tag, copy the generated `runtime-config.json` into `web/runtime-config.json`. The browser downloads the ONNX bytes, verifies SHA-256 with Web Crypto, and only then creates the ONNX Runtime session.
+
+Until the official asset exists, the committed `web/runtime-config.json` intentionally keeps `model_url` and `model_sha256` empty, so generation remains disabled rather than silently loading an unversioned model.
+
+## Download a published Base safely
+
+Once the release exists, the default downloader reads the latest release manifest and verifies the artifact hash before replacing the destination file:
+
+```bash
+python scripts/download_base_model.py --out models
+```
+
+A specific manifest can also be used for reproducibility:
+
+```bash
+python scripts/download_base_model.py \
+  --manifest path/to/orbitune-tiny-v0-manifest.json \
+  --artifact checkpoint \
+  --out models
+```
+
+Use `--artifact web_onnx` to fetch the browser graph. Remote manifests and artifact URLs must use HTTPS.
 
 ## Adapter registry and Pages
 
@@ -201,7 +246,7 @@ README.md
 The registry is generated from these directories rather than edited manually:
 
 ```bash
-python scripts/build_registry.py --adapters adapters --out registry/adapters.json
+PYTHONPATH=. python scripts/build_registry.py --adapters adapters --out registry/adapters.json
 ```
 
 The GitHub Pages workflow uses the same builder and copies bundled adapter assets into the static site artifact automatically.
@@ -218,11 +263,13 @@ orbitune package-adapter adapters/community/my-style-v0 \
 ## CI layers
 
 - `test.yml`: Python unit/integration tests
-- `web-test.yml`: Node tests for browser grammar, sampling, MIDI generation, and Safetensors adapter packing
+- `web-test.yml`: Node tests for browser grammar, sampling, MIDI generation, Safetensors packing, and model SHA-256 verification
 - `ml-smoke.yml`: full-size Base + LoRA CPU training smoke
-- `export-smoke.yml`: actual ONNX export and ONNX Runtime dynamic-sequence inference
+- `export-smoke.yml`: actual ONNX export, ONNX Runtime dynamic-sequence inference, and release-package staging
 - `validate-adapters.yml`: bundled community/official adapter validation
 - `pages.yml`: static site and adapter asset build/deploy
+
+Python CI installs the CPU-only PyTorch wheel explicitly before the Orbitune package to avoid downloading unused CUDA runtime packages on CPU GitHub runners.
 
 ## Current command surface
 
@@ -244,6 +291,8 @@ orbitune export-web-onnx
 orbitune validate-adapter
 orbitune package-adapter
 ```
+
+Release staging and verified downloading currently live under `scripts/` because they operate on repository/release artifacts rather than the core generation API.
 
 ## Repository policy
 
