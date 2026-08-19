@@ -40,6 +40,10 @@ def _write_pattern(path: Path, *, style: str, bars: int = 128, validation: bool 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _validation_interval(steps: int) -> int:
+    return max(1, steps // 2)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="CPU smoke test for orbitune-tiny-v0 and its fixed rank-4 LoRA")
     parser.add_argument("--base-steps", type=int, default=40)
@@ -75,6 +79,7 @@ def main() -> None:
                 seq_len=64,
                 learning_rate=5e-4,
                 device=args.device,
+                validation_interval=_validation_interval(args.base_steps),
             ),
             validation_token_paths=[base_validation],
         )
@@ -92,6 +97,7 @@ def main() -> None:
                 seq_len=64,
                 learning_rate=1e-3,
                 device=args.device,
+                validation_interval=_validation_interval(args.adapter_steps),
             ),
             validation_token_paths=[style_validation],
         )
