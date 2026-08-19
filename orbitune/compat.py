@@ -3,13 +3,12 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-# Public Base identity. This name is not a rolling model version.
-# Once the first official checkpoint is published, its bytes are immutable.
-BASE_MODEL_ID = "orbitune-base"
+# Default official Base id used by scaffolding only. It is NOT a global
+# compatibility singleton: contributed Bases may coexist under other ids.
+DEFAULT_BASE_MODEL_ID = "orbitune-base"
 BASE_PARAMETER_COUNT = 2_945_760
 
-# These are protocol / ABI identifiers. They may be versioned independently
-# of the immutable Base checkpoint because they describe file/runtime formats.
+# Protocol / ABI identifiers. A Base declares which ABI it implements.
 ARCHITECTURE_ABI = "orbitune-midi-gpt-v0"
 TOKENIZER_ABI = "theory-remi-v0"
 ADAPTER_FORMAT_ABI = "orbitune-lora-v0"
