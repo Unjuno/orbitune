@@ -1,0 +1,18 @@
+{
+  "name": "orbitune-tiny-v0",
+  "architecture": "orbitune-midi-gpt-v0",
+  "tokenizer": "theory-remi-v0",
+  "parameter_scale": "3m",
+  "model": {
+    "max_seq_len": 512,
+    "n_layer": 4,
+    "n_embd": 256,
+    "n_head": 4,
+    "dropout": 0.1
+  },
+  "lora": {
+    "default_rank": 4,
+    "default_alpha": 8.0,
+    "target_modules": ["q_proj", "v_proj"]
+  }
+}
