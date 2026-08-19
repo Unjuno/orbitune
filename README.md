@@ -21,6 +21,7 @@ Orbitune v0 is MIDI-only. It does not generate raw audio waveforms, audio-codec 
 - Piano/BGM-oriented generation
 - 3M-class decoder-only Transformer (`4 layers × 256 hidden`, context 512)
 - LoRA on `q_proj` and `v_proj`
+- Safetensors adapter files
 - Base + one LoRA adapter at a time
 - 4 to 8 bar generation as the default UX
 - GitHub-first distribution
@@ -77,7 +78,7 @@ The model checkpoint is intentionally ignored by Git. Base weights should be dis
 orbitune train-adapter \
   --base models/orbitune-tiny-v0.pt \
   --tokens data/my-style.tokens \
-  --out adapters/community/my-style-v0/adapter.pt \
+  --out adapters/community/my-style-v0/adapter.safetensors \
   --rank 4 \
   --steps 500
 ```
@@ -89,7 +90,7 @@ Adapters target `q_proj` and `v_proj`. Training seeds exist for reproducible exp
 ```bash
 orbitune generate \
   --base models/orbitune-tiny-v0.pt \
-  --adapter adapters/community/my-style-v0/adapter.pt \
+  --adapter adapters/community/my-style-v0/adapter.safetensors \
   --temperature 0.85 \
   --bpm 84 \
   --out generated.mid
