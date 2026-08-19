@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 from orbitune.adapter import package_adapter, validate_manifest_file
@@ -107,7 +108,7 @@ def _cmd_model_info(args: argparse.Namespace) -> None:
     else:
         vocab = TheoryRemiVocab()
         model = OrbituneGPT(OrbituneConfig(vocab_size=len(vocab)))
-    print(json.dumps({"architecture": model.architecture, "parameters": model.parameter_count(), "config": vars(model.config)}, indent=2))
+    print(json.dumps({"architecture": model.architecture, "parameters": model.parameter_count(), "config": asdict(model.config)}, indent=2))
 
 
 def _cmd_validate_adapter(args: argparse.Namespace) -> None:
