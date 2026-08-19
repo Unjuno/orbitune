@@ -1,3 +1,4 @@
+# Temporary verification marker; do not merge.
 name: continuous-smoke
 
 on:
