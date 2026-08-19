@@ -1,3 +1,4 @@
+# Temporary verification-branch touch. Do not merge.
 [build-system]
 requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
