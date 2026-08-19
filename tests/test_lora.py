@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import torch
 
 from orbitune.lora import LoRAConfig, LoRALinear, inject_lora, load_adapter, save_adapter, trainable_parameter_count
@@ -18,7 +19,7 @@ def test_lora_targets_only_q_and_v():
     assert trainable_parameter_count(model) == 2 * (4 * 32 + 32 * 4)
 
 
-def test_adapter_save_load_changes_logits(tmp_path: Path):
+def test_adapter_save_load_changes_logits_and_pins_base_hash(tmp_path: Path):
     torch.manual_seed(0)
     base = _tiny_model().eval()
     base_path = tmp_path / "base.pt"
@@ -31,7 +32,7 @@ def test_adapter_save_load_changes_logits(tmp_path: Path):
         if isinstance(module, LoRALinear):
             with torch.no_grad():
                 module.lora_b.fill_(0.01)
-    adapter_path = tmp_path / "adapter.pt"
+    adapter_path = tmp_path / "adapter.safetensors"
     save_adapter(adapted, adapter_path, cfg)
 
     reloaded = OrbituneGPT.load_checkpoint(base_path).eval()
@@ -41,3 +42,10 @@ def test_adapter_save_load_changes_logits(tmp_path: Path):
         base_logits, _ = base(x)
         adapted_logits, _ = reloaded(x)
     assert not torch.allclose(base_logits, adapted_logits)
+
+    other_base = _tiny_model().eval()
+    other_path = tmp_path / "other-base.pt"
+    other_base.save_checkpoint(other_path)
+    incompatible = OrbituneGPT.load_checkpoint(other_path).eval()
+    with pytest.raises(ValueError, match="different Base checkpoint"):
+        load_adapter(incompatible, adapter_path)
