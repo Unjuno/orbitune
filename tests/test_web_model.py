@@ -20,22 +20,21 @@ def test_zero_external_lora_matches_base():
 
 def test_saved_adapter_can_be_packed_as_runtime_inputs(tmp_path):
     torch.manual_seed(11)
-    model = OrbituneGPT(
+    adapted = OrbituneGPT(
         OrbituneConfig(vocab_size=32, max_seq_len=16, n_layer=2, n_embd=32, n_head=4, dropout=0.0)
     ).eval()
     cfg = LoRAConfig(rank=4, alpha=8.0, dropout=0.0)
-    inject_lora(model, cfg)
-    for name, parameter in model.named_parameters():
+    inject_lora(adapted, cfg)
+    for name, parameter in adapted.named_parameters():
         if name.endswith("lora_b"):
             parameter.data.normal_(mean=0.0, std=0.02)
     adapter_path = tmp_path / "adapter.safetensors"
-    save_adapter(model, adapter_path, cfg)
+    save_adapter(adapted, adapter_path, cfg)
 
-    clean = OrbituneGPT(model.config).eval()
-    clean.load_state_dict({k.replace(".base", ""): v for k, v in model.state_dict().items() if ".lora_" not in k and ".base." not in k}, strict=False)
-    # Use a fresh Base only to check packed tensor shapes; exact Base-weight equality
-    # is covered by the zero-LoRA test above.
-    a, b, scale = pack_adapter_for_web(clean, adapter_path)
+    base_shape = OrbituneGPT(
+        OrbituneConfig(vocab_size=32, max_seq_len=16, n_layer=2, n_embd=32, n_head=4, dropout=0.0)
+    ).eval()
+    a, b, scale = pack_adapter_for_web(base_shape, adapter_path)
     assert a.shape == (2, 2, 4, 32)
     assert b.shape == (2, 2, 32, 4)
     assert float(scale.item()) == 2.0
