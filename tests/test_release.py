@@ -20,13 +20,8 @@ def test_package_base_release_writes_hashes_and_runtime_config(tmp_path: Path):
     web_onnx = tmp_path / "model.onnx"
     web_onnx.write_bytes(b"orbitune-onnx-test-payload")
     out = tmp_path / "release"
-
     manifest = package_base_release(base, web_onnx, out, repository="Unjuno/orbitune", release_tag="orbitune-base-test")
-
-    checkpoint = out / "orbitune-base.pt"
-    onnx = out / "orbitune-base-web.onnx"
-    manifest_path = out / "orbitune-base-manifest.json"
-    runtime_path = out / "runtime-config.json"
+    checkpoint = out / "orbitune-base.pt"; onnx = out / "orbitune-base-web.onnx"; manifest_path = out / "orbitune-base-manifest.json"; runtime_path = out / "runtime-config.json"
     assert checkpoint.exists() and onnx.exists() and manifest_path.exists() and runtime_path.exists()
     assert manifest["model_id"] == "orbitune-base"
     assert manifest["parameters"] == BASE_PARAMETER_COUNT
@@ -45,7 +40,7 @@ def test_package_base_release_writes_hashes_and_runtime_config(tmp_path: Path):
 def test_validate_base_checkpoint_rejects_wrong_shape(tmp_path: Path):
     path = tmp_path / "tiny.pt"
     OrbituneGPT(OrbituneConfig(vocab_size=32, max_seq_len=16, n_layer=1, n_embd=32, n_head=4)).save_checkpoint(path)
-    with pytest.raises(ValueError, match="not the fixed Orbitune Base architecture"):
+    with pytest.raises(ValueError, match="not the current Orbitune reference architecture"):
         validate_base_checkpoint(path)
 
 
