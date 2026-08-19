@@ -1,57 +1,48 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Orbitune</title>
-    <style>
-      :root { color-scheme: light dark; }
-      body { font-family: system-ui, sans-serif; margin: 0 auto; padding: 1.25rem; max-width: 680px; }
-      label { display: block; margin-top: 1rem; font-weight: 650; }
-      input, select, button, a.button { width: 100%; box-sizing: border-box; padding: 0.8rem; margin-top: 0.35rem; font: inherit; }
-      button, a.button { margin-top: 1.2rem; cursor: pointer; font-weight: 700; text-align: center; }
-      a.button { display: block; text-decoration: none; border: 1px solid currentColor; border-radius: 4px; }
-      button:disabled { cursor: progress; opacity: 0.55; }
-      .card { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 16px; padding: 1.1rem; }
-      .muted { opacity: 0.7; }
-      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
-      pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; border-radius: 10px; background: color-mix(in srgb, currentColor 8%, transparent); }
-      @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
-    </style>
-  </head>
-  <body>
-    <h1>Orbitune</h1>
-    <p class="muted">Small local MIDI generation with a fixed 3M Base and community LoRA adapters.</p>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orbitune</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; margin: 0 auto; padding: 1.25rem; max-width: 680px; }
+    label { display: block; margin-top: 1rem; font-weight: 650; }
+    input, select, button, a.button { width: 100%; box-sizing: border-box; padding: 0.8rem; margin-top: 0.35rem; font: inherit; }
+    button, a.button { margin-top: 1.2rem; cursor: pointer; font-weight: 700; text-align: center; }
+    a.button { display: block; text-decoration: none; border: 1px solid currentColor; border-radius: 4px; }
+    button:disabled { cursor: progress; opacity: 0.55; }
+    .card { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 16px; padding: 1.1rem; }
+    .muted { opacity: 0.7; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; border-radius: 10px; background: color-mix(in srgb, currentColor 8%, transparent); }
+    @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>Orbitune</h1>
+  <p class="muted">Small local MIDI generation with repository-managed Base models and LoRA adapters.</p>
+  <main class="card">
+    <label for="base">Base</label>
+    <select id="base"></select>
+    <div id="base-meta" class="muted">Loading Base registry…</div>
 
-    <main class="card">
-      <label for="adapter">Adapter</label>
-      <select id="adapter"><option value="">Base only</option></select>
-      <div id="adapter-meta" class="muted">Loading adapter registry…</div>
+    <label for="adapter">Adapter</label>
+    <select id="adapter"><option value="">Base only</option></select>
+    <div id="adapter-meta" class="muted">Loading Adapter registry…</div>
 
-      <div class="row">
-        <div>
-          <label for="bpm">BPM</label>
-          <input id="bpm" type="number" min="40" max="220" value="84" inputmode="numeric" />
-        </div>
-        <div>
-          <label for="bars">Length</label>
-          <select id="bars">
-            <option value="4">4 bars</option>
-            <option value="8" selected>8 bars</option>
-            <option value="16">16 bars</option>
-          </select>
-        </div>
-      </div>
+    <div class="row">
+      <div><label for="bpm">BPM</label><input id="bpm" type="number" min="40" max="220" value="84" inputmode="numeric" /></div>
+      <div><label for="bars">Length</label><select id="bars"><option value="4">4 bars</option><option value="8" selected>8 bars</option><option value="16">16 bars</option></select></div>
+    </div>
 
-      <label for="temperature">Temperature: <span id="temperature-value">0.85</span></label>
-      <input id="temperature" type="range" min="0.60" max="1.20" step="0.05" value="0.85" />
-
-      <button id="generate" type="button" disabled>Generate MIDI</button>
-      <a id="download" class="button" hidden>Download MIDI</a>
-      <pre id="status">Loading runtime status…</pre>
-    </main>
-
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-    <script type="module" src="./app.mjs"></script>
-  </body>
+    <label for="temperature">Temperature: <span id="temperature-value">0.85</span></label>
+    <input id="temperature" type="range" min="0.60" max="1.20" step="0.05" value="0.85" />
+    <button id="generate" type="button" disabled>Generate MIDI</button>
+    <a id="download" class="button" hidden>Download MIDI</a>
+    <pre id="status">Loading runtime status…</pre>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <script type="module" src="./app.mjs"></script>
+</body>
 </html>
