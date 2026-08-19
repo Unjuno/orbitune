@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-# Default official Base id used by scaffolding only. It is NOT a global
-# compatibility singleton: contributed Bases may coexist under other ids.
+# Default official Base id used by scaffolding and legacy helpers only.
+# It is NOT a global compatibility singleton: contributed Bases may coexist.
 DEFAULT_BASE_MODEL_ID = "orbitune-base"
+BASE_MODEL_ID = DEFAULT_BASE_MODEL_ID  # backward-compatible alias
 BASE_PARAMETER_COUNT = 2_945_760
 
 # Protocol / ABI identifiers. A Base declares which ABI it implements.
