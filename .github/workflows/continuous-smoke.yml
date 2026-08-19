@@ -42,15 +42,18 @@ jobs:
           Path('/tmp/orbitune-continuous/train.tokens').write_text('\n'.join(train)+'\n')
           Path('/tmp/orbitune-continuous/validation.tokens').write_text('\n'.join(valid)+'\n')
           PY
-      - name: Train first step
+      - name: Train first step and create token snapshot
         run: |
           python scripts/continuous_train.py \
             --train /tmp/orbitune-continuous/train.tokens \
             --validation /tmp/orbitune-continuous/validation.tokens \
             --state /tmp/orbitune-continuous/state.pt \
+            --healthy-state /tmp/orbitune-continuous/healthy.pt \
             --best /tmp/orbitune-continuous/best.pt \
+            --snapshots-dir /tmp/orbitune-continuous/snapshots \
             --report /tmp/orbitune-continuous/report-1.json \
             --max-steps 1 --max-seconds 300 --validation-interval 1 \
+            --snapshot-token-interval 16 \
             --batch-size 1 --seq-len 16
       - name: Resume second step
         run: |
@@ -58,19 +61,33 @@ jobs:
             --train /tmp/orbitune-continuous/train.tokens \
             --validation /tmp/orbitune-continuous/validation.tokens \
             --state /tmp/orbitune-continuous/state.pt \
+            --healthy-state /tmp/orbitune-continuous/healthy.pt \
             --best /tmp/orbitune-continuous/best.pt \
+            --snapshots-dir /tmp/orbitune-continuous/snapshots \
             --report /tmp/orbitune-continuous/report-2.json \
             --max-steps 2 --max-seconds 300 --validation-interval 1 \
+            --snapshot-token-interval 16 \
             --batch-size 1 --seq-len 16
-      - name: Assert continuation contract
+      - name: Assert continuation, snapshot, and health contract
         run: |
           python - <<'PY'
           import json
+          from pathlib import Path
+          import torch
           first=json.load(open('/tmp/orbitune-continuous/report-1.json'))
           second=json.load(open('/tmp/orbitune-continuous/report-2.json'))
           assert first['parameters']==10_200_960
           assert first['run_start_step']==0 and first['global_step']==1
+          assert first['tokens_seen']==16 and first['status']=='healthy'
           assert second['run_start_step']==1 and second['global_step']==2
-          assert second['steps_this_run']==1
-          print('continuous resume PASS')
+          assert second['run_start_tokens']==16 and second['tokens_seen']==32
+          assert second['steps_this_run']==1 and second['tokens_this_run']==16
+          assert second['status']=='healthy' and second['rollback_reason'] is None
+          snapshots=sorted(Path('/tmp/orbitune-continuous/snapshots').glob('tokens-*.pt'))
+          assert [p.name for p in snapshots] == ['tokens-000000000016.pt','tokens-000000000032.pt']
+          healthy=torch.load('/tmp/orbitune-continuous/healthy.pt', map_location='cpu', weights_only=False)
+          latest=torch.load('/tmp/orbitune-continuous/state.pt', map_location='cpu', weights_only=False)
+          assert healthy['global_step']==2 and healthy['tokens_seen']==32
+          assert latest['global_step']==2 and latest['tokens_seen']==32
+          print('continuous resume/snapshot/health PASS')
           PY
