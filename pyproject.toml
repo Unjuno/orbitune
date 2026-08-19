@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Orbitune contributors" }]
-dependencies = []
+dependencies = [
+  "torch>=2.3"
+]
 
 [project.scripts]
 orbitune = "orbitune.cli:main"
