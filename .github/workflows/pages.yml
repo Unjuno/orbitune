@@ -26,6 +26,8 @@ jobs:
         with:
           python-version: '3.12'
       - uses: actions/configure-pages@v5
+      - name: Validate browser runtime config
+        run: python scripts/configure_web_model.py web/runtime-config.json --allow-unpublished
       - name: Build bundled adapter registry and browser assets
         env:
           PYTHONPATH: .
