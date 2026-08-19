@@ -9,6 +9,8 @@ import torch.nn as nn
 from safetensors import safe_open
 from safetensors.torch import load_file, save_file
 
+from orbitune.compat import ADAPTER_FORMAT_ABI, validate_sha256
+
 
 @dataclass(slots=True)
 class LoRAConfig:
@@ -66,10 +68,14 @@ def adapter_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
 
 
 def save_adapter(model: nn.Module, path: str | Path, cfg: LoRAConfig) -> None:
+    base_sha256 = getattr(model, "base_sha256", None)
+    if not isinstance(base_sha256, str) or not validate_sha256(base_sha256):
+        raise ValueError("adapter can only be saved from a model loaded from an exact Base checkpoint")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     metadata = {
-        "format": "orbitune-lora-v0",
+        "format": ADAPTER_FORMAT_ABI,
+        "base_sha256": base_sha256,
         "rank": str(cfg.rank),
         "alpha": str(cfg.alpha),
         "dropout": str(cfg.dropout),
@@ -83,8 +89,14 @@ def load_adapter(model: nn.Module, path: str | Path, *, map_location: str | torc
     device = str(map_location)
     with safe_open(str(path), framework="pt", device=device) as handle:
         metadata = handle.metadata() or {}
-    if metadata.get("format") != "orbitune-lora-v0":
+    if metadata.get("format") != ADAPTER_FORMAT_ABI:
         raise ValueError("unsupported adapter format")
+    adapter_base_sha = metadata.get("base_sha256", "").lower()
+    model_base_sha = getattr(model, "base_sha256", None)
+    if not validate_sha256(adapter_base_sha):
+        raise ValueError("adapter is missing a valid base_sha256")
+    if not isinstance(model_base_sha, str) or adapter_base_sha != model_base_sha.lower():
+        raise ValueError("adapter was trained for a different Base checkpoint")
     cfg = LoRAConfig(
         rank=int(metadata["rank"]),
         alpha=float(metadata["alpha"]),
