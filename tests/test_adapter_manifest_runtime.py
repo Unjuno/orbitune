@@ -9,7 +9,8 @@ def valid_manifest() -> dict:
         "display_name": "Chill Piano",
         "description": "Soft piano BGM tendency.",
         "adapter_family": "style",
-        "base_model": "orbitune-tiny-v0",
+        "base_model": "orbitune-base",
+        "base_sha256": "a" * 64,
         "architecture": "orbitune-midi-gpt-v0",
         "parameter_scale": "3m",
         "tokenizer": "theory-remi-v0",
@@ -39,7 +40,13 @@ def test_wrong_base_model_fails():
     assert any("base_model" in error for error in validate_manifest(manifest))
 
 
-def test_v0_rejects_wrong_rank_and_target_set():
+def test_exact_base_hash_is_required():
+    manifest = valid_manifest()
+    manifest["base_sha256"] = "TODO"
+    assert any("base_sha256" in error for error in validate_manifest(manifest))
+
+
+def test_adapter_abi_rejects_wrong_rank_and_target_set():
     manifest = valid_manifest()
     manifest["rank"] = 8
     manifest["target_modules"] = ["q_proj"]
