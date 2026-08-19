@@ -105,13 +105,26 @@ def _cmd_train_base(args: argparse.Namespace) -> None:
         n_head=4,
         dropout=args.dropout,
     )
-    report = train_base(args.tokens, args.out, model_cfg=cfg, train_cfg=_train_cfg(args))
+    report = train_base(
+        args.tokens,
+        args.out,
+        model_cfg=cfg,
+        train_cfg=_train_cfg(args),
+        validation_token_paths=args.validation_tokens,
+    )
     print(json.dumps(report, indent=2))
 
 
 def _cmd_train_adapter(args: argparse.Namespace) -> None:
     lora_cfg = LoRAConfig(rank=args.rank, alpha=args.alpha, dropout=args.lora_dropout)
-    report = train_adapter(args.base, args.tokens, args.out, lora_cfg=lora_cfg, train_cfg=_train_cfg(args))
+    report = train_adapter(
+        args.base,
+        args.tokens,
+        args.out,
+        lora_cfg=lora_cfg,
+        train_cfg=_train_cfg(args),
+        validation_token_paths=args.validation_tokens,
+    )
     print(json.dumps(report, indent=2))
 
 
@@ -154,7 +167,8 @@ def _cmd_package_adapter(args: argparse.Namespace) -> None:
 
 
 def _add_train_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--tokens", nargs="+", required=True, help="one or more Theory-REMI token text files")
+    parser.add_argument("--tokens", nargs="+", required=True, help="one or more Theory-REMI training token text files")
+    parser.add_argument("--validation-tokens", nargs="+", help="held-out Theory-REMI token files used only for validation loss")
     parser.add_argument("--steps", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--seq-len", type=int, default=128)
@@ -179,7 +193,7 @@ def build_parser() -> argparse.ArgumentParser:
     tokenize.add_argument("--out", required=True)
     tokenize.set_defaults(func=_cmd_tokenize)
 
-    corpus = subparsers.add_parser("prepare-corpus", help="convert a MIDI directory into one training token corpus")
+    corpus = subparsers.add_parser("prepare-corpus", help="convert a MIDI directory into one v0 training token corpus")
     corpus.add_argument("source")
     corpus.add_argument("--out", required=True, help="output Theory-REMI token text file")
     corpus.add_argument("--report", required=True, help="JSON data-quality report")
