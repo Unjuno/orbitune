@@ -2,29 +2,36 @@
 
 Orbitune is a lightweight MIDI generation framework for local BGM creation.
 
-It uses a shared small MIDI base model and small LoRA adapters to generate style-specific background music. The project focuses on symbolic MIDI generation, adapter training, adapter validation, and a simple web UI for selecting adapters and generating MIDI.
+It uses one shared small MIDI Base model and small LoRA adapters to generate style-specific background music. The project focuses on symbolic MIDI generation, contributor-trainable adapters, local inference, and a smartphone-oriented browser UI.
 
 Orbitune v0 is MIDI-only. It does not generate raw audio waveforms, audio-codec tokens, vocals, mixes, or environmental sound directly.
 
 ## Project goals
 
-- Provide a fixed ~3M-parameter MIDI base model target: `orbitune-tiny-v0`.
-- Support small LoRA adapters as style, genre, mood, or texture-like BGM packs.
-- Let contributors train, validate, and commit compatible adapters.
-- Keep the base model weights out of the repository.
-- Provide a smartphone-oriented web UI with adapter selection, BPM, length, and temperature.
+- Provide one fixed MIDI Base: `orbitune-tiny-v0`.
+- Keep the Base small enough for container training experiments and smartphone-oriented inference.
+- Keep community style packs as small rank-4 LoRA Safetensors files.
+- Let contributors train, validate, and commit compatible adapters directly to the repository.
+- Keep Base weights out of Git history.
+- Generate MIDI locally with Adapter, BPM, Length, and Temperature as the primary UI controls.
 
-## v0 scope
+## v0 compatibility contract
 
-- Symbolic MIDI generation only
-- Theory-REMI v0 token format
-- Piano/BGM-oriented generation
-- Fixed 2,945,760-parameter decoder-only Transformer (`4 layers × 240 hidden`, 4 heads, context 512)
-- LoRA on `q_proj` and `v_proj`
-- Safetensors adapter files
-- Base + one LoRA adapter at a time
-- 4 to 8 bar generation as the default UX
-- GitHub-first distribution
+```text
+Base model       orbitune-tiny-v0
+Architecture     orbitune-midi-gpt-v0
+Parameters       2,945,760
+Layers           4
+Hidden size      240
+Attention heads  4
+Context          512 tokens
+Tokenizer        theory-remi-v0 (204 tokens)
+LoRA rank        4
+LoRA targets     q_proj + v_proj
+Adapter format   Safetensors
+```
+
+The v0 contract is intentionally narrow. An adapter with a different Base, tokenizer, hidden size, rank, or LoRA target set is not v0-compatible.
 
 ## Non-goals
 
@@ -46,7 +53,7 @@ python -m pytest -q
 orbitune model-info
 ```
 
-Generate a deterministic demo MIDI file and roundtrip it through Theory-REMI tokens:
+Generate a deterministic demo MIDI and roundtrip it through Theory-REMI:
 
 ```bash
 orbitune generate-demo --out examples/generated/demo.mid --bars 4 --bpm 84
@@ -56,9 +63,24 @@ orbitune inspect examples/generated --out examples/generated/inspect.json
 orbitune eval-midi examples/generated/demo.mid --out examples/generated/demo-eval.json
 ```
 
-## Prepare a MIDI corpus
+## Prepare a real MIDI corpus
 
-For a directory of MIDI files, build one training token corpus and a data-quality report:
+Orbitune v0 accepts Standard MIDI File type 0 and type 1. Type 1 note tracks are merged. By default corpus preparation rejects unsupported time signatures so the current 16-position-per-4/4-bar representation is not silently corrupted.
+
+For real experiments, split at the **MIDI-file level**, not the token level:
+
+```bash
+orbitune prepare-split-corpus data/raw \
+  --train-out data/tokens/train.tokens \
+  --validation-out data/tokens/validation.tokens \
+  --report data/tokens/split-report.json \
+  --validation-fraction 0.1 \
+  --min-events 8
+```
+
+Song boundaries are preserved with `EOS / BOS` tokens. Bad or unsupported files are recorded in the report rather than aborting the whole conversion.
+
+For a single corpus without a validation split:
 
 ```bash
 orbitune prepare-corpus data/raw \
@@ -67,33 +89,42 @@ orbitune prepare-corpus data/raw \
   --min-events 8
 ```
 
-Bad or unsupported files are recorded in the report instead of aborting the entire corpus conversion.
-
-## Train a base model
+## Train the Base
 
 ```bash
 orbitune train-base \
-  --tokens data/tokens/base.tokens \
+  --tokens data/tokens/train.tokens \
+  --validation-tokens data/tokens/validation.tokens \
   --out models/orbitune-tiny-v0.pt \
   --steps 1000 \
   --batch-size 8 \
   --seq-len 128
 ```
 
-Training reports include loss, elapsed time, processed-token count, and token throughput. The base checkpoint is intentionally ignored by Git and should be distributed as a release asset.
+Training reports include training loss, held-out validation loss when supplied, elapsed time, processed-token count, and token throughput. The Base checkpoint is ignored by Git and should eventually be distributed as a release asset.
 
-## Train a LoRA adapter
+## Train a community Adapter
+
+Create the directory scaffold first:
+
+```bash
+orbitune init-adapter adapters/community/my-style-v0 \
+  --name my-style-v0 \
+  --display-name "My Style"
+```
+
+Then train the fixed rank-4 adapter:
 
 ```bash
 orbitune train-adapter \
   --base models/orbitune-tiny-v0.pt \
-  --tokens data/tokens/my-style.tokens \
+  --tokens data/tokens/my-style-train.tokens \
+  --validation-tokens data/tokens/my-style-validation.tokens \
   --out adapters/community/my-style-v0/adapter.safetensors \
-  --rank 4 \
   --steps 500
 ```
 
-Adapters target `q_proj` and `v_proj`. Training seeds exist for reproducible experiments, but seed selection is not part of the v0 web UI.
+Complete `manifest.json`, add `demo.mid`, confirm the training-data rights declaration, and validate before committing.
 
 ## Generate MIDI
 
@@ -101,12 +132,13 @@ Adapters target `q_proj` and `v_proj`. Training seeds exist for reproducible exp
 orbitune generate \
   --base models/orbitune-tiny-v0.pt \
   --adapter adapters/community/my-style-v0/adapter.safetensors \
+  --bars 8 \
   --temperature 0.85 \
   --bpm 84 \
   --out generated.mid
 ```
 
-Generation uses a grammar constraint so the model emits `BAR / POSITION / PITCH / DURATION / VELOCITY` sequences that can be converted back into MIDI.
+The generation grammar enforces complete note events, monotonically increasing positions inside each bar, and the requested number of bars before `EOS`. Each completed bar must reach the final quarter of the bar, preventing an 8-bar request from collapsing into eight one-note fragments.
 
 ## Reproducible CPU smoke training
 
@@ -120,16 +152,77 @@ python scripts/smoke_train.py \
   --out smoke-training-report.json
 ```
 
-Measured container results and limitations are documented in [`docs/CONTAINER_TRAINING.md`](docs/CONTAINER_TRAINING.md). This smoke test uses synthetic grammar-valid patterns and therefore verifies the pipeline and compute scale, not music quality.
+Measured container results and limitations are documented in [`docs/CONTAINER_TRAINING.md`](docs/CONTAINER_TRAINING.md). The synthetic smoke corpus verifies the training pipeline and compute scale; it is **not** evidence of music quality.
+
+## Browser deployment contract
+
+Orbitune keeps one Base model and passes LoRA matrices as external runtime inputs. Adapters therefore remain small instead of requiring a separate 3M model export for every style.
+
+Install optional export dependencies and export the browser graph:
+
+```bash
+python -m pip install -e '.[export]'
+orbitune export-web-onnx \
+  --base models/orbitune-tiny-v0.pt \
+  --out orbitune-tiny-v0-web.onnx
+```
+
+Browser graph inputs:
+
+```text
+input_ids    int64    [1, sequence]
+lora_a       float32  [4, 2, 4, 240]
+lora_b       float32  [4, 2, 240, 4]
+lora_scale   float32  [1]
+```
+
+`web/orbitune-runtime.mjs` packs a v0 Adapter Safetensors file into those inputs and produces MIDI bytes after grammar-constrained sampling. WASM is the default browser execution provider; acceleration can be evaluated separately after the baseline works.
+
+`web/runtime-config.json` intentionally has an empty `model_url` until an official Base ONNX asset is published. The Pages UI remains disabled until that URL is configured.
+
+## Adapter registry and Pages
+
+Contributor adapters are committed directly under:
+
+```text
+adapters/official/<adapter-id>/
+adapters/community/<adapter-id>/
+```
+
+Each accepted adapter directory contains:
+
+```text
+manifest.json
+adapter.safetensors
+demo.mid
+README.md
+```
+
+The registry is generated from these directories rather than edited manually:
+
+```bash
+python scripts/build_registry.py --adapters adapters --out registry/adapters.json
+```
+
+The GitHub Pages workflow uses the same builder and copies bundled adapter assets into the static site artifact automatically.
 
 ## Adapter validation
 
 ```bash
-orbitune validate-adapter path/to/manifest.json
-orbitune package-adapter path/to/adapter_dir --manifest path/to/manifest.json --out adapter.zip
+orbitune validate-adapter adapters/community/my-style-v0/manifest.json
+orbitune package-adapter adapters/community/my-style-v0 \
+  --manifest adapters/community/my-style-v0/manifest.json \
+  --out my-style-v0.zip
 ```
 
-Small compatible adapters may be committed directly under `adapters/official/` or `adapters/community/`, provided that they include a manifest, README, demo MIDI, license declaration, and pass validation.
+## CI layers
+
+- `test.yml`: Python unit/integration tests
+- `web-test.yml`: Node tests for browser grammar, sampling, MIDI generation, and Safetensors adapter packing
+- `ml-smoke.yml`: full-size Base + LoRA CPU training smoke
+- `export-smoke.yml`: actual ONNX export and ONNX Runtime dynamic-sequence inference
+- `validate-adapters.yml`: bundled community/official adapter validation
+- `pages.yml`: static site and adapter asset build/deploy
 
 ## Current command surface
 
@@ -138,21 +231,23 @@ orbitune generate-demo
 orbitune inspect
 orbitune tokenize
 orbitune prepare-corpus
+orbitune prepare-split-corpus
 orbitune detokenize
 orbitune eval-midi
+orbitune init-adapter
 orbitune model-info
 orbitune train-base
 orbitune train-adapter
 orbitune generate
+orbitune export-onnx
+orbitune export-web-onnx
 orbitune validate-adapter
 orbitune package-adapter
 ```
 
 ## Repository policy
 
-Base model weights are not committed to this repository. Use `scripts/download_base_model.py` once an official release asset is available.
-
-Community adapters are intentionally small and may be committed directly when they satisfy the repository policy and compatibility checks.
+Base model weights are not committed to this repository. Community adapters are intentionally small and may be committed directly when they satisfy the compatibility, metadata, rights, and CI checks.
 
 ## License
 
