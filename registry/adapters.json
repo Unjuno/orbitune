@@ -1,7 +1,4 @@
 {
-  "schema_version": "0.1.0",
-  "base_model": "orbitune-base",
-  "base_sha256": "",
-  "tokenizer": "theory-remi-v0",
+  "schema_version": "0.2.0",
   "adapters": []
 }
