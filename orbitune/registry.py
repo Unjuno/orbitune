@@ -59,6 +59,14 @@ def build_registry(root: str | Path = "adapters", base_root: str | Path | None =
     return {"schema_version": "0.2.0", "adapters": entries}
 
 
+def write_registry(out: str | Path, root: str | Path = "adapters", base_root: str | Path | None = None) -> dict[str, Any]:
+    registry = build_registry(root, base_root)
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
+    return registry
+
+
 def write_registries(adapter_out: str | Path, base_out: str | Path, adapter_root: str | Path = "adapters", base_root: str | Path = "bases") -> tuple[dict[str, Any], dict[str, Any]]:
     bases = build_base_registry(base_root)
     adapters = build_registry(adapter_root, base_root)
@@ -84,3 +92,15 @@ def build_web_assets(web_root: str | Path = "web", adapter_root: str | Path = "a
         for name in ("manifest.json", manifest["web_onnx"]["filename"]):
             shutil.copy2(directory / name, dest / name)
     return bases, adapters
+
+
+def build_web_adapter_assets(web_root: str | Path = "web", adapter_root: str | Path = "adapters") -> dict[str, Any]:
+    # Legacy wrapper retained for tests/tools that have not migrated to Base registry generation.
+    registry = write_registry(Path(web_root) / "data" / "adapters.json", adapter_root)
+    destination_root = Path(web_root) / "adapters"
+    if destination_root.exists(): shutil.rmtree(destination_root)
+    for directory in discover_adapter_directories(adapter_root):
+        relative = directory.relative_to(Path(adapter_root)); destination = destination_root / relative; destination.mkdir(parents=True, exist_ok=True)
+        for name in ("adapter.safetensors", "demo.mid", "manifest.json"):
+            shutil.copy2(directory / name, destination / name)
+    return registry
