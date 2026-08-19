@@ -8,6 +8,7 @@ on:
       - 'orbitune/exporting.py'
       - 'orbitune/release.py'
       - 'scripts/package_base_release.py'
+      - 'scripts/configure_web_model.py'
       - 'pyproject.toml'
       - '.github/workflows/export-smoke.yml'
   pull_request:
@@ -17,6 +18,7 @@ on:
       - 'orbitune/exporting.py'
       - 'orbitune/release.py'
       - 'scripts/package_base_release.py'
+      - 'scripts/configure_web_model.py'
       - 'pyproject.toml'
       - '.github/workflows/export-smoke.yml'
   workflow_dispatch:
@@ -81,14 +83,16 @@ jobs:
             --web-onnx orbitune-tiny-v0-web.onnx \
             --out-dir release-smoke \
             --release-tag orbitune-tiny-v0-smoke
+          python scripts/configure_web_model.py release-smoke/runtime-config.json --out /tmp/orbitune-runtime-config.json
           python - <<'PY'
           import json
           manifest = json.load(open('release-smoke/orbitune-tiny-v0-manifest.json', encoding='utf-8'))
-          runtime = json.load(open('release-smoke/runtime-config.json', encoding='utf-8'))
+          runtime = json.load(open('/tmp/orbitune-runtime-config.json', encoding='utf-8'))
           assert manifest['parameters'] == 2_945_760
           assert len(manifest['artifacts']['checkpoint']['sha256']) == 64
           assert len(manifest['artifacts']['web_onnx']['sha256']) == 64
           assert runtime['model_sha256'] == manifest['artifacts']['web_onnx']['sha256']
+          assert runtime['model_url'].startswith('https://github.com/Unjuno/orbitune/releases/download/')
           print('release package contract PASS')
           PY
       - uses: actions/upload-artifact@v4
