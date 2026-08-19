@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import random
 import time
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ class TrainConfig:
     weight_decay: float = 0.01
     device: str = "cpu"
     seed: int = 1234
+    validation_interval: int = 0
 
 
 def read_token_ids(paths: list[str | Path], vocab: TheoryRemiVocab) -> list[int]:
@@ -47,15 +49,20 @@ def _sample_batch(ids: list[int], *, batch_size: int, seq_len: int, device: torc
     return torch.tensor(xs, dtype=torch.long, device=device), torch.tensor(ys, dtype=torch.long, device=device)
 
 
+def _optimizer_parameters(model: OrbituneGPT, *, trainable_only: bool) -> list[torch.nn.Parameter]:
+    parameters = [p for p in model.parameters() if p.requires_grad] if trainable_only else list(model.parameters())
+    if not parameters:
+        raise ValueError("model has no trainable parameters")
+    return parameters
+
+
 def train_model(model: OrbituneGPT, ids: list[int], cfg: TrainConfig, *, trainable_only: bool = False) -> list[float]:
     device = torch.device(cfg.device)
     model.to(device)
     model.train()
     rng = random.Random(cfg.seed)
     torch.manual_seed(cfg.seed)
-    parameters = [p for p in model.parameters() if p.requires_grad] if trainable_only else list(model.parameters())
-    if not parameters:
-        raise ValueError("model has no trainable parameters")
+    parameters = _optimizer_parameters(model, trainable_only=trainable_only)
     optimizer = torch.optim.AdamW(parameters, lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
     losses: list[float] = []
     for _ in range(cfg.steps):
@@ -106,6 +113,69 @@ def evaluate_token_loss(
     return sum(losses) / len(losses)
 
 
+def _train_model_tracked(
+    model: OrbituneGPT,
+    ids: list[int],
+    validation_ids: list[int],
+    cfg: TrainConfig,
+    *,
+    trainable_only: bool,
+) -> tuple[list[float], list[dict[str, float | int]], int, float]:
+    if cfg.validation_interval <= 0:
+        losses = train_model(model, ids, cfg, trainable_only=trainable_only)
+        validation_loss = evaluate_token_loss(
+            model,
+            validation_ids,
+            seq_len=cfg.seq_len,
+            device=cfg.device,
+        )
+        return losses, [{"step": cfg.steps, "validation_loss": validation_loss}], cfg.steps, validation_loss
+
+    device = torch.device(cfg.device)
+    model.to(device)
+    model.train()
+    rng = random.Random(cfg.seed)
+    torch.manual_seed(cfg.seed)
+    parameters = _optimizer_parameters(model, trainable_only=trainable_only)
+    optimizer = torch.optim.AdamW(parameters, lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
+    losses: list[float] = []
+    history: list[dict[str, float | int]] = []
+    best_step = 0
+    best_loss = float("inf")
+    best_state: dict[str, torch.Tensor] | None = None
+
+    for step in range(1, cfg.steps + 1):
+        model.train()
+        x, y = _sample_batch(ids, batch_size=cfg.batch_size, seq_len=cfg.seq_len, device=device, rng=rng)
+        _, loss = model(x, y)
+        assert loss is not None
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(parameters, 1.0)
+        optimizer.step()
+        losses.append(float(loss.detach().cpu()))
+
+        should_validate = step % cfg.validation_interval == 0 or step == cfg.steps
+        if should_validate:
+            validation_loss = evaluate_token_loss(
+                model,
+                validation_ids,
+                seq_len=cfg.seq_len,
+                device=cfg.device,
+            )
+            history.append({"step": step, "validation_loss": validation_loss})
+            if validation_loss < best_loss:
+                best_loss = validation_loss
+                best_step = step
+                best_state = copy.deepcopy(model.state_dict())
+
+    if best_state is None:
+        raise RuntimeError("periodic validation produced no checkpoint candidate")
+    model.load_state_dict(best_state)
+    model.eval()
+    return losses, history, best_step, best_loss
+
+
 def _training_metrics(losses: list[float], ids: list[int], cfg: TrainConfig, elapsed_seconds: float) -> dict[str, float | int]:
     usable = min(cfg.seq_len, len(ids) - 1)
     processed_tokens = cfg.steps * cfg.batch_size * usable
@@ -128,27 +198,39 @@ def train_base(
     model_cfg: OrbituneConfig,
     train_cfg: TrainConfig,
     validation_token_paths: list[str | Path] | None = None,
-) -> dict[str, float | int]:
+) -> dict[str, object]:
     vocab = TheoryRemiVocab()
     if model_cfg.vocab_size != len(vocab):
         raise ValueError(f"model vocab_size={model_cfg.vocab_size} != Theory-REMI vocab size={len(vocab)}")
     ids = read_token_ids(token_paths, vocab)
     model = OrbituneGPT(model_cfg)
+    validation_ids = read_token_ids(validation_token_paths, vocab) if validation_token_paths else None
     start = time.perf_counter()
-    losses = train_model(model, ids, train_cfg)
+    if validation_ids is not None:
+        losses, history, best_step, best_loss = _train_model_tracked(
+            model,
+            ids,
+            validation_ids,
+            train_cfg,
+            trainable_only=False,
+        )
+    else:
+        losses = train_model(model, ids, train_cfg)
+        history = []
+        best_step = train_cfg.steps
+        best_loss = float("nan")
     elapsed = time.perf_counter() - start
     model.save_checkpoint(out)
-    report = _training_metrics(losses, ids, train_cfg, elapsed)
+    report: dict[str, object] = _training_metrics(losses, ids, train_cfg, elapsed)
     report["parameters"] = model.parameter_count()
-    if validation_token_paths:
-        validation_ids = read_token_ids(validation_token_paths, vocab)
+    if validation_ids is not None:
         report["validation_tokens"] = len(validation_ids)
-        report["validation_loss"] = evaluate_token_loss(
-            model,
-            validation_ids,
-            seq_len=train_cfg.seq_len,
-            device=train_cfg.device,
-        )
+        report["validation_loss"] = best_loss
+        report["best_validation_step"] = best_step
+        report["validation_history"] = history
+        report["checkpoint_selection"] = "minimum_validation_loss"
+    else:
+        report["checkpoint_selection"] = "final_step"
     return report
 
 
@@ -160,24 +242,36 @@ def train_adapter(
     lora_cfg: LoRAConfig,
     train_cfg: TrainConfig,
     validation_token_paths: list[str | Path] | None = None,
-) -> dict[str, float | int]:
+) -> dict[str, object]:
     vocab = TheoryRemiVocab()
     ids = read_token_ids(token_paths, vocab)
+    validation_ids = read_token_ids(validation_token_paths, vocab) if validation_token_paths else None
     model = OrbituneGPT.load_checkpoint(base)
     inject_lora(model, lora_cfg)
     start = time.perf_counter()
-    losses = train_model(model, ids, train_cfg, trainable_only=True)
+    if validation_ids is not None:
+        losses, history, best_step, best_loss = _train_model_tracked(
+            model,
+            ids,
+            validation_ids,
+            train_cfg,
+            trainable_only=True,
+        )
+    else:
+        losses = train_model(model, ids, train_cfg, trainable_only=True)
+        history = []
+        best_step = train_cfg.steps
+        best_loss = float("nan")
     elapsed = time.perf_counter() - start
     save_adapter(model, out, lora_cfg)
-    report = _training_metrics(losses, ids, train_cfg, elapsed)
+    report: dict[str, object] = _training_metrics(losses, ids, train_cfg, elapsed)
     report["trainable_parameters"] = trainable_parameter_count(model)
-    if validation_token_paths:
-        validation_ids = read_token_ids(validation_token_paths, vocab)
+    if validation_ids is not None:
         report["validation_tokens"] = len(validation_ids)
-        report["validation_loss"] = evaluate_token_loss(
-            model,
-            validation_ids,
-            seq_len=train_cfg.seq_len,
-            device=train_cfg.device,
-        )
+        report["validation_loss"] = best_loss
+        report["best_validation_step"] = best_step
+        report["validation_history"] = history
+        report["checkpoint_selection"] = "minimum_validation_loss"
+    else:
+        report["checkpoint_selection"] = "final_step"
     return report
