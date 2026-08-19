@@ -19,4 +19,4 @@ jobs:
         with:
           node-version: "22"
       - name: Run browser runtime unit tests
-        run: node --test web/orbitune-runtime.test.mjs
+        run: node --test web/*.test.mjs
