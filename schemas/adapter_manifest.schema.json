@@ -5,41 +5,25 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "artifact_type",
-    "name",
-    "version",
-    "display_name",
-    "base_model",
-    "architecture",
-    "parameter_scale",
-    "tokenizer",
-    "adapter_type",
-    "rank",
-    "target_modules",
-    "generation_defaults",
-    "license",
-    "training_data",
-    "tags"
+    "artifact_type", "name", "version", "display_name", "base_model", "base_sha256",
+    "architecture", "parameter_scale", "tokenizer", "adapter_type", "rank",
+    "target_modules", "generation_defaults", "license", "training_data", "tags"
   ],
   "properties": {
     "artifact_type": { "const": "orbitune_adapter" },
     "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*-v[0-9]+$" },
-    "version": { "type": "string" },
+    "version": { "type": "string", "minLength": 1 },
     "display_name": { "type": "string", "minLength": 1 },
     "description": { "type": "string" },
-    "adapter_family": {
-      "type": "string",
-      "enum": ["style", "genre", "texture-like", "control", "instrument", "experimental"]
-    },
-    "base_model": { "const": "orbitune-tiny-v0" },
+    "adapter_family": { "type": "string", "enum": ["style", "genre", "texture-like", "control", "instrument", "experimental"] },
+    "base_model": { "const": "orbitune-base" },
+    "base_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
     "architecture": { "const": "orbitune-midi-gpt-v0" },
     "parameter_scale": { "const": "3m" },
     "tokenizer": { "const": "theory-remi-v0" },
     "adapter_type": { "const": "lora" },
     "rank": { "const": 4 },
-    "target_modules": {
-      "const": ["q_proj", "v_proj"]
-    },
+    "target_modules": { "const": ["q_proj", "v_proj"] },
     "generation_defaults": {
       "type": "object",
       "additionalProperties": false,
@@ -57,18 +41,14 @@
       "additionalProperties": false,
       "required": ["source_type", "license", "rights_confirmed"],
       "properties": {
-        "source_type": { "type": "string" },
-        "license": { "type": "string" },
+        "source_type": { "type": "string", "minLength": 1 },
+        "license": { "type": "string", "minLength": 1 },
         "num_files": { "type": "integer", "minimum": 0 },
         "num_tokens": { "type": "integer", "minimum": 0 },
-        "rights_confirmed": { "type": "boolean" },
+        "rights_confirmed": { "const": true },
         "notes": { "type": "string" }
       }
     },
-    "tags": {
-      "type": "array",
-      "items": { "type": "string" },
-      "uniqueItems": true
-    }
+    "tags": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
   }
 }
