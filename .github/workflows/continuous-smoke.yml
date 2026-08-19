@@ -1,0 +1,76 @@
+name: continuous-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "orbitune/model.py"
+      - "orbitune/compat.py"
+      - "scripts/continuous_train.py"
+      - ".github/workflows/continuous-train.yml"
+      - ".github/workflows/continuous-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "orbitune/model.py"
+      - "orbitune/compat.py"
+      - "scripts/continuous_train.py"
+      - ".github/workflows/continuous-train.yml"
+      - ".github/workflows/continuous-smoke.yml"
+
+jobs:
+  resume-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install CPU PyTorch
+        run: python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
+      - name: Install Orbitune
+        run: python -m pip install -e .
+      - name: Create tiny token corpora
+        run: |
+          mkdir -p /tmp/orbitune-continuous
+          python - <<'PY'
+          from pathlib import Path
+          pattern = ['BAR','POSITION_0','NOTE_PITCH_60','NOTE_DURATION_4','VELOCITY_16','POSITION_12','NOTE_PITCH_67','NOTE_DURATION_4','VELOCITY_16']
+          train = pattern * 80
+          valid = pattern * 16
+          Path('/tmp/orbitune-continuous/train.tokens').write_text('\n'.join(train)+'\n')
+          Path('/tmp/orbitune-continuous/validation.tokens').write_text('\n'.join(valid)+'\n')
+          PY
+      - name: Train first step
+        run: |
+          python scripts/continuous_train.py \
+            --train /tmp/orbitune-continuous/train.tokens \
+            --validation /tmp/orbitune-continuous/validation.tokens \
+            --state /tmp/orbitune-continuous/state.pt \
+            --best /tmp/orbitune-continuous/best.pt \
+            --report /tmp/orbitune-continuous/report-1.json \
+            --max-steps 1 --max-seconds 300 --validation-interval 1 \
+            --batch-size 1 --seq-len 16
+      - name: Resume second step
+        run: |
+          python scripts/continuous_train.py \
+            --train /tmp/orbitune-continuous/train.tokens \
+            --validation /tmp/orbitune-continuous/validation.tokens \
+            --state /tmp/orbitune-continuous/state.pt \
+            --best /tmp/orbitune-continuous/best.pt \
+            --report /tmp/orbitune-continuous/report-2.json \
+            --max-steps 2 --max-seconds 300 --validation-interval 1 \
+            --batch-size 1 --seq-len 16
+      - name: Assert continuation contract
+        run: |
+          python - <<'PY'
+          import json
+          first=json.load(open('/tmp/orbitune-continuous/report-1.json'))
+          second=json.load(open('/tmp/orbitune-continuous/report-2.json'))
+          assert first['parameters']==10_200_960
+          assert first['run_start_step']==0 and first['global_step']==1
+          assert second['run_start_step']==1 and second['global_step']==2
+          assert second['steps_this_run']==1
+          print('continuous resume PASS')
+          PY
