@@ -5,7 +5,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from orbitune.adapter import package_adapter, validate_manifest_file
+from orbitune.adapter import create_adapter_scaffold, package_adapter, validate_manifest_file
 from orbitune.dataset import prepare_corpus
 from orbitune.demo import make_demo_events
 from orbitune.evaluation import write_evaluation
@@ -66,6 +66,20 @@ def _cmd_inspect(args: argparse.Namespace) -> None:
 def _cmd_eval_midi(args: argparse.Namespace) -> None:
     report = write_evaluation(args.midi, args.out)
     print(json.dumps(report, indent=2))
+
+
+def _cmd_init_adapter(args: argparse.Namespace) -> None:
+    root = create_adapter_scaffold(
+        args.directory,
+        name=args.name,
+        display_name=args.display_name,
+        adapter_family=args.family,
+        rank=args.rank,
+        bpm=args.bpm,
+        bars=args.bars,
+        temperature=args.temperature,
+    )
+    print(f"created adapter scaffold at {root}")
 
 
 def _train_cfg(args: argparse.Namespace) -> TrainConfig:
@@ -181,6 +195,17 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("midi")
     evaluate.add_argument("--out", required=True)
     evaluate.set_defaults(func=_cmd_eval_midi)
+
+    init_adapter = subparsers.add_parser("init-adapter", help="create a community adapter directory scaffold")
+    init_adapter.add_argument("directory")
+    init_adapter.add_argument("--name", required=True, help="adapter id such as chill-piano-v0")
+    init_adapter.add_argument("--display-name", required=True)
+    init_adapter.add_argument("--family", default="style")
+    init_adapter.add_argument("--rank", type=int, default=4)
+    init_adapter.add_argument("--bpm", type=int, default=84)
+    init_adapter.add_argument("--bars", type=int, default=8, choices=[4, 8, 16])
+    init_adapter.add_argument("--temperature", type=float, default=0.85)
+    init_adapter.set_defaults(func=_cmd_init_adapter)
 
     train_base_cmd = subparsers.add_parser("train-base", help="train orbitune-tiny-v0 from Theory-REMI token files")
     _add_train_args(train_base_cmd)
