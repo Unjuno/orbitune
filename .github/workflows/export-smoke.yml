@@ -48,7 +48,7 @@ jobs:
           from orbitune.tokenizer.vocab import TheoryRemiVocab
           torch.manual_seed(1234)
           model = OrbituneGPT(OrbituneConfig(vocab_size=len(TheoryRemiVocab())))
-          assert model.parameter_count() == 2_945_760
+          assert model.parameter_count() == 10_200_960
           model.save_checkpoint('orbitune-base-smoke.pt')
           PY
       - name: Export Base plus external LoRA input graph
@@ -59,40 +59,19 @@ jobs:
           import numpy as np
           import onnx
           import onnxruntime as ort
-          path = 'orbitune-base-web.onnx'
-          model = onnx.load(path)
-          onnx.checker.check_model(model)
-          session = ort.InferenceSession(path, providers=['CPUExecutionProvider'])
-          assert [item.name for item in session.get_inputs()] == ['input_ids', 'lora_a', 'lora_b', 'lora_scale']
-          feeds = {
-              'input_ids': np.zeros((1, 13), dtype=np.int64),
-              'lora_a': np.zeros((4, 2, 4, 240), dtype=np.float32),
-              'lora_b': np.zeros((4, 2, 240, 4), dtype=np.float32),
-              'lora_scale': np.ones((1,), dtype=np.float32),
-          }
-          assert session.run(['logits'], feeds)[0].shape == (1, 13, 204)
-          feeds['input_ids'] = np.zeros((1, 5), dtype=np.int64)
-          assert session.run(['logits'], feeds)[0].shape == (1, 5, 204)
-          print('ONNX dynamic web graph PASS')
+          path='orbitune-base-web.onnx'; model=onnx.load(path); onnx.checker.check_model(model); session=ort.InferenceSession(path,providers=['CPUExecutionProvider'])
+          assert [item.name for item in session.get_inputs()] == ['input_ids','lora_a','lora_b','lora_scale']
+          feeds={'input_ids':np.zeros((1,13),dtype=np.int64),'lora_a':np.zeros((4,2,4,448),dtype=np.float32),'lora_b':np.zeros((4,2,448,4),dtype=np.float32),'lora_scale':np.ones((1,),dtype=np.float32)}
+          assert session.run(['logits'],feeds)[0].shape==(1,13,204); feeds['input_ids']=np.zeros((1,5),dtype=np.int64); assert session.run(['logits'],feeds)[0].shape==(1,5,204); print('ONNX dynamic 10M web graph PASS')
           PY
       - name: Stage verified immutable Base release package
         run: |
-          python scripts/package_base_release.py \
-            --base orbitune-base-smoke.pt \
-            --web-onnx orbitune-base-web.onnx \
-            --out-dir release-smoke \
-            --release-tag orbitune-base-smoke
+          python scripts/package_base_release.py --base orbitune-base-smoke.pt --web-onnx orbitune-base-web.onnx --out-dir release-smoke --release-tag orbitune-base-smoke
           python scripts/configure_web_model.py release-smoke/runtime-config.json --out /tmp/orbitune-runtime-config.json
           python - <<'PY'
           import json
-          manifest = json.load(open('release-smoke/orbitune-base-manifest.json', encoding='utf-8'))
-          runtime = json.load(open('/tmp/orbitune-runtime-config.json', encoding='utf-8'))
-          assert manifest['model_id'] == 'orbitune-base'
-          assert manifest['parameters'] == 2_945_760
-          assert manifest['base_sha256'] == manifest['artifacts']['checkpoint']['sha256']
-          assert runtime['base_sha256'] == manifest['base_sha256']
-          assert runtime['model_sha256'] == manifest['artifacts']['web_onnx']['sha256']
-          print('immutable Base release package contract PASS')
+          manifest=json.load(open('release-smoke/orbitune-base-manifest.json',encoding='utf-8')); runtime=json.load(open('/tmp/orbitune-runtime-config.json',encoding='utf-8'))
+          assert manifest['model_id']=='orbitune-base'; assert manifest['parameters']==10_200_960; assert manifest['base_sha256']==manifest['artifacts']['checkpoint']['sha256']; assert runtime['base_sha256']==manifest['base_sha256']; assert runtime['model_sha256']==manifest['artifacts']['web_onnx']['sha256']; print('10M Base release package contract PASS')
           PY
       - uses: actions/upload-artifact@v4
         with:
