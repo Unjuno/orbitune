@@ -1,37 +1,60 @@
 from orbitune.adapter import validate_manifest
 
 
-def test_valid_adapter_manifest_passes():
-    manifest = {
+def valid_manifest() -> dict:
+    return {
         "artifact_type": "orbitune_adapter",
         "name": "chill-piano-v0",
         "version": "0.1.0",
+        "display_name": "Chill Piano",
+        "description": "Soft piano BGM tendency.",
+        "adapter_family": "style",
         "base_model": "orbitune-tiny-v0",
         "architecture": "orbitune-midi-gpt-v0",
+        "parameter_scale": "3m",
         "tokenizer": "theory-remi-v0",
         "adapter_type": "lora",
         "rank": 4,
         "target_modules": ["q_proj", "v_proj"],
         "license": "Apache-2.0",
-        "training_data": {"source_type": "synthetic", "license": "Apache-2.0"},
+        "training_data": {
+            "source_type": "synthetic",
+            "license": "Apache-2.0",
+            "rights_confirmed": True,
+            "num_files": 4,
+            "num_tokens": 1000,
+        },
         "generation_defaults": {"bpm": 84, "bars": 8, "temperature": 0.85},
+        "tags": ["piano", "chill"],
     }
-    assert validate_manifest(manifest) == []
+
+
+def test_valid_adapter_manifest_passes():
+    assert validate_manifest(valid_manifest()) == []
 
 
 def test_wrong_base_model_fails():
-    manifest = {
-        "artifact_type": "orbitune_adapter",
-        "name": "bad-v0",
-        "version": "0.1.0",
-        "base_model": "other-base",
-        "architecture": "orbitune-midi-gpt-v0",
-        "tokenizer": "theory-remi-v0",
-        "adapter_type": "lora",
-        "rank": 4,
-        "target_modules": ["q_proj"],
-        "license": "Apache-2.0",
-        "training_data": {},
-        "generation_defaults": {"temperature": 0.85, "bars": 8},
-    }
+    manifest = valid_manifest()
+    manifest["base_model"] = "other-base"
     assert any("base_model" in error for error in validate_manifest(manifest))
+
+
+def test_v0_rejects_wrong_rank_and_target_set():
+    manifest = valid_manifest()
+    manifest["rank"] = 8
+    manifest["target_modules"] = ["q_proj"]
+    errors = validate_manifest(manifest)
+    assert any("rank must be 4" in error for error in errors)
+    assert any("target_modules" in error for error in errors)
+
+
+def test_rights_confirmation_is_required():
+    manifest = valid_manifest()
+    manifest["training_data"]["rights_confirmed"] = False
+    assert any("rights_confirmed" in error for error in validate_manifest(manifest))
+
+
+def test_unknown_manifest_fields_are_rejected():
+    manifest = valid_manifest()
+    manifest["mystery"] = 123
+    assert any("unknown manifest fields" in error for error in validate_manifest(manifest))
