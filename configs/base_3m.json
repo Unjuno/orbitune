@@ -1,9 +1,10 @@
 {
-  "name": "orbitune-tiny-v0",
+  "name": "orbitune-base",
   "architecture": "orbitune-midi-gpt-v0",
   "tokenizer": "theory-remi-v0",
   "parameter_scale": "3m",
   "parameter_count": 2945760,
+  "immutability": "published checkpoint bytes must never be replaced",
   "model": {
     "max_seq_len": 512,
     "n_layer": 4,
@@ -14,6 +15,7 @@
   "lora": {
     "default_rank": 4,
     "default_alpha": 8.0,
-    "target_modules": ["q_proj", "v_proj"]
+    "target_modules": ["q_proj", "v_proj"],
+    "compatibility_key": "base_sha256"
   }
 }
