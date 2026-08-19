@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from orbitune.midi import read_midi
+from orbitune.midi_metadata import inspect_midi_metadata, is_4_4_compatible
 from orbitune.tokenizer import TheoryRemiTokenizer
 
 
@@ -14,7 +15,14 @@ def find_midi_files(path: str | Path) -> list[Path]:
     return sorted({*root.rglob("*.mid"), *root.rglob("*.midi")})
 
 
-def prepare_corpus(source: str | Path, out_tokens: str | Path, out_report: str | Path, *, min_events: int = 1) -> dict[str, object]:
+def prepare_corpus(
+    source: str | Path,
+    out_tokens: str | Path,
+    out_report: str | Path,
+    *,
+    min_events: int = 1,
+    require_4_4: bool = True,
+) -> dict[str, object]:
     tokenizer = TheoryRemiTokenizer()
     files = find_midi_files(source)
     if not files:
@@ -25,6 +33,13 @@ def prepare_corpus(source: str | Path, out_tokens: str | Path, out_report: str |
     rejected: list[dict[str, str]] = []
     for midi_path in files:
         try:
+            metadata = inspect_midi_metadata(midi_path)
+            if require_4_4 and not is_4_4_compatible(metadata):
+                rejected.append({
+                    "path": str(midi_path),
+                    "reason": f"unsupported_time_signature:{metadata.time_signatures}",
+                })
+                continue
             events = read_midi(midi_path)
             if len(events) < min_events:
                 rejected.append({"path": str(midi_path), "reason": "too_few_events"})
@@ -34,7 +49,16 @@ def prepare_corpus(source: str | Path, out_tokens: str | Path, out_report: str |
                 rejected.append({"path": str(midi_path), "reason": "empty_token_sequence"})
                 continue
             sequences.append(tokens)
-            accepted.append({"path": str(midi_path), "events": len(events), "tokens": len(tokens)})
+            accepted.append(
+                {
+                    "path": str(midi_path),
+                    "events": len(events),
+                    "tokens": len(tokens),
+                    "midi_format": metadata.midi_format,
+                    "tracks": metadata.track_count,
+                    "time_signatures": [list(item) for item in metadata.time_signatures],
+                }
+            )
         except (ValueError, IndexError, OSError) as exc:
             rejected.append({"path": str(midi_path), "reason": f"{type(exc).__name__}: {exc}"})
 
@@ -55,6 +79,7 @@ def prepare_corpus(source: str | Path, out_tokens: str | Path, out_report: str |
 
     report: dict[str, object] = {
         "source": str(source),
+        "require_4_4": require_4_4,
         "files_seen": len(files),
         "files_accepted": len(accepted),
         "files_rejected": len(rejected),
