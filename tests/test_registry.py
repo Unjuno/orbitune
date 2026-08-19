@@ -1,7 +1,33 @@
 import json
 from pathlib import Path
 
+from orbitune.demo import make_demo_events
+from orbitune.midi import write_midi
 from orbitune.registry import build_registry, write_registry
+
+
+def _write_test_safetensors(path: Path) -> None:
+    metadata = {
+        "format": "orbitune-lora-v0",
+        "rank": "4",
+        "alpha": "8.0",
+        "dropout": "0.0",
+        "target_modules": json.dumps(["q_proj", "v_proj"]),
+    }
+    header: dict[str, object] = {"__metadata__": metadata}
+    offset = 0
+    for layer in range(4):
+        for target in ("q_proj", "v_proj"):
+            for suffix, shape in (("lora_a", [4, 240]), ("lora_b", [240, 4])):
+                size = 4 * 240 * 4
+                header[f"blocks.{layer}.attn.{target}.{suffix}"] = {
+                    "dtype": "F32",
+                    "shape": shape,
+                    "data_offsets": [offset, offset + size],
+                }
+                offset += size
+    encoded = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    path.write_bytes(len(encoded).to_bytes(8, "little") + encoded + bytes(offset))
 
 
 def _write_adapter(root: Path, name: str, display_name: str, source: str) -> None:
@@ -31,8 +57,8 @@ def _write_adapter(root: Path, name: str, display_name: str, source: str) -> Non
         "tags": ["test"],
     }
     (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    (directory / "adapter.safetensors").write_bytes(b"test")
-    (directory / "demo.mid").write_bytes(b"MThd")
+    _write_test_safetensors(directory / "adapter.safetensors")
+    write_midi(make_demo_events(bars=1), directory / "demo.mid", bpm=84)
     (directory / "README.md").write_text("# test\n", encoding="utf-8")
 
 
