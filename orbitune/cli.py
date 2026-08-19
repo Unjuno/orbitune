@@ -105,6 +105,7 @@ def _train_cfg(args: argparse.Namespace) -> TrainConfig:
         weight_decay=args.weight_decay,
         device=args.device,
         seed=args.seed,
+        validation_interval=args.validation_interval,
     )
 
 
@@ -188,6 +189,7 @@ def _cmd_package_adapter(args: argparse.Namespace) -> None:
 def _add_train_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--tokens", nargs="+", required=True, help="one or more Theory-REMI training token text files")
     parser.add_argument("--validation-tokens", nargs="+", help="held-out Theory-REMI token files used only for validation loss")
+    parser.add_argument("--validation-interval", type=int, default=0, help="evaluate held-out loss every N steps and save the best checkpoint; 0 evaluates only the final step")
     parser.add_argument("--steps", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--seq-len", type=int, default=128)
@@ -312,6 +314,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+    if getattr(args, "validation_interval", 0) < 0:
+        raise SystemExit("--validation-interval must be >= 0")
+    if getattr(args, "validation_interval", 0) > 0 and not getattr(args, "validation_tokens", None):
+        raise SystemExit("--validation-interval requires --validation-tokens")
     args.func(args)
 
 
