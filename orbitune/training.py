@@ -70,6 +70,42 @@ def train_model(model: OrbituneGPT, ids: list[int], cfg: TrainConfig, *, trainab
     return losses
 
 
+@torch.no_grad()
+def evaluate_token_loss(
+    model: OrbituneGPT,
+    ids: list[int],
+    *,
+    seq_len: int,
+    device: str = "cpu",
+    max_windows: int = 32,
+) -> float:
+    if len(ids) < 3:
+        raise ValueError("validation corpus is too small")
+    device_obj = torch.device(device)
+    model.to(device_obj)
+    model.eval()
+    usable = min(seq_len, model.config.max_seq_len, len(ids) - 1)
+    if usable < 2:
+        raise ValueError("validation sequence is too short")
+
+    stride = usable
+    losses: list[float] = []
+    for start in range(0, len(ids) - 1, stride):
+        if len(losses) >= max_windows:
+            break
+        end = min(start + usable, len(ids) - 1)
+        if end - start < 2:
+            break
+        x = torch.tensor([ids[start:end]], dtype=torch.long, device=device_obj)
+        y = torch.tensor([ids[start + 1 : end + 1]], dtype=torch.long, device=device_obj)
+        _, loss = model(x, y)
+        assert loss is not None
+        losses.append(float(loss.detach().cpu()))
+    if not losses:
+        raise ValueError("validation corpus produced no evaluation windows")
+    return sum(losses) / len(losses)
+
+
 def _training_metrics(losses: list[float], ids: list[int], cfg: TrainConfig, elapsed_seconds: float) -> dict[str, float | int]:
     usable = min(cfg.seq_len, len(ids) - 1)
     processed_tokens = cfg.steps * cfg.batch_size * usable
@@ -85,7 +121,14 @@ def _training_metrics(losses: list[float], ids: list[int], cfg: TrainConfig, ela
     }
 
 
-def train_base(token_paths: list[str | Path], out: str | Path, *, model_cfg: OrbituneConfig, train_cfg: TrainConfig) -> dict[str, float | int]:
+def train_base(
+    token_paths: list[str | Path],
+    out: str | Path,
+    *,
+    model_cfg: OrbituneConfig,
+    train_cfg: TrainConfig,
+    validation_token_paths: list[str | Path] | None = None,
+) -> dict[str, float | int]:
     vocab = TheoryRemiVocab()
     if model_cfg.vocab_size != len(vocab):
         raise ValueError(f"model vocab_size={model_cfg.vocab_size} != Theory-REMI vocab size={len(vocab)}")
@@ -97,10 +140,27 @@ def train_base(token_paths: list[str | Path], out: str | Path, *, model_cfg: Orb
     model.save_checkpoint(out)
     report = _training_metrics(losses, ids, train_cfg, elapsed)
     report["parameters"] = model.parameter_count()
+    if validation_token_paths:
+        validation_ids = read_token_ids(validation_token_paths, vocab)
+        report["validation_tokens"] = len(validation_ids)
+        report["validation_loss"] = evaluate_token_loss(
+            model,
+            validation_ids,
+            seq_len=train_cfg.seq_len,
+            device=train_cfg.device,
+        )
     return report
 
 
-def train_adapter(base: str | Path, token_paths: list[str | Path], out: str | Path, *, lora_cfg: LoRAConfig, train_cfg: TrainConfig) -> dict[str, float | int]:
+def train_adapter(
+    base: str | Path,
+    token_paths: list[str | Path],
+    out: str | Path,
+    *,
+    lora_cfg: LoRAConfig,
+    train_cfg: TrainConfig,
+    validation_token_paths: list[str | Path] | None = None,
+) -> dict[str, float | int]:
     vocab = TheoryRemiVocab()
     ids = read_token_ids(token_paths, vocab)
     model = OrbituneGPT.load_checkpoint(base)
@@ -111,4 +171,13 @@ def train_adapter(base: str | Path, token_paths: list[str | Path], out: str | Pa
     save_adapter(model, out, lora_cfg)
     report = _training_metrics(losses, ids, train_cfg, elapsed)
     report["trainable_parameters"] = trainable_parameter_count(model)
+    if validation_token_paths:
+        validation_ids = read_token_ids(validation_token_paths, vocab)
+        report["validation_tokens"] = len(validation_ids)
+        report["validation_loss"] = evaluate_token_loss(
+            model,
+            validation_ids,
+            seq_len=train_cfg.seq_len,
+            device=train_cfg.device,
+        )
     return report
