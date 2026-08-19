@@ -8,6 +8,7 @@ from pathlib import Path
 from orbitune.adapter import package_adapter, validate_manifest_file
 from orbitune.dataset import prepare_corpus
 from orbitune.demo import make_demo_events
+from orbitune.evaluation import write_evaluation
 from orbitune.inference import generate_midi
 from orbitune.lora import LoRAConfig
 from orbitune.midi import read_midi, write_midi
@@ -60,6 +61,11 @@ def _cmd_inspect(args: argparse.Namespace) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {args.out}")
+
+
+def _cmd_eval_midi(args: argparse.Namespace) -> None:
+    report = write_evaluation(args.midi, args.out)
+    print(json.dumps(report, indent=2))
 
 
 def _train_cfg(args: argparse.Namespace) -> TrainConfig:
@@ -170,6 +176,11 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("path")
     inspect.add_argument("--out", required=True)
     inspect.set_defaults(func=_cmd_inspect)
+
+    evaluate = subparsers.add_parser("eval-midi", help="write structural metrics for one MIDI file")
+    evaluate.add_argument("midi")
+    evaluate.add_argument("--out", required=True)
+    evaluate.set_defaults(func=_cmd_eval_midi)
 
     train_base_cmd = subparsers.add_parser("train-base", help="train orbitune-tiny-v0 from Theory-REMI token files")
     _add_train_args(train_base_cmd)
