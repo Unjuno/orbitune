@@ -5,6 +5,7 @@ import json
 import os
 import random
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 import torch
@@ -51,6 +52,7 @@ def main() -> None:
     report_path = Path(args.report)
 
     cfg = OrbituneConfig(vocab_size=len(vocab))
+    config_dict = asdict(cfg)
     model = OrbituneGPT(cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     rng = random.Random(args.seed)
@@ -60,17 +62,15 @@ def main() -> None:
 
     if state_path.is_file():
         payload = torch.load(state_path, map_location="cpu", weights_only=False)
-        if payload.get("architecture") != model.architecture or payload.get("config") != vars(cfg):
+        if payload.get("architecture") != model.architecture or payload.get("config") != config_dict:
             raise ValueError("continuous training state architecture/config mismatch")
         model.load_state_dict(payload["model_state"])
         optimizer.load_state_dict(payload["optimizer_state"])
         global_step = int(payload.get("global_step", 0))
         best_validation_loss = float(payload.get("best_validation_loss", float("inf")))
         best_step = int(payload.get("best_step", 0))
-        if "rng_state" in payload:
-            rng.setstate(payload["rng_state"])
-        if "torch_rng_state" in payload:
-            torch.set_rng_state(payload["torch_rng_state"])
+        if "rng_state" in payload: rng.setstate(payload["rng_state"])
+        if "torch_rng_state" in payload: torch.set_rng_state(payload["torch_rng_state"])
     else:
         torch.manual_seed(args.seed)
 
@@ -78,70 +78,23 @@ def main() -> None:
         raise RuntimeError(f"reference parameter count drifted: {model.parameter_count()} != {REFERENCE_PARAMETER_COUNT}")
 
     parameters = list(model.parameters())
-    start = time.monotonic()
-    run_start_step = global_step
-    losses: list[float] = []
-    validation_history: list[dict[str, float | int]] = []
-
+    start = time.monotonic(); run_start_step = global_step; losses: list[float] = []; validation_history: list[dict[str, float | int]] = []
     while global_step < args.max_steps and time.monotonic() - start < args.max_seconds:
-        model.train()
-        x, y = _sample_batch(train_ids, batch_size=args.batch_size, seq_len=args.seq_len, device=device, rng=rng)
-        _, loss = model(x, y)
-        assert loss is not None
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(parameters, 1.0)
-        optimizer.step()
-        global_step += 1
-        losses.append(float(loss.detach().cpu()))
-
+        model.train(); x, y = _sample_batch(train_ids, batch_size=args.batch_size, seq_len=args.seq_len, device=device, rng=rng); _, loss = model(x, y); assert loss is not None
+        optimizer.zero_grad(set_to_none=True); loss.backward(); torch.nn.utils.clip_grad_norm_(parameters, 1.0); optimizer.step(); global_step += 1; losses.append(float(loss.detach().cpu()))
         if global_step % args.validation_interval == 0:
-            validation_loss = evaluate_token_loss(model, validation_ids, seq_len=args.seq_len, device=args.device)
-            validation_history.append({"step": global_step, "validation_loss": validation_loss})
-            if validation_loss < best_validation_loss:
-                best_validation_loss = validation_loss
-                best_step = global_step
-                model.save_checkpoint(best_path)
+            validation_loss = evaluate_token_loss(model, validation_ids, seq_len=args.seq_len, device=args.device); validation_history.append({"step": global_step, "validation_loss": validation_loss})
+            if validation_loss < best_validation_loss: best_validation_loss = validation_loss; best_step = global_step; model.save_checkpoint(best_path)
 
     if not validation_history or validation_history[-1]["step"] != global_step:
-        validation_loss = evaluate_token_loss(model, validation_ids, seq_len=args.seq_len, device=args.device)
-        validation_history.append({"step": global_step, "validation_loss": validation_loss})
-        if validation_loss < best_validation_loss:
-            best_validation_loss = validation_loss
-            best_step = global_step
-            model.save_checkpoint(best_path)
+        validation_loss = evaluate_token_loss(model, validation_ids, seq_len=args.seq_len, device=args.device); validation_history.append({"step": global_step, "validation_loss": validation_loss})
+        if validation_loss < best_validation_loss: best_validation_loss = validation_loss; best_step = global_step; model.save_checkpoint(best_path)
 
     elapsed = time.monotonic() - start
-    state = {
-        "architecture": model.architecture,
-        "config": vars(cfg),
-        "model_state": {key: value.detach().cpu() for key, value in model.state_dict().items()},
-        "optimizer_state": optimizer.state_dict(),
-        "global_step": global_step,
-        "best_validation_loss": best_validation_loss,
-        "best_step": best_step,
-        "rng_state": rng.getstate(),
-        "torch_rng_state": torch.get_rng_state(),
-    }
+    state = {"architecture": model.architecture, "config": config_dict, "model_state": {key: value.detach().cpu() for key, value in model.state_dict().items()}, "optimizer_state": optimizer.state_dict(), "global_step": global_step, "best_validation_loss": best_validation_loss, "best_step": best_step, "rng_state": rng.getstate(), "torch_rng_state": torch.get_rng_state()}
     _atomic_torch_save(state, state_path)
-    report = {
-        "parameters": model.parameter_count(),
-        "run_start_step": run_start_step,
-        "global_step": global_step,
-        "steps_this_run": global_step - run_start_step,
-        "elapsed_seconds": elapsed,
-        "last_loss": losses[-1] if losses else None,
-        "best_validation_loss": best_validation_loss,
-        "best_step": best_step,
-        "validation_history": validation_history,
-        "train_tokens": len(train_ids),
-        "validation_tokens": len(validation_ids),
-        "config": vars(cfg),
-    }
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(report, indent=2))
+    report = {"parameters": model.parameter_count(), "run_start_step": run_start_step, "global_step": global_step, "steps_this_run": global_step - run_start_step, "elapsed_seconds": elapsed, "last_loss": losses[-1] if losses else None, "best_validation_loss": best_validation_loss, "best_step": best_step, "validation_history": validation_history, "train_tokens": len(train_ids), "validation_tokens": len(validation_ids), "config": config_dict}
+    report_path.parent.mkdir(parents=True, exist_ok=True); report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8"); print(json.dumps(report, indent=2))
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
