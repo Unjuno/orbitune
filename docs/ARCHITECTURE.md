@@ -1,63 +1,69 @@
 # Orbitune Architecture
 
-Orbitune v0 is a MIDI-only generation system with one fixed small base model and small LoRA adapters.
+Orbitune is a MIDI-only generation system with one immutable small Base checkpoint and small LoRA adapters.
 
-## Core idea
+## Compatibility model
 
 ```text
-Base Model = shared MIDI grammar
-LoRA Adapter = style / mood / genre / texture-like generation tendency
+orbitune-base.pt bytes
+        |
+        +-- SHA-256 H = permanent compatibility key
+        |
+        +-- LoRA adapters must declare base_sha256 = H
 ```
 
-The system distributes generation capability rather than finished audio tracks.
+The public Base is not a rolling version. Once released, `orbitune-base.pt` must never be replaced. A future different Base is a separate compatibility lineage; it does not supersede or mutate the original Base/Adapter ecosystem.
 
-## Fixed v0 architecture
+Protocol identifiers such as `orbitune-midi-gpt-v0`, `theory-remi-v0`, and `orbitune-lora-v0` are ABI/file-format versions. They are deliberately separate from Base weight identity.
 
-`orbitune-tiny-v0` is intentionally a single compatibility target:
+## Fixed Base architecture
 
-- architecture id: `orbitune-midi-gpt-v0`
-- parameters: **2,945,760** with the fixed Theory-REMI v0 vocabulary
+- public identity: `orbitune-base`
+- exact checkpoint compatibility: SHA-256
+- architecture ABI: `orbitune-midi-gpt-v0`
+- parameters: 2,945,760
 - Transformer layers: 4
 - hidden size: 240
 - attention heads: 4
 - head dimension: 60
 - maximum context: 512 tokens
 - vocabulary: 204 tokens
-- tied token embedding / language-model head
+- tokenizer ABI: `theory-remi-v0`
 - LoRA targets: `q_proj`, `v_proj`
-- default LoRA rank: 4
+- LoRA rank: 4
+- adapter ABI: `orbitune-lora-v0`
 
-Adapters for a differently shaped base model are not Orbitune v0-compatible. If the base architecture changes incompatibly, it must receive a new base-model/version identifier.
+Matching architecture dimensions are necessary but not sufficient for Adapter compatibility. The exact Base checkpoint hash must also match.
 
-## v0 pipeline
+## Pipeline
 
 ```text
 MIDI corpus
   -> Type-0 / Type-1 MIDI reader
-  -> Theory-REMI v0 tokenizer
-  -> corpus preparation with song boundaries
-  -> orbitune-tiny-v0 base training
-  -> LoRA adapter training
-  -> Base + Adapter MIDI generation
-  -> structural MIDI evaluation
+  -> Theory-REMI tokenizer
+  -> file-content dedup + train/validation split
+  -> Base candidate training
+  -> best held-out-validation checkpoint selection
+  -> freeze and publish orbitune-base exactly once
+  -> Adapter training pinned to exact Base SHA-256
+  -> Base + Adapter generation
   -> MIDI playback / export
 ```
 
 ## Runtime target
 
-The default v0 runtime target is smartphone-friendly symbolic generation:
+- one immutable 2.95M-parameter Base
+- context length 512
+- MIDI event-token output
+- one rank-4 Adapter at a time
+- browser baseline: WebAssembly
+- optional acceleration may be evaluated separately
 
-- fixed 2.95M-parameter base model
-- context length: 512 tokens
-- output: MIDI event tokens
-- one adapter at a time
-- generate-then-play UX for 4 to 8 bars
-- WebAssembly-compatible browser inference as the baseline target
-- WebGPU acceleration may be added where supported, but is not required for the product contract
+The browser ONNX graph uses external LoRA inputs, so every Adapter remains small. Browser loading verifies the ONNX asset hash and independently verifies each Adapter's `base_sha256` against the immutable Base checkpoint identity.
 
-## Event format
+## Event ABI
 
-Theory-REMI v0 uses only music events:
+Theory-REMI currently contains:
 
 - `BAR`
 - `POSITION_0..15`
@@ -65,16 +71,11 @@ Theory-REMI v0 uses only music events:
 - `NOTE_DURATION_1..64`
 - `VELOCITY_1..32`
 
-Future versions may add control and texture-control events, but v0 does not generate audio waveforms.
-
-## Deployment graph
-
-The PyTorch model can be captured with a dynamic sequence axis using `torch.export`. ONNX translation is optional and requires the repository's `export` dependencies. The deployment wrapper emits logits only; sampling and MIDI grammar constraints remain runtime logic.
-
-The first browser implementation may recompute the context for each generated token. KV-cache export is a later optimization and should only be added after smartphone measurements justify the extra graph/interface complexity.
+These event/file ABIs may receive explicit compatibility versions. Such ABI versioning must never be interpreted as permission to silently replace the Base checkpoint.
 
 ## Repository policy
 
-- Source code and small adapters may be committed.
-- Base model weights are not committed under `models/`.
-- Community adapters must validate and include metadata, demo MIDI, and training-data rights declarations.
+- Source code and small compatible Adapters may be committed.
+- Base weights are distributed outside Git history.
+- Adapter manifests and Safetensors metadata both carry the exact Base SHA-256.
+- CI rejects mixed Base hashes in the bundled Adapter registry.
