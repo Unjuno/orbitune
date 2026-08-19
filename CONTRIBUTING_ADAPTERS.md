@@ -1,10 +1,16 @@
 # Contributing Orbitune Adapters
 
-Orbitune accepts small LoRA adapters for the fixed v0 base target: `orbitune-tiny-v0`.
+Orbitune accepts small LoRA adapters only for the immutable published `orbitune-base` checkpoint.
 
-Adapters may be committed directly to this repository when they are small, compatible, documented, and validated.
+## Non-negotiable compatibility rule
 
-## Required directory layout
+An Adapter is compatible only when its `base_sha256` exactly matches the official Base checkpoint SHA-256. Matching architecture, parameter count, or tokenizer is not enough.
+
+Both `manifest.json` and `adapter.safetensors` metadata must contain the same exact Base hash. Python, browser runtime, registry generation, and CI reject a mismatch.
+
+The official Base checkpoint is never replaced after publication. If a different Base is ever created, it belongs to a separate compatibility lineage and cannot silently inherit the existing Adapter catalog.
+
+## Required layout
 
 ```text
 adapters/community/<adapter-id>/
@@ -14,86 +20,53 @@ adapters/community/<adapter-id>/
   README.md
 ```
 
-Official adapters use the same layout under `adapters/official/`.
+## Required compatibility metadata
 
-## Compatibility requirements
+Every Adapter declares:
 
-Every adapter must declare:
+```text
+base_model       orbitune-base
+base_sha256      <exact 64-hex checkpoint SHA-256>
+architecture     orbitune-midi-gpt-v0
+tokenizer        theory-remi-v0
+adapter_type     lora
+rank             4
+target_modules   q_proj + v_proj
+```
 
-- `base_model`: `orbitune-tiny-v0`
-- `architecture`: `orbitune-midi-gpt-v0`
-- `parameter_scale`: `3m`
-- `tokenizer`: `theory-remi-v0`
-- `adapter_type`: `lora`
+The `v0` strings above identify protocol/file ABIs; they do not identify a replaceable Base-weight version.
 
-Adapters for other base models are out of scope for v0.
+## Training workflow
+
+Train against the verified official Base file:
+
+```bash
+orbitune train-adapter \
+  --base models/orbitune-base.pt \
+  --tokens data/tokens/style-train.tokens \
+  --validation-tokens data/tokens/style-validation.tokens \
+  --validation-interval 50 \
+  --out adapters/community/my-style-v0/adapter.safetensors
+```
+
+The resulting Safetensors metadata embeds the exact Base SHA-256. Copy the same value into `manifest.json` before submission.
 
 ## Size policy
 
-Recommended limit:
+Recommended: one Adapter directory <= 1 MiB. Direct repository submissions above 5 MiB require maintainer review. Base checkpoints and large datasets are never committed to Git history.
 
-```text
-one adapter directory <= 1 MB
-```
+## Rights and quality
 
-Hard review threshold:
-
-```text
-5 MB or larger requires maintainer approval
-```
-
-The base model checkpoint must not be committed to this repository.
-
-## Required metadata
-
-Each `manifest.json` must include:
-
-- adapter identity and version
-- base model and tokenizer compatibility
-- LoRA rank and target modules
-- generation defaults
-- tags
-- license
-- training data declaration
-
-## Training data declaration
-
-Adapters must disclose the training-data status. This does not need to expose private file names, but it must state whether the contributor has rights to use and publish the resulting adapter.
-
-Minimum example:
-
-```json
-{
-  "training_data": {
-    "source_type": "user_provided_midi",
-    "license": "original",
-    "num_files": 32,
-    "num_tokens": 120000,
-    "rights_confirmed": true
-  }
-}
-```
-
-Adapters with unclear rights may be rejected.
-
-## Quality requirements
-
-Each adapter must include at least one demo MIDI file. The generated MIDI should be playable, non-empty, and appropriate for background-music use.
-
-Minimum checks:
-
-- demo MIDI opens in a standard MIDI player or DAW
-- no long accidental silence unless intended
-- no extreme note density spikes
-- manifest validates against the schema
-- adapter is listed in `registry/adapters.json`
+Every Adapter must declare its Adapter license and training-data rights status. `rights_confirmed` must be true before acceptance. A non-empty generated `demo.mid` and non-empty `README.md` are mandatory.
 
 ## Pull request checklist
 
-- [ ] Adapter directory added under `adapters/community/<adapter-id>/`
-- [ ] `manifest.json` validates
-- [ ] `adapter.safetensors` is present
-- [ ] `demo.mid` is present
-- [ ] `README.md` describes the adapter
-- [ ] `registry/adapters.json` includes the adapter
-- [ ] License and training-data declaration are included
+- [ ] `base_model` is `orbitune-base`
+- [ ] `base_sha256` exactly matches the official Base checkpoint
+- [ ] manifest Base hash equals Safetensors Base hash
+- [ ] rank is 4 and targets are `q_proj`, `v_proj`
+- [ ] `demo.mid` is playable and non-empty
+- [ ] README, license and training-data declaration are complete
+- [ ] Adapter validation CI passes
+
+The registry is generated automatically; contributors should not create a second Base lineage by manually editing registry metadata.
