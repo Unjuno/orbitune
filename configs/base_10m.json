@@ -1,0 +1,11 @@
+{
+  "architecture": "orbitune-midi-gpt-v0",
+  "parameter_class": "10m",
+  "max_seq_len": 1024,
+  "n_layer": 4,
+  "n_embd": 448,
+  "n_head": 7,
+  "dropout": 0.1,
+  "tokenizer": "theory-remi-v0",
+  "notes": "10,200,960 parameters with the current 204-token vocabulary; designed to remain near the 10M class as the MIDI vocabulary expands."
+}
