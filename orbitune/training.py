@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -69,15 +70,34 @@ def train_model(model: OrbituneGPT, ids: list[int], cfg: TrainConfig, *, trainab
     return losses
 
 
+def _training_metrics(losses: list[float], ids: list[int], cfg: TrainConfig, elapsed_seconds: float) -> dict[str, float | int]:
+    usable = min(cfg.seq_len, len(ids) - 1)
+    processed_tokens = cfg.steps * cfg.batch_size * usable
+    return {
+        "tokens": len(ids),
+        "steps": len(losses),
+        "initial_loss": losses[0],
+        "final_loss": losses[-1],
+        "min_loss": min(losses),
+        "elapsed_seconds": elapsed_seconds,
+        "processed_tokens": processed_tokens,
+        "tokens_per_second": processed_tokens / elapsed_seconds if elapsed_seconds > 0 else 0.0,
+    }
+
+
 def train_base(token_paths: list[str | Path], out: str | Path, *, model_cfg: OrbituneConfig, train_cfg: TrainConfig) -> dict[str, float | int]:
     vocab = TheoryRemiVocab()
     if model_cfg.vocab_size != len(vocab):
         raise ValueError(f"model vocab_size={model_cfg.vocab_size} != Theory-REMI vocab size={len(vocab)}")
     ids = read_token_ids(token_paths, vocab)
     model = OrbituneGPT(model_cfg)
+    start = time.perf_counter()
     losses = train_model(model, ids, train_cfg)
+    elapsed = time.perf_counter() - start
     model.save_checkpoint(out)
-    return {"parameters": model.parameter_count(), "tokens": len(ids), "steps": len(losses), "initial_loss": losses[0], "final_loss": losses[-1]}
+    report = _training_metrics(losses, ids, train_cfg, elapsed)
+    report["parameters"] = model.parameter_count()
+    return report
 
 
 def train_adapter(base: str | Path, token_paths: list[str | Path], out: str | Path, *, lora_cfg: LoRAConfig, train_cfg: TrainConfig) -> dict[str, float | int]:
@@ -85,6 +105,10 @@ def train_adapter(base: str | Path, token_paths: list[str | Path], out: str | Pa
     ids = read_token_ids(token_paths, vocab)
     model = OrbituneGPT.load_checkpoint(base)
     inject_lora(model, lora_cfg)
+    start = time.perf_counter()
     losses = train_model(model, ids, train_cfg, trainable_only=True)
+    elapsed = time.perf_counter() - start
     save_adapter(model, out, lora_cfg)
-    return {"trainable_parameters": trainable_parameter_count(model), "tokens": len(ids), "steps": len(losses), "initial_loss": losses[0], "final_loss": losses[-1]}
+    report = _training_metrics(losses, ids, train_cfg, elapsed)
+    report["trainable_parameters"] = trainable_parameter_count(model)
+    return report
