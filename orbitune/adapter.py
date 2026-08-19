@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from orbitune.compat import ADAPTER_FORMAT_ABI, ARCHITECTURE_ABI, BASE_MODEL_ID, TOKENIZER_ABI, validate_sha256
+from orbitune.compat import ADAPTER_FORMAT_ABI, ARCHITECTURE_ABI, DEFAULT_BASE_MODEL_ID, TOKENIZER_ABI, validate_sha256
 from orbitune.midi import read_midi
 
 REQUIRED_MANIFEST_FIELDS = {
@@ -23,6 +23,7 @@ V0_LAYERS = 4
 V0_TARGET_MODULES = ["q_proj", "v_proj"]
 V0_ADAPTER_FAMILIES = {"style", "genre", "texture-like", "control", "instrument", "experimental"}
 ADAPTER_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*-v[0-9]+$")
+BASE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 def load_manifest(path: str | Path) -> dict[str, Any]:
@@ -43,7 +44,6 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
 
     expected = {
         "artifact_type": "orbitune_adapter",
-        "base_model": BASE_MODEL_ID,
         "architecture": ARCHITECTURE_ABI,
         "parameter_scale": "3m",
         "tokenizer": TOKENIZER_ABI,
@@ -53,9 +53,12 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
         if manifest.get(key) != value:
             errors.append(f"{key} must be {value}")
 
+    base_model = manifest.get("base_model")
+    if not isinstance(base_model, str) or not BASE_ID_RE.fullmatch(base_model):
+        errors.append("base_model must be a valid registered Base id")
     base_sha = manifest.get("base_sha256")
     if not isinstance(base_sha, str) or not validate_sha256(base_sha):
-        errors.append("base_sha256 must be the exact 64-character SHA-256 of the immutable Orbitune Base checkpoint")
+        errors.append("base_sha256 must be the exact 64-character SHA-256 of the target Base checkpoint")
 
     name = manifest.get("name")
     if not isinstance(name, str) or not ADAPTER_NAME_RE.fullmatch(name):
@@ -155,10 +158,7 @@ def validate_adapter_weights(path: str | Path) -> dict[str, str]:
     if not validate_sha256(base_sha):
         raise ValueError("adapter Safetensors metadata must include a valid base_sha256")
     try:
-        rank = int(metadata.get("rank", ""))
-        alpha = float(metadata.get("alpha", ""))
-        dropout = float(metadata.get("dropout", "0"))
-        targets = json.loads(metadata.get("target_modules", "[]"))
+        rank = int(metadata.get("rank", "")); alpha = float(metadata.get("alpha", "")); dropout = float(metadata.get("dropout", "0")); targets = json.loads(metadata.get("target_modules", "[]"))
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         raise ValueError("invalid adapter Safetensors metadata") from exc
     if rank != V0_LORA_RANK or targets != V0_TARGET_MODULES:
@@ -188,8 +188,7 @@ def validate_adapter_weights(path: str | Path) -> dict[str, str]:
         if not isinstance(start, int) or not isinstance(end, int) or start < 0 or end - start != expected_bytes or end > data_size:
             raise ValueError(f"invalid data range for {name}")
         ranges.append((start, end))
-    ranges.sort()
-    previous = 0
+    ranges.sort(); previous = 0
     for start, end in ranges:
         if start != previous:
             raise ValueError("Safetensors tensor data must be contiguous")
@@ -201,16 +200,12 @@ def validate_adapter_weights(path: str | Path) -> dict[str, str]:
 
 def validate_adapter_directory(directory: str | Path) -> dict[str, Any]:
     directory = Path(directory)
-    manifest_path = directory / "manifest.json"
-    weights_path = directory / "adapter.safetensors"
-    demo_path = directory / "demo.mid"
-    readme_path = directory / "README.md"
+    manifest_path = directory / "manifest.json"; weights_path = directory / "adapter.safetensors"; demo_path = directory / "demo.mid"; readme_path = directory / "README.md"
     for path in (manifest_path, weights_path, demo_path, readme_path):
         if not path.is_file():
             raise ValueError(f"missing required adapter file: {path.name}")
     validate_manifest_file(manifest_path)
-    manifest = load_manifest(manifest_path)
-    metadata = validate_adapter_weights(weights_path)
+    manifest = load_manifest(manifest_path); metadata = validate_adapter_weights(weights_path)
     if metadata["base_sha256"].lower() != manifest["base_sha256"].lower():
         raise ValueError("manifest base_sha256 does not match adapter Safetensors metadata")
     if int(metadata["rank"]) != int(manifest["rank"]):
@@ -224,44 +219,28 @@ def validate_adapter_directory(directory: str | Path) -> dict[str, Any]:
     return manifest
 
 
-def create_adapter_scaffold(directory: str | Path, *, name: str, display_name: str, adapter_family: str = "style", rank: int = V0_LORA_RANK, bpm: int = 84, bars: int = 8, temperature: float = 0.85) -> Path:
+def create_adapter_scaffold(directory: str | Path, *, name: str, display_name: str, base_model: str = DEFAULT_BASE_MODEL_ID, adapter_family: str = "style", rank: int = V0_LORA_RANK, bpm: int = 84, bars: int = 8, temperature: float = 0.85) -> Path:
     if rank != V0_LORA_RANK:
         raise ValueError(f"current adapter ABI requires rank {V0_LORA_RANK}")
-    root = Path(directory)
-    root.mkdir(parents=True, exist_ok=False)
+    if not BASE_ID_RE.fullmatch(base_model):
+        raise ValueError("base_model must be a valid Base id")
+    root = Path(directory); root.mkdir(parents=True, exist_ok=False)
     manifest = {
-        "artifact_type": "orbitune_adapter",
-        "name": name,
-        "version": "0.1.0",
-        "display_name": display_name,
-        "description": "TODO: describe the generation tendency of this adapter.",
-        "adapter_family": adapter_family,
-        "base_model": BASE_MODEL_ID,
-        "base_sha256": "TODO: copy the exact Base checkpoint SHA-256 from training output",
-        "architecture": ARCHITECTURE_ABI,
-        "parameter_scale": "3m",
-        "tokenizer": TOKENIZER_ABI,
-        "adapter_type": "lora",
-        "rank": V0_LORA_RANK,
-        "target_modules": V0_TARGET_MODULES,
-        "generation_defaults": {"bpm": bpm, "bars": bars, "temperature": temperature},
-        "license": "TODO",
-        "training_data": {"source_type": "user_provided_midi", "license": "TODO", "num_files": 0, "num_tokens": 0, "rights_confirmed": False, "notes": "Confirm rights before publishing."},
-        "tags": [],
+        "artifact_type": "orbitune_adapter", "name": name, "version": "0.1.0", "display_name": display_name,
+        "description": "TODO: describe the generation tendency of this adapter.", "adapter_family": adapter_family,
+        "base_model": base_model, "base_sha256": "TODO: copy the exact target Base checkpoint SHA-256",
+        "architecture": ARCHITECTURE_ABI, "parameter_scale": "3m", "tokenizer": TOKENIZER_ABI, "adapter_type": "lora",
+        "rank": V0_LORA_RANK, "target_modules": V0_TARGET_MODULES,
+        "generation_defaults": {"bpm": bpm, "bars": bars, "temperature": temperature}, "license": "TODO",
+        "training_data": {"source_type": "user_provided_midi", "license": "TODO", "num_files": 0, "num_tokens": 0, "rights_confirmed": False, "notes": "Confirm rights before publishing."}, "tags": [],
     }
     (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    (root / "README.md").write_text(
-        f"# {display_name}\n\nOrbitune community adapter scaffold.\n\n"
-        "Before publishing, train adapter.safetensors, add demo.mid, copy the exact Base SHA-256 into manifest.json, complete rights/license fields, and run validation.\n",
-        encoding="utf-8",
-    )
+    (root / "README.md").write_text(f"# {display_name}\n\nOrbitune community adapter scaffold for Base `{base_model}`.\n", encoding="utf-8")
     return root
 
 
 def package_adapter(adapter_dir: str | Path, manifest_path: str | Path, out_path: str | Path) -> None:
-    adapter_dir = Path(adapter_dir)
-    manifest_path = Path(manifest_path)
-    out_path = Path(out_path)
+    adapter_dir = Path(adapter_dir); manifest_path = Path(manifest_path); out_path = Path(out_path)
     if manifest_path.resolve() != (adapter_dir / "manifest.json").resolve():
         raise ValueError("manifest path must be adapter_dir/manifest.json")
     validate_adapter_directory(adapter_dir)
