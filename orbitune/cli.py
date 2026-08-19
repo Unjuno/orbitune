@@ -147,6 +147,7 @@ def _cmd_generate(args: argparse.Namespace) -> None:
         args.out,
         adapter=args.adapter,
         bpm=args.bpm,
+        bars=args.bars,
         temperature=args.temperature,
         top_p=args.top_p,
         max_new_tokens=args.max_new_tokens,
@@ -274,9 +275,10 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--adapter")
     generate.add_argument("--out", required=True)
     generate.add_argument("--bpm", type=int, default=84)
+    generate.add_argument("--bars", type=int, default=8, choices=[4, 8, 16])
     generate.add_argument("--temperature", type=float, default=0.85)
     generate.add_argument("--top-p", type=float, default=0.92)
-    generate.add_argument("--max-new-tokens", type=int, default=256)
+    generate.add_argument("--max-new-tokens", type=int, default=2048)
     generate.add_argument("--device", default="cpu")
     generate.set_defaults(func=_cmd_generate)
 
