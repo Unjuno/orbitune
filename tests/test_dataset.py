@@ -14,11 +14,14 @@ def test_prepare_corpus(tmp_path):
     tokens = tmp_path / "corpus.tokens"
     report_path = tmp_path / "report.json"
     report = prepare_corpus(source, tokens, report_path)
+    text = tokens.read_text(encoding="utf-8")
 
     assert report["files_seen"] == 2
     assert report["files_accepted"] == 2
     assert report["files_rejected"] == 0
+    assert report["song_boundaries"] == 1
     assert report["total_tokens"] > 0
     assert tokens.exists()
     assert report_path.exists()
-    assert "BAR" in tokens.read_text(encoding="utf-8")
+    assert "BAR" in text
+    assert "EOS\nBOS" in text
