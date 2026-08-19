@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import torch
@@ -10,25 +11,48 @@ from orbitune.model import OrbituneGPT
 from orbitune.tokenizer import TheoryRemiTokenizer
 from orbitune.tokenizer.vocab import TheoryRemiVocab
 
+MAX_NOTES_PER_POSITION = 8
 
-def _generation_state(token_ids: list[int], vocab: TheoryRemiVocab) -> tuple[int, int | None]:
-    bar_count = 0
+
+@dataclass(slots=True)
+class GenerationState:
+    bar_count: int = 0
     last_position: int | None = None
+    notes_at_position: int = 0
+    pitches_at_position: set[int] = field(default_factory=set)
+
+
+def _generation_state(token_ids: list[int], vocab: TheoryRemiVocab) -> GenerationState:
+    state = GenerationState()
+    pending_position: int | None = None
     for token_id in token_ids:
         token = vocab.tokens[token_id]
         if token == "BAR":
-            bar_count += 1
-            last_position = None
+            state.bar_count += 1
+            state.last_position = None
+            state.notes_at_position = 0
+            state.pitches_at_position.clear()
+            pending_position = None
         elif token.startswith("POSITION_"):
-            last_position = int(token.removeprefix("POSITION_"))
-    return bar_count, last_position
+            position = int(token.removeprefix("POSITION_"))
+            if position != state.last_position:
+                state.last_position = position
+                state.notes_at_position = 0
+                state.pitches_at_position.clear()
+            pending_position = position
+        elif token.startswith("NOTE_PITCH_") and pending_position == state.last_position:
+            pitch = int(token.removeprefix("NOTE_PITCH_"))
+            state.notes_at_position += 1
+            state.pitches_at_position.add(pitch)
+            pending_position = None
+    return state
 
 
 def allowed_next_tokens(token_ids: list[int], vocab: TheoryRemiVocab, *, requested_bars: int) -> list[str]:
     if requested_bars <= 0:
         raise ValueError("requested_bars must be positive")
     last_token = vocab.tokens[token_ids[-1]] if token_ids else "BOS"
-    bar_count, last_position = _generation_state(token_ids, vocab)
+    state = _generation_state(token_ids, vocab)
 
     if last_token == "EOS":
         return []
@@ -37,25 +61,32 @@ def allowed_next_tokens(token_ids: list[int], vocab: TheoryRemiVocab, *, request
     if last_token == "BAR":
         return [f"POSITION_{i}" for i in range(vocab.positions_per_bar)]
     if last_token.startswith("POSITION_"):
-        return [f"NOTE_PITCH_{p}" for p in range(vocab.min_pitch, vocab.max_pitch + 1)]
+        return [
+            f"NOTE_PITCH_{p}"
+            for p in range(vocab.min_pitch, vocab.max_pitch + 1)
+            if p not in state.pitches_at_position
+        ]
     if last_token.startswith("NOTE_PITCH_"):
         return [f"NOTE_DURATION_{d}" for d in range(1, vocab.max_duration + 1)]
     if last_token.startswith("NOTE_DURATION_"):
         return [f"VELOCITY_{v}" for v in range(1, vocab.velocity_bins + 1)]
     if last_token.startswith("VELOCITY_"):
-        if last_position is None:
+        if state.last_position is None:
             raise ValueError("velocity token encountered before a position token")
-        higher_positions = [
+        next_positions: list[str] = []
+        if state.notes_at_position < MAX_NOTES_PER_POSITION:
+            next_positions.append(f"POSITION_{state.last_position}")
+        next_positions.extend(
             f"POSITION_{i}"
-            for i in range(last_position + 1, vocab.positions_per_bar)
-        ]
-        # Require every completed bar to reach the final quarter of the bar.
-        # This prevents a requested 8-bar output from degenerating into eight
-        # one-note bars while still allowing sparse material inside each bar.
-        can_close_bar = last_position >= 12
-        if bar_count >= requested_bars:
-            return [*higher_positions, "EOS"] if can_close_bar else higher_positions
-        return [*higher_positions, "BAR"] if can_close_bar else higher_positions
+            for i in range(state.last_position + 1, vocab.positions_per_bar)
+        )
+        # Require every completed bar to reach its final quarter. Repeated
+        # POSITION tokens remain legal so the model can emit piano chords, but
+        # a hard per-position note cap prevents a same-timestamp infinite loop.
+        can_close_bar = state.last_position >= 12
+        if state.bar_count >= requested_bars:
+            return [*next_positions, "EOS"] if can_close_bar else next_positions
+        return [*next_positions, "BAR"] if can_close_bar else next_positions
     return ["BAR"]
 
 
