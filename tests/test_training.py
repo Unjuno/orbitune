@@ -26,3 +26,6 @@ def test_one_step_base_training(tmp_path: Path):
     assert out.exists()
     assert report["steps"] == 1
     assert report["parameters"] > 0
+    assert report["processed_tokens"] == 8
+    assert report["elapsed_seconds"] > 0
+    assert report["tokens_per_second"] > 0
