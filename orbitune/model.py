@@ -13,7 +13,7 @@ class OrbituneConfig:
     vocab_size: int
     max_seq_len: int = 512
     n_layer: int = 4
-    n_embd: int = 256
+    n_embd: int = 240
     n_head: int = 4
     dropout: float = 0.1
 
