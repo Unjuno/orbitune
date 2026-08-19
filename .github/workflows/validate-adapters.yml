@@ -1,0 +1,42 @@
+name: validate-adapters
+
+on:
+  pull_request:
+    paths:
+      - 'adapters/**'
+      - 'orbitune/adapter.py'
+      - 'orbitune/registry.py'
+      - 'schemas/adapter_manifest.schema.json'
+      - '.github/workflows/validate-adapters.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'adapters/**'
+      - 'orbitune/adapter.py'
+      - 'orbitune/registry.py'
+      - 'schemas/adapter_manifest.schema.json'
+      - '.github/workflows/validate-adapters.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate manifests and generate registry
+        run: python scripts/build_registry.py --adapters adapters --out /tmp/orbitune-adapters.json
+      - name: Enforce adapter directory hard size limit
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          limit = 5 * 1024 * 1024
+          for manifest in Path('adapters').rglob('manifest.json'):
+              directory = manifest.parent
+              total = sum(path.stat().st_size for path in directory.rglob('*') if path.is_file())
+              if total > limit:
+                  raise SystemExit(f'{directory}: {total} bytes exceeds the 5 MiB hard limit')
+              print(f'{directory}: {total} bytes')
+          PY
