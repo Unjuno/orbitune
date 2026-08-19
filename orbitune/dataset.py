@@ -11,26 +11,18 @@ def find_midi_files(path: str | Path) -> list[Path]:
     root = Path(path)
     if root.is_file():
         return [root]
-    files = sorted({*root.rglob("*.mid"), *root.rglob("*.midi")})
-    return files
+    return sorted({*root.rglob("*.mid"), *root.rglob("*.midi")})
 
 
-def prepare_corpus(
-    source: str | Path,
-    out_tokens: str | Path,
-    out_report: str | Path,
-    *,
-    min_events: int = 1,
-) -> dict[str, object]:
+def prepare_corpus(source: str | Path, out_tokens: str | Path, out_report: str | Path, *, min_events: int = 1) -> dict[str, object]:
     tokenizer = TheoryRemiTokenizer()
     files = find_midi_files(source)
     if not files:
         raise ValueError(f"no MIDI files found under {source}")
 
-    merged: list[str] = []
+    sequences: list[list[str]] = []
     accepted: list[dict[str, object]] = []
     rejected: list[dict[str, str]] = []
-
     for midi_path in files:
         try:
             events = read_midi(midi_path)
@@ -41,19 +33,19 @@ def prepare_corpus(
             if not tokens:
                 rejected.append({"path": str(midi_path), "reason": "empty_token_sequence"})
                 continue
-            merged.extend(tokens)
-            accepted.append(
-                {
-                    "path": str(midi_path),
-                    "events": len(events),
-                    "tokens": len(tokens),
-                }
-            )
-        except Exception as exc:  # corpus preparation should report bad files instead of aborting all work
+            sequences.append(tokens)
+            accepted.append({"path": str(midi_path), "events": len(events), "tokens": len(tokens)})
+        except (ValueError, IndexError, OSError) as exc:
             rejected.append({"path": str(midi_path), "reason": f"{type(exc).__name__}: {exc}"})
 
     if not accepted:
         raise ValueError("no usable MIDI files found")
+
+    merged: list[str] = []
+    for index, tokens in enumerate(sequences):
+        if index:
+            merged.extend(["EOS", "BOS"])
+        merged.extend(tokens)
 
     out_tokens = Path(out_tokens)
     out_report = Path(out_report)
@@ -66,6 +58,7 @@ def prepare_corpus(
         "files_seen": len(files),
         "files_accepted": len(accepted),
         "files_rejected": len(rejected),
+        "song_boundaries": max(0, len(accepted) - 1),
         "total_events": sum(int(item["events"]) for item in accepted),
         "total_tokens": len(merged),
         "accepted": accepted,
