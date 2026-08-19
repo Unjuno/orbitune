@@ -19,6 +19,10 @@ export function buildVocab() {
 export const VOCAB = Object.freeze(buildVocab());
 export const TOKEN_TO_ID = new Map(VOCAB.map((token, id) => [token, id]));
 
+function idsWithPrefix(prefix) {
+  return VOCAB.map((token, id) => token.startsWith(prefix) ? id : -1).filter((id) => id >= 0);
+}
+
 function readFloat32LittleEndian(view, byteOffset, count) {
   const values = new Float32Array(count);
   for (let i = 0; i < count; i += 1) values[i] = view.getFloat32(byteOffset + i * 4, true);
@@ -35,7 +39,6 @@ export function parseSafetensors(arrayBuffer) {
   const headerText = new TextDecoder().decode(new Uint8Array(arrayBuffer, headerStart, headerLength));
   const header = JSON.parse(headerText);
   const tensors = new Map();
-
   for (const [name, spec] of Object.entries(header)) {
     if (name === '__metadata__') continue;
     if (spec.dtype !== 'F32') throw new Error(`Unsupported tensor dtype ${spec.dtype} for ${name}; Orbitune v0 expects F32 adapters`);
@@ -45,10 +48,7 @@ export function parseSafetensors(arrayBuffer) {
     const absoluteStart = headerEnd + relativeStart;
     const absoluteEnd = headerEnd + relativeEnd;
     if (absoluteEnd > view.byteLength) throw new Error(`Tensor data is truncated for ${name}`);
-    tensors.set(name, {
-      shape: spec.shape,
-      data: readFloat32LittleEndian(view, absoluteStart, bytes / 4),
-    });
+    tensors.set(name, { shape: spec.shape, data: readFloat32LittleEndian(view, absoluteStart, bytes / 4) });
   }
   return { metadata: header.__metadata__ || {}, tensors };
 }
@@ -77,7 +77,6 @@ export function packAdapterSafetensors(arrayBuffer) {
   if (JSON.stringify(targets) !== JSON.stringify(['q_proj', 'v_proj'])) throw new Error('Orbitune v0 browser runtime requires q_proj/v_proj targets');
   const alpha = Number(metadata.alpha);
   if (!Number.isFinite(alpha)) throw new Error('Adapter alpha metadata is missing or invalid');
-
   const packed = emptyAdapterInputs();
   for (let layer = 0; layer < ORBITUNE_V0.layers; layer += 1) {
     for (let targetIndex = 0; targetIndex < 2; targetIndex += 1) {
@@ -96,11 +95,21 @@ export function packAdapterSafetensors(arrayBuffer) {
   return packed;
 }
 
-export function allowedNextTokenIds(tokenIds, requestedBars = Infinity) {
-  const lastId = tokenIds[tokenIds.length - 1];
-  const last = VOCAB[lastId];
-  const barCount = tokenIds.reduce((count, id) => count + (VOCAB[id] === 'BAR' ? 1 : 0), 0);
+function generationState(tokenIds) {
+  let barCount = 0;
+  let lastPosition = null;
+  for (const id of tokenIds) {
+    const token = VOCAB[id];
+    if (token === 'BAR') { barCount += 1; lastPosition = null; }
+    else if (token?.startsWith('POSITION_')) lastPosition = Number(token.slice('POSITION_'.length));
+  }
+  return { barCount, lastPosition };
+}
 
+export function allowedNextTokenIds(tokenIds, requestedBars = 8) {
+  if (!(requestedBars > 0)) throw new Error('requestedBars must be positive');
+  const last = VOCAB[tokenIds[tokenIds.length - 1]] || 'BOS';
+  const { barCount, lastPosition } = generationState(tokenIds);
   if (last === 'EOS') return [];
   if (last === 'BOS') return [TOKEN_TO_ID.get('BAR')];
   if (last === 'BAR') return idsWithPrefix('POSITION_');
@@ -108,51 +117,36 @@ export function allowedNextTokenIds(tokenIds, requestedBars = Infinity) {
   if (last?.startsWith('NOTE_PITCH_')) return idsWithPrefix('NOTE_DURATION_');
   if (last?.startsWith('NOTE_DURATION_')) return idsWithPrefix('VELOCITY_');
   if (last?.startsWith('VELOCITY_')) {
-    if (barCount >= requestedBars) return [TOKEN_TO_ID.get('EOS')];
-    return [TOKEN_TO_ID.get('BAR'), ...idsWithPrefix('POSITION_'), TOKEN_TO_ID.get('EOS')];
+    if (lastPosition === null) throw new Error('velocity token encountered before a position token');
+    const higher = [];
+    for (let i = lastPosition + 1; i < ORBITUNE_V0.positionsPerBar; i += 1) higher.push(TOKEN_TO_ID.get(`POSITION_${i}`));
+    const canCloseBar = lastPosition >= 12;
+    if (barCount >= requestedBars) return canCloseBar ? [...higher, TOKEN_TO_ID.get('EOS')] : higher;
+    return canCloseBar ? [...higher, TOKEN_TO_ID.get('BAR')] : higher;
   }
   return [TOKEN_TO_ID.get('BAR')];
 }
 
-const PREFIX_CACHE = new Map();
-function idsWithPrefix(prefix) {
-  if (!PREFIX_CACHE.has(prefix)) {
-    PREFIX_CACHE.set(prefix, VOCAB.map((token, id) => token.startsWith(prefix) ? id : -1).filter((id) => id >= 0));
-  }
-  return PREFIX_CACHE.get(prefix);
-}
-
 export function sampleAllowedLogits(logits, allowedIds, { temperature = 0.85, topP = 0.92, random = Math.random } = {}) {
   if (!(temperature > 0)) throw new Error('temperature must be > 0');
+  if (!(topP > 0 && topP <= 1)) throw new Error('topP must be in (0, 1]');
   if (!allowedIds.length) throw new Error('no allowed tokens to sample');
   const entries = allowedIds.map((id) => ({ id, value: logits[id] / temperature }));
   const maxValue = Math.max(...entries.map((item) => item.value));
   let sum = 0;
-  for (const item of entries) {
-    item.probability = Math.exp(item.value - maxValue);
-    sum += item.probability;
-  }
+  for (const item of entries) { item.probability = Math.exp(item.value - maxValue); sum += item.probability; }
   for (const item of entries) item.probability /= sum;
   entries.sort((a, b) => b.probability - a.probability);
-
   if (topP < 1) {
     let cumulative = 0;
     const kept = [];
-    for (const item of entries) {
-      kept.push(item);
-      cumulative += item.probability;
-      if (cumulative >= topP) break;
-    }
+    for (const item of entries) { kept.push(item); cumulative += item.probability; if (cumulative >= topP) break; }
     entries.splice(0, entries.length, ...kept);
     const keptSum = entries.reduce((value, item) => value + item.probability, 0);
     for (const item of entries) item.probability /= keptSum;
   }
-
   let threshold = random();
-  for (const item of entries) {
-    threshold -= item.probability;
-    if (threshold <= 0) return item.id;
-  }
+  for (const item of entries) { threshold -= item.probability; if (threshold <= 0) return item.id; }
   return entries[entries.length - 1].id;
 }
 
@@ -187,7 +181,6 @@ function variableLengthQuantity(value) {
   while (value) { bytes.unshift((value & 0x7f) | 0x80); value >>>= 7; }
   return bytes;
 }
-
 function pushU16(array, value) { array.push((value >>> 8) & 0xff, value & 0xff); }
 function pushU32(array, value) { array.push((value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff); }
 
@@ -206,12 +199,8 @@ export function eventsToMidiBytes(events, bpm = 84) {
   scheduled.sort((a, b) => a.time - b.time || a.data[0] - b.data[0]);
   const track = [];
   let previous = 0;
-  for (const event of scheduled) {
-    track.push(...variableLengthQuantity(event.time - previous), ...event.data);
-    previous = event.time;
-  }
+  for (const event of scheduled) { track.push(...variableLengthQuantity(event.time - previous), ...event.data); previous = event.time; }
   track.push(0x00, 0xff, 0x2f, 0x00);
-
   const out = [...new TextEncoder().encode('MThd')];
   pushU32(out, 6); pushU16(out, 0); pushU16(out, 1); pushU16(out, ticksPerBeat);
   out.push(...new TextEncoder().encode('MTrk')); pushU32(out, track.length); out.push(...track);
@@ -225,14 +214,11 @@ export class OrbituneBrowserRuntime {
     this.session = null;
     this.adapter = emptyAdapterInputs();
   }
-
   async loadModel(url, { executionProviders = ['wasm'] } = {}) {
     this.session = await this.ort.InferenceSession.create(url, { executionProviders });
   }
-
   loadAdapter(arrayBuffer) { this.adapter = packAdapterSafetensors(arrayBuffer); }
   clearAdapter() { this.adapter = emptyAdapterInputs(); }
-
   async logitsFor(tokenIds) {
     if (!this.session) throw new Error('model is not loaded');
     const context = tokenIds.slice(-ORBITUNE_V0.context);
@@ -248,7 +234,6 @@ export class OrbituneBrowserRuntime {
     const offset = (logits.dims[1] - 1) * VOCAB.length;
     return logits.data.slice(offset, offset + VOCAB.length);
   }
-
   async generate({ bars = 8, temperature = 0.85, topP = 0.92, maxNewTokens = 2048 } = {}) {
     const ids = [TOKEN_TO_ID.get('BOS')];
     for (let step = 0; step < maxNewTokens; step += 1) {
