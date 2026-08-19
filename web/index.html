@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orbitune</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 720px; }
+      label { display: block; margin-top: 1rem; font-weight: 600; }
+      input, select, button { width: 100%; padding: 0.75rem; margin-top: 0.35rem; }
+      button { margin-top: 1.5rem; cursor: pointer; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; }
+      .muted { color: #666; }
+      pre { white-space: pre-wrap; background: #f6f6f6; padding: 1rem; border-radius: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>Orbitune</h1>
+    <p class="muted">Small MIDI generation framework with LoRA adapters for local BGM creation.</p>
+
+    <main class="card">
+      <label for="adapter">Adapter</label>
+      <select id="adapter">
+        <option value="none">No bundled adapters yet</option>
+      </select>
+
+      <label for="bpm">BPM</label>
+      <input id="bpm" type="number" min="40" max="220" value="84" />
+
+      <label for="bars">Length</label>
+      <select id="bars">
+        <option value="4">4 bars</option>
+        <option value="8" selected>8 bars</option>
+        <option value="16">16 bars</option>
+      </select>
+
+      <label for="temperature">Temperature: <span id="temperature-value">0.85</span></label>
+      <input id="temperature" type="range" min="0.60" max="1.20" step="0.05" value="0.85" />
+
+      <button id="generate">Generate MIDI</button>
+      <pre id="status">Model inference is not wired yet. This page is the v0 UI shell.</pre>
+    </main>
+
+    <script>
+      const temperature = document.getElementById('temperature');
+      const temperatureValue = document.getElementById('temperature-value');
+      const status = document.getElementById('status');
+
+      temperature.addEventListener('input', () => {
+        temperatureValue.textContent = Number(temperature.value).toFixed(2);
+      });
+
+      document.getElementById('generate').addEventListener('click', () => {
+        const adapter = document.getElementById('adapter').value;
+        const bpm = document.getElementById('bpm').value;
+        const bars = document.getElementById('bars').value;
+        const temp = Number(temperature.value).toFixed(2);
+        status.textContent = `Requested generation:\nadapter=${adapter}\nbpm=${bpm}\nbars=${bars}\ntemperature=${temp}\n\nBrowser model inference will be connected after ONNX/WASM export is available.`;
+      });
+    </script>
+  </body>
+</html>
