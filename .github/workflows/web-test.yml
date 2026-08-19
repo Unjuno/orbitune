@@ -1,0 +1,22 @@
+name: web-test
+
+on:
+  push:
+    paths:
+      - "web/**"
+      - ".github/workflows/web-test.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/web-test.yml"
+
+jobs:
+  node-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run browser runtime unit tests
+        run: node --test web/orbitune-runtime.test.mjs
