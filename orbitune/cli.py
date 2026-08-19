@@ -6,10 +6,10 @@ from dataclasses import asdict
 from pathlib import Path
 
 from orbitune.adapter import create_adapter_scaffold, package_adapter, validate_manifest_file
-from orbitune.dataset import prepare_corpus
+from orbitune.dataset import prepare_corpus, prepare_split_corpus
 from orbitune.demo import make_demo_events
 from orbitune.evaluation import write_evaluation
-from orbitune.exporting import export_onnx
+from orbitune.exporting import export_onnx, export_web_onnx
 from orbitune.inference import generate_midi
 from orbitune.lora import LoRAConfig
 from orbitune.midi import read_midi, write_midi
@@ -35,6 +35,19 @@ def _cmd_tokenize(args: argparse.Namespace) -> None:
 
 def _cmd_prepare_corpus(args: argparse.Namespace) -> None:
     report = prepare_corpus(args.source, args.out, args.report, min_events=args.min_events)
+    print(json.dumps(report, indent=2))
+
+
+def _cmd_prepare_split_corpus(args: argparse.Namespace) -> None:
+    report = prepare_split_corpus(
+        args.source,
+        args.train_out,
+        args.validation_out,
+        args.report,
+        validation_fraction=args.validation_fraction,
+        split_seed=args.split_seed,
+        min_events=args.min_events,
+    )
     print(json.dumps(report, indent=2))
 
 
@@ -75,7 +88,7 @@ def _cmd_init_adapter(args: argparse.Namespace) -> None:
         name=args.name,
         display_name=args.display_name,
         adapter_family=args.family,
-        rank=args.rank,
+        rank=4,
         bpm=args.bpm,
         bars=args.bars,
         temperature=args.temperature,
@@ -116,7 +129,7 @@ def _cmd_train_base(args: argparse.Namespace) -> None:
 
 
 def _cmd_train_adapter(args: argparse.Namespace) -> None:
-    lora_cfg = LoRAConfig(rank=args.rank, alpha=args.alpha, dropout=args.lora_dropout)
+    lora_cfg = LoRAConfig(rank=4, alpha=args.alpha, dropout=args.lora_dropout)
     report = train_adapter(
         args.base,
         args.tokens,
@@ -144,6 +157,11 @@ def _cmd_generate(args: argparse.Namespace) -> None:
 
 def _cmd_export_onnx(args: argparse.Namespace) -> None:
     out = export_onnx(args.base, args.out, example_seq_len=args.example_seq_len)
+    print(f"wrote {out}")
+
+
+def _cmd_export_web_onnx(args: argparse.Namespace) -> None:
+    out = export_web_onnx(args.base, args.out, example_seq_len=args.example_seq_len)
     print(f"wrote {out}")
 
 
@@ -200,6 +218,16 @@ def build_parser() -> argparse.ArgumentParser:
     corpus.add_argument("--min-events", type=int, default=1)
     corpus.set_defaults(func=_cmd_prepare_corpus)
 
+    split = subparsers.add_parser("prepare-split-corpus", help="build file-level train and validation token corpora")
+    split.add_argument("source")
+    split.add_argument("--train-out", required=True)
+    split.add_argument("--validation-out", required=True)
+    split.add_argument("--report", required=True)
+    split.add_argument("--validation-fraction", type=float, default=0.1)
+    split.add_argument("--split-seed", default="orbitune-v0")
+    split.add_argument("--min-events", type=int, default=1)
+    split.set_defaults(func=_cmd_prepare_split_corpus)
+
     detokenize = subparsers.add_parser("detokenize", help="convert Theory-REMI tokens to MIDI")
     detokenize.add_argument("tokens")
     detokenize.add_argument("--out", required=True)
@@ -216,12 +244,11 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--out", required=True)
     evaluate.set_defaults(func=_cmd_eval_midi)
 
-    init_adapter = subparsers.add_parser("init-adapter", help="create a community adapter directory scaffold")
+    init_adapter = subparsers.add_parser("init-adapter", help="create a rank-4 community adapter directory scaffold")
     init_adapter.add_argument("directory")
     init_adapter.add_argument("--name", required=True, help="adapter id such as chill-piano-v0")
     init_adapter.add_argument("--display-name", required=True)
     init_adapter.add_argument("--family", default="style")
-    init_adapter.add_argument("--rank", type=int, default=4)
     init_adapter.add_argument("--bpm", type=int, default=84)
     init_adapter.add_argument("--bars", type=int, default=8, choices=[4, 8, 16])
     init_adapter.add_argument("--temperature", type=float, default=0.85)
@@ -234,11 +261,10 @@ def build_parser() -> argparse.ArgumentParser:
     train_base_cmd.add_argument("--dropout", type=float, default=0.1)
     train_base_cmd.set_defaults(func=_cmd_train_base)
 
-    train_adapter_cmd = subparsers.add_parser("train-adapter", help="train a q_proj/v_proj LoRA adapter")
+    train_adapter_cmd = subparsers.add_parser("train-adapter", help="train the fixed rank-4 q_proj/v_proj LoRA adapter")
     _add_train_args(train_adapter_cmd)
     train_adapter_cmd.add_argument("--base", required=True)
     train_adapter_cmd.add_argument("--out", required=True)
-    train_adapter_cmd.add_argument("--rank", type=int, default=4)
     train_adapter_cmd.add_argument("--alpha", type=float, default=8.0)
     train_adapter_cmd.add_argument("--lora-dropout", type=float, default=0.0)
     train_adapter_cmd.set_defaults(func=_cmd_train_adapter)
@@ -254,11 +280,17 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--device", default="cpu")
     generate.set_defaults(func=_cmd_generate)
 
-    export_cmd = subparsers.add_parser("export-onnx", help="export a base checkpoint for browser/runtime integration")
+    export_cmd = subparsers.add_parser("export-onnx", help="export a Base-only dynamic ONNX graph")
     export_cmd.add_argument("--base", required=True)
     export_cmd.add_argument("--out", required=True)
     export_cmd.add_argument("--example-seq-len", type=int, default=64)
     export_cmd.set_defaults(func=_cmd_export_onnx)
+
+    web_export_cmd = subparsers.add_parser("export-web-onnx", help="export one Base graph with external rank-4 LoRA inputs")
+    web_export_cmd.add_argument("--base", required=True)
+    web_export_cmd.add_argument("--out", required=True)
+    web_export_cmd.add_argument("--example-seq-len", type=int, default=64)
+    web_export_cmd.set_defaults(func=_cmd_export_web_onnx)
 
     model_info = subparsers.add_parser("model-info", help="print model parameter count and configuration")
     model_info.add_argument("--checkpoint")
