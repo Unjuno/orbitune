@@ -54,8 +54,12 @@ jobs:
           report = json.load(open('smoke-training-report.json', encoding='utf-8'))
           assert report['base']['parameters'] == 2_945_760
           assert report['adapter']['trainable_parameters'] == 15_360
-          assert report['base']['validation_loss'] > 0
-          assert report['adapter']['validation_loss'] > 0
+          for section in ('base', 'adapter'):
+              item = report[section]
+              assert item['validation_loss'] > 0
+              assert item['checkpoint_selection'] == 'minimum_validation_loss'
+              assert item['best_validation_step'] in [point['step'] for point in item['validation_history']]
+              assert item['validation_loss'] == min(point['validation_loss'] for point in item['validation_history'])
           print('ML smoke contract PASS')
           PY
       - name: Upload report
