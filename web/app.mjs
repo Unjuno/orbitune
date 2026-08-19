@@ -1,4 +1,5 @@
 import { OrbituneBrowserRuntime, eventsToMidiBytes } from './orbitune-runtime.mjs';
+import { createVerifiedModelSession } from './model-loader.mjs';
 
 const adapterSelect = document.getElementById('adapter');
 const adapterMeta = document.getElementById('adapter-meta');
@@ -11,7 +12,7 @@ const downloadLink = document.getElementById('download');
 const status = document.getElementById('status');
 
 let registry = { adapters: [] };
-let runtimeConfig = { model_url: '', execution_providers: ['wasm'] };
+let runtimeConfig = { model_url: '', model_sha256: '', execution_providers: ['wasm'] };
 let runtime = null;
 let objectUrl = null;
 
@@ -77,13 +78,16 @@ async function initialize() {
   }
 
   runtime = new OrbituneBrowserRuntime(globalThis.ort);
-  setStatus('Loading orbitune-tiny-v0…');
+  setStatus('Downloading and verifying orbitune-tiny-v0…');
   try {
-    await runtime.loadModel(runtimeConfig.model_url, {
+    runtime.session = await createVerifiedModelSession(globalThis.ort, runtimeConfig.model_url, {
+      expectedSha256: runtimeConfig.model_sha256 || '',
       executionProviders: runtimeConfig.execution_providers || ['wasm'],
     });
     generateButton.disabled = false;
-    setStatus('Base model loaded. Ready to generate locally in this browser.');
+    setStatus(runtimeConfig.model_sha256
+      ? 'Base model SHA-256 verified. Ready to generate locally in this browser.'
+      : 'Base model loaded without a configured SHA-256. Ready to generate locally in this browser.');
   } catch (error) {
     generateButton.disabled = true;
     setStatus(`Failed to load Base model: ${error.message}`);
