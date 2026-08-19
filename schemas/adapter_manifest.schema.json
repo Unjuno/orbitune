@@ -15,7 +15,7 @@
     "base_model": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
     "base_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
     "architecture": {"const": "orbitune-midi-gpt-v0"},
-    "parameter_scale": {"const": "3m"},
+    "parameter_scale": {"const": "10m"},
     "tokenizer": {"const": "theory-remi-v0"},
     "adapter_type": {"const": "lora"},
     "rank": {"const": 4},
