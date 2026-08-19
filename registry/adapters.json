@@ -1,0 +1,6 @@
+{
+  "schema_version": "0.1.0",
+  "base_model": "orbitune-tiny-v0",
+  "tokenizer": "theory-remi-v0",
+  "adapters": []
+}
