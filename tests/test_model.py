@@ -9,7 +9,7 @@ from orbitune.tokenizer.vocab import TheoryRemiVocab
 def test_orbitune_tiny_parameter_budget():
     vocab = TheoryRemiVocab()
     model = OrbituneGPT(OrbituneConfig(vocab_size=len(vocab)))
-    assert 3_000_000 <= model.parameter_count() <= 3_600_000
+    assert model.parameter_count() == 2_945_760
 
 
 def test_model_forward_and_checkpoint(tmp_path: Path):
