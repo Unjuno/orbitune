@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 import torch
 import torch.nn as nn
+from safetensors import safe_open
+from safetensors.torch import load_file, save_file
 
 
 @dataclass(slots=True)
@@ -56,7 +59,7 @@ def trainable_parameter_count(model: nn.Module) -> int:
 
 def adapter_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
     return {
-        name: tensor.detach().cpu()
+        name: tensor.detach().cpu().contiguous()
         for name, tensor in model.state_dict().items()
         if name.endswith("lora_a") or name.endswith("lora_b")
     }
@@ -65,33 +68,34 @@ def adapter_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
 def save_adapter(model: nn.Module, path: str | Path, cfg: LoRAConfig) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "format": "orbitune-lora-v0",
-            "rank": cfg.rank,
-            "alpha": cfg.alpha,
-            "dropout": cfg.dropout,
-            "target_modules": list(cfg.target_modules),
-            "state_dict": adapter_state_dict(model),
-        },
-        path,
-    )
+    metadata = {
+        "format": "orbitune-lora-v0",
+        "rank": str(cfg.rank),
+        "alpha": str(cfg.alpha),
+        "dropout": str(cfg.dropout),
+        "target_modules": json.dumps(list(cfg.target_modules)),
+    }
+    save_file(adapter_state_dict(model), str(path), metadata=metadata)
 
 
 def load_adapter(model: nn.Module, path: str | Path, *, map_location: str | torch.device = "cpu") -> LoRAConfig:
-    payload = torch.load(path, map_location=map_location, weights_only=True)
-    if payload.get("format") != "orbitune-lora-v0":
+    path = Path(path)
+    device = str(map_location)
+    with safe_open(str(path), framework="pt", device=device) as handle:
+        metadata = handle.metadata() or {}
+    if metadata.get("format") != "orbitune-lora-v0":
         raise ValueError("unsupported adapter format")
     cfg = LoRAConfig(
-        rank=int(payload["rank"]),
-        alpha=float(payload["alpha"]),
-        dropout=float(payload.get("dropout", 0.0)),
-        target_modules=tuple(payload["target_modules"]),
+        rank=int(metadata["rank"]),
+        alpha=float(metadata["alpha"]),
+        dropout=float(metadata.get("dropout", "0")),
+        target_modules=tuple(json.loads(metadata["target_modules"])),
     )
     inject_lora(model, cfg)
-    missing, unexpected = model.load_state_dict(payload["state_dict"], strict=False)
-    unexpected = [name for name in unexpected if "lora_" in name]
+    state = load_file(str(path), device=device)
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    unexpected_lora = [name for name in unexpected if "lora_" in name]
     missing_lora = [name for name in missing if "lora_" in name]
-    if unexpected or missing_lora:
-        raise ValueError(f"adapter state mismatch: missing={missing_lora}, unexpected={unexpected}")
+    if unexpected_lora or missing_lora:
+        raise ValueError(f"adapter state mismatch: missing={missing_lora}, unexpected={unexpected_lora}")
     return cfg
