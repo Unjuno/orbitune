@@ -8,7 +8,7 @@ Orbitune v0 is MIDI-only. It does not generate raw audio waveforms, audio-codec 
 
 ## Project goals
 
-- Provide a fixed 3M-parameter MIDI base model target: `orbitune-tiny-v0`.
+- Provide a fixed ~3M-parameter MIDI base model target: `orbitune-tiny-v0`.
 - Support small LoRA adapters as style, genre, mood, or texture-like BGM packs.
 - Let contributors train, validate, and commit compatible adapters.
 - Keep the base model weights out of the repository.
@@ -19,7 +19,7 @@ Orbitune v0 is MIDI-only. It does not generate raw audio waveforms, audio-codec 
 - Symbolic MIDI generation only
 - Theory-REMI v0 token format
 - Piano/BGM-oriented generation
-- 3M-class decoder-only Transformer (`4 layers × 256 hidden`, context 512)
+- Fixed 2,945,760-parameter decoder-only Transformer (`4 layers × 240 hidden`, 4 heads, context 512)
 - LoRA on `q_proj` and `v_proj`
 - Safetensors adapter files
 - Base + one LoRA adapter at a time
@@ -53,6 +53,7 @@ orbitune generate-demo --out examples/generated/demo.mid --bars 4 --bpm 84
 orbitune tokenize examples/generated/demo.mid --out examples/generated/demo.tokens
 orbitune detokenize examples/generated/demo.tokens --out examples/generated/demo_roundtrip.mid --bpm 84
 orbitune inspect examples/generated --out examples/generated/inspect.json
+orbitune eval-midi examples/generated/demo.mid --out examples/generated/demo-eval.json
 ```
 
 ## Prepare a MIDI corpus
@@ -79,7 +80,7 @@ orbitune train-base \
   --seq-len 128
 ```
 
-The model checkpoint is intentionally ignored by Git. Base weights should be distributed as release assets rather than committed to the repository.
+Training reports include loss, elapsed time, processed-token count, and token throughput. The base checkpoint is intentionally ignored by Git and should be distributed as a release asset.
 
 ## Train a LoRA adapter
 
@@ -105,11 +106,11 @@ orbitune generate \
   --out generated.mid
 ```
 
-Generation uses a small grammar constraint so the model emits `BAR / POSITION / PITCH / DURATION / VELOCITY` sequences that can be converted back into MIDI.
+Generation uses a grammar constraint so the model emits `BAR / POSITION / PITCH / DURATION / VELOCITY` sequences that can be converted back into MIDI.
 
 ## Reproducible CPU smoke training
 
-The full 3.34M-parameter architecture can be exercised without reducing the model size:
+The full fixed architecture can be exercised without reducing the model size:
 
 ```bash
 python scripts/smoke_train.py \
@@ -138,6 +139,7 @@ orbitune inspect
 orbitune tokenize
 orbitune prepare-corpus
 orbitune detokenize
+orbitune eval-midi
 orbitune model-info
 orbitune train-base
 orbitune train-adapter
