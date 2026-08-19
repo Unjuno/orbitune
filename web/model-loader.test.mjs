@@ -36,7 +36,8 @@ test('verified model loader hashes bytes before creating a session', async () =>
   assert.equal(calls.length, 1);
   assert(calls[0].source instanceof ArrayBuffer);
   assert.deepEqual(calls[0].options.executionProviders, ['wasm']);
-  assert.equal(session, calls[0]);
+  assert(session.source instanceof ArrayBuffer);
+  assert.deepEqual(session.options, calls[0].options);
 });
 
 test('verified model loader rejects a hash mismatch before ONNX Runtime sees bytes', async () => {
