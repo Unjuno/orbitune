@@ -19,6 +19,8 @@ Orbitune v0 is MIDI-only. It does not generate raw audio waveforms, audio-codec 
 - Symbolic MIDI generation only
 - Theory-REMI v0 token format
 - Piano/BGM-oriented generation
+- 3M-class decoder-only Transformer (`4 layers × 256 hidden`, context 512)
+- LoRA on `q_proj` and `v_proj`
 - Base + one LoRA adapter at a time
 - 4 to 8 bar generation as the default UX
 - GitHub-first distribution
@@ -40,6 +42,7 @@ git clone https://github.com/Unjuno/orbitune.git
 cd orbitune
 python -m pip install -e .[dev]
 python -m pytest -q
+orbitune model-info
 ```
 
 Generate a deterministic demo MIDI file and roundtrip it through Theory-REMI tokens:
@@ -51,36 +54,78 @@ orbitune detokenize examples/generated/demo.tokens --out examples/generated/demo
 orbitune inspect examples/generated --out examples/generated/inspect.json
 ```
 
-Validate an adapter manifest:
+## Train a base model
+
+Tokenize one or more MIDI files first, then train the fixed Orbitune architecture:
+
+```bash
+orbitune tokenize song.mid --out data/song.tokens
+
+orbitune train-base \
+  --tokens data/song.tokens \
+  --out models/orbitune-tiny-v0.pt \
+  --steps 1000 \
+  --batch-size 8 \
+  --seq-len 128
+```
+
+The model checkpoint is intentionally ignored by Git. Base weights should be distributed as release assets rather than committed to the repository.
+
+## Train a LoRA adapter
+
+```bash
+orbitune train-adapter \
+  --base models/orbitune-tiny-v0.pt \
+  --tokens data/my-style.tokens \
+  --out adapters/community/my-style-v0/adapter.pt \
+  --rank 4 \
+  --steps 500
+```
+
+Adapters target `q_proj` and `v_proj`. Training seeds exist for reproducible experiments, but seed selection is not part of the v0 web UI.
+
+## Generate MIDI
+
+```bash
+orbitune generate \
+  --base models/orbitune-tiny-v0.pt \
+  --adapter adapters/community/my-style-v0/adapter.pt \
+  --temperature 0.85 \
+  --bpm 84 \
+  --out generated.mid
+```
+
+Generation uses a small grammar constraint so the model emits `BAR / POSITION / PITCH / DURATION / VELOCITY` sequences that can be converted back into MIDI.
+
+## Adapter validation
 
 ```bash
 orbitune validate-adapter path/to/manifest.json
+orbitune package-adapter path/to/adapter_dir --manifest path/to/manifest.json --out adapter.zip
 ```
-
-## Repository policy
-
-Base model weights are not committed to this repository. Use `scripts/download_base_model.py` once a release asset is available.
 
 Small compatible adapters may be committed directly under `adapters/official/` or `adapters/community/`, provided that they include a manifest, README, demo MIDI, license declaration, and pass validation.
 
 ## Current command surface
 
-```bash
+```text
 orbitune generate-demo
 orbitune inspect
 orbitune tokenize
 orbitune detokenize
+orbitune model-info
+orbitune train-base
+orbitune train-adapter
+orbitune generate
 orbitune validate-adapter
 orbitune package-adapter
 ```
 
-Planned ML commands:
+## Repository policy
 
-```bash
-orbitune train-base
-orbitune train-adapter
-orbitune generate
-```
+Base model weights are not committed to this repository. Use `scripts/download_base_model.py` once an official release asset is available.
+
+Community adapters are intentionally small and may be committed directly when they satisfy the repository policy and compatibility checks.
 
 ## License
 
