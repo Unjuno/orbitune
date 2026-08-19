@@ -8,8 +8,10 @@
       :root { color-scheme: light dark; }
       body { font-family: system-ui, sans-serif; margin: 0 auto; padding: 1.25rem; max-width: 680px; }
       label { display: block; margin-top: 1rem; font-weight: 650; }
-      input, select, button { width: 100%; box-sizing: border-box; padding: 0.8rem; margin-top: 0.35rem; font: inherit; }
-      button { margin-top: 1.5rem; cursor: pointer; font-weight: 700; }
+      input, select, button, a.button { width: 100%; box-sizing: border-box; padding: 0.8rem; margin-top: 0.35rem; font: inherit; }
+      button, a.button { margin-top: 1.2rem; cursor: pointer; font-weight: 700; text-align: center; }
+      a.button { display: block; text-decoration: none; border: 1px solid currentColor; border-radius: 4px; }
+      button:disabled { cursor: progress; opacity: 0.55; }
       .card { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 16px; padding: 1.1rem; }
       .muted { opacity: 0.7; }
       .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
@@ -19,7 +21,7 @@
   </head>
   <body>
     <h1>Orbitune</h1>
-    <p class="muted">Small local MIDI generation with a fixed base model and community LoRA adapters.</p>
+    <p class="muted">Small local MIDI generation with a fixed 3M Base and community LoRA adapters.</p>
 
     <main class="card">
       <label for="adapter">Adapter</label>
@@ -44,79 +46,12 @@
       <label for="temperature">Temperature: <span id="temperature-value">0.85</span></label>
       <input id="temperature" type="range" min="0.60" max="1.20" step="0.05" value="0.85" />
 
-      <button id="generate" type="button">Generate MIDI</button>
+      <button id="generate" type="button" disabled>Generate MIDI</button>
+      <a id="download" class="button" hidden>Download MIDI</a>
       <pre id="status">Loading runtime status…</pre>
     </main>
 
-    <script>
-      const adapterSelect = document.getElementById('adapter');
-      const adapterMeta = document.getElementById('adapter-meta');
-      const bpm = document.getElementById('bpm');
-      const bars = document.getElementById('bars');
-      const temperature = document.getElementById('temperature');
-      const temperatureValue = document.getElementById('temperature-value');
-      const status = document.getElementById('status');
-      let registry = { adapters: [] };
-
-      function updateTemperatureLabel() {
-        temperatureValue.textContent = Number(temperature.value).toFixed(2);
-      }
-
-      function selectedAdapter() {
-        return registry.adapters.find((item) => item.id === adapterSelect.value) || null;
-      }
-
-      function applyAdapterDefaults() {
-        const adapter = selectedAdapter();
-        if (!adapter) {
-          adapterMeta.textContent = 'Base model only';
-          return;
-        }
-        const defaults = adapter.generation_defaults || {};
-        if (defaults.bpm) bpm.value = defaults.bpm;
-        if (defaults.bars) bars.value = defaults.bars;
-        if (defaults.temperature) temperature.value = defaults.temperature;
-        updateTemperatureLabel();
-        adapterMeta.textContent = [adapter.family || adapter.adapter_family, ...(adapter.tags || [])].filter(Boolean).join(' · ') || adapter.id;
-      }
-
-      async function loadRegistry() {
-        try {
-          const response = await fetch('./data/adapters.json', { cache: 'no-cache' });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          registry = await response.json();
-          for (const adapter of registry.adapters || []) {
-            const option = document.createElement('option');
-            option.value = adapter.id;
-            option.textContent = adapter.display_name || adapter.id;
-            adapterSelect.appendChild(option);
-          }
-          adapterMeta.textContent = registry.adapters?.length ? `${registry.adapters.length} adapter(s) available` : 'No bundled adapters yet — base model only';
-        } catch (error) {
-          adapterMeta.textContent = `Adapter registry unavailable: ${error.message}`;
-        }
-      }
-
-      temperature.addEventListener('input', updateTemperatureLabel);
-      adapterSelect.addEventListener('change', applyAdapterDefaults);
-
-      document.getElementById('generate').addEventListener('click', () => {
-        const adapter = selectedAdapter();
-        status.textContent = [
-          'Generation request prepared.',
-          `adapter=${adapter?.id || 'base-only'}`,
-          `bpm=${bpm.value}`,
-          `bars=${bars.value}`,
-          `temperature=${Number(temperature.value).toFixed(2)}`,
-          '',
-          'The browser runtime is the next integration step: export orbitune-tiny-v0 to ONNX/WASM, then load the selected adapter in-browser.'
-        ].join('\n');
-      });
-
-      updateTemperatureLabel();
-      loadRegistry().finally(() => {
-        status.textContent = 'UI and adapter registry are connected. Browser model inference is not exported yet.';
-      });
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <script type="module" src="./app.mjs"></script>
   </body>
 </html>
