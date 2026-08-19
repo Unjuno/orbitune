@@ -42,6 +42,15 @@ function makeSafetensors() {
   return buffer;
 }
 
+function noteAt(position, pitch = 60) {
+  return [
+    TOKEN_TO_ID.get(`POSITION_${position}`),
+    TOKEN_TO_ID.get(`NOTE_PITCH_${pitch}`),
+    TOKEN_TO_ID.get('NOTE_DURATION_4'),
+    TOKEN_TO_ID.get('VELOCITY_16'),
+  ];
+}
+
 test('v0 vocabulary and empty adapter shapes are fixed', () => {
   assert.equal(VOCAB.length, 204);
   assert.equal(TOKEN_TO_ID.get('BAR'), 3);
@@ -61,19 +70,27 @@ test('Safetensors metadata and fixed rank-4 adapter packing work', () => {
   assert.equal(packed.loraB.length, 4 * 2 * 240 * 4);
 });
 
-test('grammar enforces a complete note event and requested bar count', () => {
+test('grammar enforces monotonic positions and full requested bars', () => {
   const bos = TOKEN_TO_ID.get('BOS');
   const bar = TOKEN_TO_ID.get('BAR');
-  const position = TOKEN_TO_ID.get('POSITION_0');
-  const pitch = TOKEN_TO_ID.get('NOTE_PITCH_60');
-  const duration = TOKEN_TO_ID.get('NOTE_DURATION_4');
-  const velocity = TOKEN_TO_ID.get('VELOCITY_16');
-  assert.deepEqual(allowedNextTokenIds([bos]), [bar]);
-  assert(allowedNextTokenIds([bos, bar]).includes(position));
-  assert(allowedNextTokenIds([bos, bar, position]).includes(pitch));
-  assert(allowedNextTokenIds([bos, bar, position, pitch]).includes(duration));
-  assert(allowedNextTokenIds([bos, bar, position, pitch, duration]).includes(velocity));
-  assert.deepEqual(allowedNextTokenIds([bos, bar, position, pitch, duration, velocity], 1), [TOKEN_TO_ID.get('EOS')]);
+  const eos = TOKEN_TO_ID.get('EOS');
+  let ids = [bos];
+  assert.deepEqual(allowedNextTokenIds(ids, 1), [bar]);
+  ids.push(bar, ...noteAt(0));
+  const afterZero = allowedNextTokenIds(ids, 1);
+  assert(!afterZero.includes(eos));
+  assert(!afterZero.includes(TOKEN_TO_ID.get('POSITION_0')));
+  assert(afterZero.includes(TOKEN_TO_ID.get('POSITION_1')));
+
+  ids.push(...noteAt(12));
+  const finalBar = allowedNextTokenIds(ids, 1);
+  assert(finalBar.includes(eos));
+  assert(finalBar.includes(TOKEN_TO_ID.get('POSITION_13')));
+
+  const twoBars = [bos, bar, ...noteAt(12)];
+  const afterFirstBar = allowedNextTokenIds(twoBars, 2);
+  assert(afterFirstBar.includes(bar));
+  assert(!afterFirstBar.includes(eos));
 });
 
 test('allowed-logit sampling never chooses a masked token', () => {
@@ -88,12 +105,10 @@ test('allowed-logit sampling never chooses a masked token', () => {
 
 test('generated token IDs convert to playable MIDI bytes', () => {
   const ids = [
-    TOKEN_TO_ID.get('BOS'), TOKEN_TO_ID.get('BAR'), TOKEN_TO_ID.get('POSITION_0'),
-    TOKEN_TO_ID.get('NOTE_PITCH_60'), TOKEN_TO_ID.get('NOTE_DURATION_4'), TOKEN_TO_ID.get('VELOCITY_16'),
-    TOKEN_TO_ID.get('EOS'),
+    TOKEN_TO_ID.get('BOS'), TOKEN_TO_ID.get('BAR'), ...noteAt(0), ...noteAt(12, 64), TOKEN_TO_ID.get('EOS'),
   ];
   const events = tokenIdsToEvents(ids);
-  assert.equal(events.length, 1);
+  assert.equal(events.length, 2);
   assert.equal(events[0].pitch, 60);
   const midi = eventsToMidiBytes(events, 84);
   assert.equal(new TextDecoder().decode(midi.slice(0, 4)), 'MThd');
