@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from orbitune.compat import ARCHITECTURE_ABI, sha256_file
+
 
 @dataclass(slots=True)
 class OrbituneConfig:
@@ -64,11 +66,12 @@ class Block(nn.Module):
 
 
 class OrbituneGPT(nn.Module):
-    architecture = "orbitune-midi-gpt-v0"
+    architecture = ARCHITECTURE_ABI
 
     def __init__(self, cfg: OrbituneConfig) -> None:
         super().__init__()
         self.config = cfg
+        self.base_sha256: str | None = None
         self.token_emb = nn.Embedding(cfg.vocab_size, cfg.n_embd)
         self.pos_emb = nn.Embedding(cfg.max_seq_len, cfg.n_embd)
         self.drop = nn.Dropout(cfg.dropout)
@@ -135,9 +138,11 @@ class OrbituneGPT(nn.Module):
 
     @classmethod
     def load_checkpoint(cls, path: str | Path, *, map_location: str | torch.device = "cpu") -> "OrbituneGPT":
+        path = Path(path)
         payload = torch.load(path, map_location=map_location, weights_only=True)
         if payload.get("architecture") != cls.architecture:
             raise ValueError("checkpoint architecture mismatch")
         model = cls(OrbituneConfig(**payload["config"]))
         model.load_state_dict(payload["state_dict"])
+        model.base_sha256 = sha256_file(path)
         return model
