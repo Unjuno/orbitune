@@ -2,14 +2,18 @@ from pathlib import Path
 
 import torch
 
+from orbitune.compat import REFERENCE_PARAMETER_COUNT
 from orbitune.model import OrbituneConfig, OrbituneGPT
 from orbitune.tokenizer.vocab import TheoryRemiVocab
 
 
-def test_orbitune_tiny_parameter_budget():
+def test_orbitune_reference_parameter_budget():
     vocab = TheoryRemiVocab()
     model = OrbituneGPT(OrbituneConfig(vocab_size=len(vocab)))
-    assert model.parameter_count() == 2_945_760
+    assert model.parameter_count() == REFERENCE_PARAMETER_COUNT == 10_200_960
+    assert model.config.n_embd == 448
+    assert model.config.n_head == 7
+    assert model.config.max_seq_len == 1024
 
 
 def test_model_forward_and_checkpoint(tmp_path: Path):
@@ -19,11 +23,6 @@ def test_model_forward_and_checkpoint(tmp_path: Path):
     logits, loss = model(x, x)
     assert logits.shape == (2, 8, cfg.vocab_size)
     assert loss is not None and torch.isfinite(loss)
-
-    checkpoint = tmp_path / "base.pt"
-    model.save_checkpoint(checkpoint)
-    loaded = OrbituneGPT.load_checkpoint(checkpoint).eval()
-    with torch.no_grad():
-        a, _ = model(x)
-        b, _ = loaded(x)
+    checkpoint = tmp_path / "base.pt"; model.save_checkpoint(checkpoint); loaded = OrbituneGPT.load_checkpoint(checkpoint).eval()
+    with torch.no_grad(): a, _ = model(x); b, _ = loaded(x)
     assert torch.allclose(a, b)
