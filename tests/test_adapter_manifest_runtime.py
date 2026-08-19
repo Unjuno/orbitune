@@ -18,13 +18,7 @@ def valid_manifest() -> dict:
         "rank": 4,
         "target_modules": ["q_proj", "v_proj"],
         "license": "Apache-2.0",
-        "training_data": {
-            "source_type": "synthetic",
-            "license": "Apache-2.0",
-            "rights_confirmed": True,
-            "num_files": 4,
-            "num_tokens": 1000,
-        },
+        "training_data": {"source_type": "synthetic", "license": "Apache-2.0", "rights_confirmed": True, "num_files": 4, "num_tokens": 1000},
         "generation_defaults": {"bpm": 84, "bars": 8, "temperature": 0.85},
         "tags": ["piano", "chill"],
     }
@@ -34,9 +28,15 @@ def test_valid_adapter_manifest_passes():
     assert validate_manifest(valid_manifest()) == []
 
 
-def test_wrong_base_model_fails():
+def test_other_valid_base_id_is_allowed():
     manifest = valid_manifest()
-    manifest["base_model"] = "other-base"
+    manifest["base_model"] = "community-piano-base"
+    assert validate_manifest(manifest) == []
+
+
+def test_invalid_base_id_fails():
+    manifest = valid_manifest()
+    manifest["base_model"] = "Bad Base ID"
     assert any("base_model" in error for error in validate_manifest(manifest))
 
 
