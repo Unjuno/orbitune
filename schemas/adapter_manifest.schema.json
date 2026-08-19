@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Unjuno/orbitune/schemas/adapter_manifest.schema.json",
+  "title": "Orbitune Adapter Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact_type",
+    "name",
+    "version",
+    "display_name",
+    "base_model",
+    "architecture",
+    "parameter_scale",
+    "tokenizer",
+    "adapter_type",
+    "rank",
+    "target_modules",
+    "generation_defaults",
+    "license",
+    "training_data",
+    "tags"
+  ],
+  "properties": {
+    "artifact_type": { "const": "orbitune_adapter" },
+    "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*-v[0-9]+$" },
+    "version": { "type": "string" },
+    "display_name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "adapter_family": {
+      "type": "string",
+      "enum": ["style", "genre", "texture-like", "control", "instrument", "experimental"]
+    },
+    "base_model": { "const": "orbitune-tiny-v0" },
+    "architecture": { "const": "orbitune-midi-gpt-v0" },
+    "parameter_scale": { "const": "3m" },
+    "tokenizer": { "const": "theory-remi-v0" },
+    "adapter_type": { "const": "lora" },
+    "rank": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "target_modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "generation_defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bpm", "bars", "temperature"],
+      "properties": {
+        "bpm": { "type": "integer", "minimum": 40, "maximum": 220 },
+        "bars": { "type": "integer", "enum": [4, 8, 16] },
+        "temperature": { "type": "number", "minimum": 0.6, "maximum": 1.2 },
+        "top_p": { "type": "number", "minimum": 0.5, "maximum": 1.0 }
+      }
+    },
+    "license": { "type": "string", "minLength": 1 },
+    "training_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_type", "license", "rights_confirmed"],
+      "properties": {
+        "source_type": { "type": "string" },
+        "license": { "type": "string" },
+        "num_files": { "type": "integer", "minimum": 0 },
+        "num_tokens": { "type": "integer", "minimum": 0 },
+        "rights_confirmed": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    }
+  }
+}
