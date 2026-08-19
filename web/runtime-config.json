@@ -1,5 +1,6 @@
 {
   "model_url": "",
   "model_sha256": "",
+  "base_sha256": "",
   "execution_providers": ["wasm"]
 }
