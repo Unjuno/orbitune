@@ -87,3 +87,5 @@ def package_base_release(base: str | Path, web_onnx: str | Path, out_dir: str | 
     }
     (out_dir / "runtime-config.json").write_text(json.dumps(runtime_config, indent=2) + "\n", encoding="utf-8")
     return manifest
+
+# CI marker: verify the immutable Base release contract on GitHub-hosted runners.
