@@ -7,16 +7,23 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from orbitune.compat import ARCHITECTURE_ABI, sha256_file
+from orbitune.compat import (
+    ARCHITECTURE_ABI,
+    REFERENCE_MAX_SEQ_LEN,
+    REFERENCE_N_EMBD,
+    REFERENCE_N_HEAD,
+    REFERENCE_N_LAYER,
+    sha256_file,
+)
 
 
 @dataclass(slots=True)
 class OrbituneConfig:
     vocab_size: int
-    max_seq_len: int = 512
-    n_layer: int = 4
-    n_embd: int = 240
-    n_head: int = 4
+    max_seq_len: int = REFERENCE_MAX_SEQ_LEN
+    n_layer: int = REFERENCE_N_LAYER
+    n_embd: int = REFERENCE_N_EMBD
+    n_head: int = REFERENCE_N_HEAD
     dropout: float = 0.1
 
     @property
