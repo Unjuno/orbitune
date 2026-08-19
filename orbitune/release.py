@@ -49,9 +49,12 @@ def validate_base_checkpoint(path: str | Path) -> OrbituneGPT:
 
 
 def _artifact(path: Path, *, url: str) -> dict[str, object]:
+    size = path.stat().st_size
+    if size <= 0:
+        raise ValueError(f"release artifact is empty: {path}")
     return {
         "filename": path.name,
-        "bytes": path.stat().st_size,
+        "bytes": size,
         "sha256": sha256_file(path),
         "url": url,
     }
@@ -71,6 +74,12 @@ def package_base_release(
         raise FileNotFoundError(base)
     if not web_onnx.is_file():
         raise FileNotFoundError(web_onnx)
+    if web_onnx.stat().st_size <= 0:
+        raise ValueError("web ONNX artifact must not be empty")
+    if not repository or "/" not in repository:
+        raise ValueError("repository must be in owner/name form")
+    if not release_tag or "/" in release_tag:
+        raise ValueError("release_tag must be a non-empty GitHub tag name without slashes")
     model = validate_base_checkpoint(base)
 
     out_dir = Path(out_dir)
@@ -81,6 +90,14 @@ def package_base_release(
     shutil.copy2(web_onnx, onnx_out)
 
     release_root = f"https://github.com/{repository}/releases/download/{release_tag}"
+    checkpoint_record = _artifact(
+        checkpoint_out,
+        url=f"{release_root}/{BASE_RELEASE_ASSETS['checkpoint']}",
+    )
+    onnx_record = _artifact(
+        onnx_out,
+        url=f"{release_root}/{BASE_RELEASE_ASSETS['web_onnx']}",
+    )
     manifest: dict[str, object] = {
         "schema_version": "0.1.0",
         "model_id": BASE_MODEL_ID,
@@ -90,22 +107,16 @@ def package_base_release(
         "config": asdict(model.config),
         "release": {"repository": repository, "tag": release_tag},
         "artifacts": {
-            "checkpoint": _artifact(
-                checkpoint_out,
-                url=f"{release_root}/{BASE_RELEASE_ASSETS['checkpoint']}",
-            ),
-            "web_onnx": _artifact(
-                onnx_out,
-                url=f"{release_root}/{BASE_RELEASE_ASSETS['web_onnx']}",
-            ),
+            "checkpoint": checkpoint_record,
+            "web_onnx": onnx_record,
         },
     }
     manifest_path = out_dir / BASE_RELEASE_ASSETS["manifest"]
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     runtime_config = {
-        "model_url": manifest["artifacts"]["web_onnx"]["url"],
-        "model_sha256": manifest["artifacts"]["web_onnx"]["sha256"],
+        "model_url": onnx_record["url"],
+        "model_sha256": onnx_record["sha256"],
         "execution_providers": ["wasm"],
     }
     (out_dir / "runtime-config.json").write_text(
