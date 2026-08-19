@@ -27,6 +27,8 @@ jobs:
           python-version: '3.12'
       - uses: actions/configure-pages@v5
       - name: Build bundled adapter registry and browser assets
+        env:
+          PYTHONPATH: .
         run: python scripts/build_registry.py --adapters adapters --web-root web
       - uses: actions/upload-pages-artifact@v3
         with:
