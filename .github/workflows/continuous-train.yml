@@ -45,7 +45,6 @@ jobs:
 
       - name: Restore fast training-state cache
         if: steps.data.outputs.ready == 'true'
-        id: cache
         uses: actions/cache/restore@v4
         with:
           path: .orbitune-ci-state
@@ -61,20 +60,33 @@ jobs:
         run: |
           mkdir -p .orbitune-ci-state
           if [[ ! -s .orbitune-ci-state/state.pt ]] && gh release view continuous-training >/dev/null 2>&1; then
-            gh release download continuous-training --dir .orbitune-ci-state --pattern 'state.pt' --pattern 'best.pt' --pattern 'report.json' || true
+            gh release download continuous-training \
+              --dir .orbitune-ci-state \
+              --pattern 'state.pt' \
+              --pattern 'healthy.pt' \
+              --pattern 'best.pt' \
+              --pattern 'report.json' || true
           fi
 
-      - name: Continue the 10M Base training
+      - name: Continue the 10M Base training with health monitoring
         if: steps.data.outputs.ready == 'true'
         run: |
           python scripts/continuous_train.py \
             --train data/continuous/train.tokens \
             --validation data/continuous/validation.tokens \
             --state .orbitune-ci-state/state.pt \
+            --healthy-state .orbitune-ci-state/healthy.pt \
             --best .orbitune-ci-state/best.pt \
+            --snapshots-dir .orbitune-ci-state/snapshots \
             --report .orbitune-ci-state/report.json \
             --max-seconds 18000 \
             --validation-interval 250 \
+            --snapshot-token-interval 10000000 \
+            --spike-window 100 \
+            --spike-min-samples 30 \
+            --spike-z-threshold 5.0 \
+            --spike-consecutive-limit 3 \
+            --gradient-spike-threshold 10.0 \
             --batch-size 8 \
             --seq-len 256 \
             --device cpu
@@ -86,18 +98,47 @@ jobs:
           path: .orbitune-ci-state
           key: continuous-10m-${{ github.run_id }}
 
-      - name: Persist latest state in this repository's prerelease
-        if: steps.data.outputs.ready == 'true' && success()
+      - name: Persist latest, healthy, best, and new immutable snapshots
+        if: steps.data.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           if ! gh release view continuous-training >/dev/null 2>&1; then
-            gh release create continuous-training --prerelease --title 'Continuous training state' --notes 'Mutable training state. Not a published Base compatibility target.'
+            gh release create continuous-training --prerelease --title 'Continuous training state' --notes 'Mutable latest/healthy state plus immutable token snapshots. Not a published Base compatibility target.'
           fi
           gh release upload continuous-training \
             .orbitune-ci-state/state.pt \
+            .orbitune-ci-state/healthy.pt \
             .orbitune-ci-state/best.pt \
             .orbitune-ci-state/report.json \
             --clobber
+
+          python - <<'PY' > /tmp/new-snapshots.txt
+          import json
+          report = json.load(open('.orbitune-ci-state/report.json', encoding='utf-8'))
+          for path in report.get('created_snapshots', []):
+              print(path)
+          PY
+
+          while IFS= read -r snapshot; do
+            [[ -n "$snapshot" && -f "$snapshot" ]] || continue
+            base="$(basename "$snapshot" .pt)"
+            immutable=".orbitune-ci-state/${base}-step-$(python -c "import torch; p=torch.load('$snapshot', map_location='cpu', weights_only=False); print(p['global_step'])")-run-${GITHUB_RUN_ID}.pt"
+            cp "$snapshot" "$immutable"
+            gh release upload continuous-training "$immutable"
+          done < /tmp/new-snapshots.txt
+
           cat .orbitune-ci-state/report.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail visibly after automatic rollback
+        if: steps.data.outputs.ready == 'true'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          report = json.load(open('.orbitune-ci-state/report.json', encoding='utf-8'))
+          if report.get('status') == 'rolled_back':
+              raise SystemExit(f"training rolled back automatically: {report.get('rollback_reason')}")
+          print('continuous training health status: healthy')
+          PY
