@@ -23,6 +23,10 @@ dev = [
   "pytest>=8",
   "jsonschema>=4"
 ]
+export = [
+  "onnx",
+  "onnxscript"
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
