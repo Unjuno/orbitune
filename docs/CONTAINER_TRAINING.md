@@ -1,6 +1,6 @@
 # Container training smoke results
 
-This document records a measured engineering smoke test for the fixed Orbitune v0 model scale. It is not a music-quality benchmark and it does not use a real MIDI corpus.
+This document records measured engineering smoke tests for the fixed Orbitune v0 model scale. These tests do not use a real MIDI corpus and are not music-quality benchmarks.
 
 ## Environment
 
@@ -14,7 +14,7 @@ This document records a measured engineering smoke test for the fixed Orbitune v
 - Theory-REMI v0 vocabulary: 204 tokens
 - Parameter count: 2,945,760
 
-## 100-step measured smoke run
+## 100-step measured training smoke run
 
 Synthetic grammar-valid Theory-REMI patterns were used deliberately so that the test answers one narrow question: can the fixed 3M model and a LoRA adapter actually train in the target container without reducing the architecture?
 
@@ -47,15 +47,49 @@ Synthetic grammar-valid Theory-REMI patterns were used deliberately so that the 
 - base checkpoint: approximately 11.8 MB in the unquantized PyTorch checkpoint format used by this smoke harness
 - adapter: approximately 63 KB
 
+## Full-context autoregressive inference baseline
+
+A second measurement used the same fixed 2,945,760-parameter architecture on the same 5-vCPU container. The benchmark generated 256 tokens by rerunning the complete Transformer context for every new token; no KV cache was used.
+
+- generated tokens: 256
+- total measured time: approximately 2.08 seconds
+- mean latency: approximately 8.1 ms/token
+- throughput: approximately 123 tokens/second
+- device: CPU
+- implementation: PyTorch eager, full-context recomputation
+
+Reproduce with:
+
+```bash
+python scripts/benchmark_inference.py \
+  --tokens 256 \
+  --device cpu \
+  --threads 5
+```
+
+This number is **not** a smartphone or browser benchmark. WASM, JavaScript overhead, mobile CPU characteristics, thermal limits, and ONNX graph behavior can materially change latency. It is only a reference point for the current architecture.
+
 ## Interpretation
 
-PASS: the fixed 2.95M-parameter architecture is small enough for CPU training smoke tests in the available container, and rank-4 LoRA training is substantially smaller than Base training.
+PASS:
 
-NOT PROVEN: real-corpus music quality, long-context quality, smartphone inference speed, INT8 accuracy, browser inference, or style separation on human listening tests.
+- the fixed 2.95M-parameter architecture is small enough for CPU training smoke tests in the available container;
+- rank-4 LoRA training is substantially smaller than Base training;
+- full-context autoregressive inference is already inexpensive enough to justify testing a simple WASM baseline before introducing KV-cache complexity.
 
-The next meaningful training experiment must use a rights-cleared MIDI corpus through `orbitune prepare-corpus` and report both held-out loss and generated-MIDI quality metrics.
+NOT PROVEN:
 
-## Reproduce
+- real-corpus music quality;
+- long-context musical quality;
+- smartphone inference speed;
+- ONNX/WASM speed;
+- INT8 accuracy;
+- browser memory use;
+- adapter style separation on human listening tests.
+
+The next meaningful training experiment must use a rights-cleared MIDI corpus through `orbitune prepare-split-corpus` and report held-out loss plus generated-MIDI structural/listening metrics.
+
+## Reproduce training smoke
 
 ```bash
 python scripts/smoke_train.py \
