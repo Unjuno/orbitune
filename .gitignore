@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+
+# Node / web
+node_modules/
+web/dist/
+web/.vite/
+
+# Local data and training artifacts
+data/raw/
+data/processed/
+data/tokens/
+runs/
+checkpoints/
+outputs/batches/
+wandb/
+
+# Base model weights: never commit base checkpoints under models/
+models/**/*.pt
+models/**/*.pth
+models/**/*.ckpt
+models/**/*.safetensors
+models/**/*.onnx
+models/**/*.bin
+
+# Allow adapter artifacts under adapters/
+!adapters/**/*.safetensors
+!adapters/**/*.mid
+!adapters/**/manifest.json
+!adapters/**/README.md
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
