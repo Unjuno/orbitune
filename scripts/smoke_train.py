@@ -11,17 +11,23 @@ from orbitune.tokenizer.vocab import TheoryRemiVocab
 from orbitune.training import TrainConfig, train_adapter, train_base
 
 
-def _write_pattern(path: Path, *, style: str, bars: int = 128) -> None:
-    roots = [48, 53, 55, 50] if style == "base" else [45, 48, 52, 50]
+def _write_pattern(path: Path, *, style: str, bars: int = 128, validation: bool = False) -> None:
+    if style == "base":
+        roots = [50, 55, 57, 52] if validation else [48, 53, 55, 50]
+        positions = [0, 4, 8, 12]
+        duration = 4
+    else:
+        roots = [47, 50, 54, 52] if validation else [45, 48, 52, 50]
+        positions = [0, 8, 12]
+        duration = 8
+
+    intervals = [0, 7, 12, 7]
     lines: list[str] = []
     for bar in range(bars):
         lines.append("BAR")
         root = roots[bar % len(roots)]
-        positions = [0, 4, 8, 12] if style == "base" else [0, 8]
-        intervals = [0, 7, 12, 7]
         for index, position in enumerate(positions):
             pitch = root + intervals[index % len(intervals)]
-            duration = 4 if style == "base" else 8
             velocity = 18 if style == "base" else 10 + (bar % 3)
             lines.extend(
                 [
@@ -35,7 +41,7 @@ def _write_pattern(path: Path, *, style: str, bars: int = 128) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="CPU smoke test for orbitune-tiny-v0 and a rank-4 LoRA")
+    parser = argparse.ArgumentParser(description="CPU smoke test for orbitune-tiny-v0 and its fixed rank-4 LoRA")
     parser.add_argument("--base-steps", type=int, default=40)
     parser.add_argument("--adapter-steps", type=int, default=40)
     parser.add_argument("--device", default="cpu")
@@ -43,16 +49,21 @@ def main() -> None:
     args = parser.parse_args()
 
     vocab = TheoryRemiVocab()
-    model_cfg = OrbituneConfig(vocab_size=len(vocab), max_seq_len=512, n_layer=4, n_embd=240, n_head=4, dropout=0.1)
+    model_cfg = OrbituneConfig(vocab_size=len(vocab))
+    assert model_cfg.n_layer == 4 and model_cfg.n_embd == 240 and model_cfg.n_head == 4
 
     with tempfile.TemporaryDirectory(prefix="orbitune-smoke-") as temp:
         root = Path(temp)
         base_tokens = root / "base.tokens"
+        base_validation = root / "base-validation.tokens"
         style_tokens = root / "style.tokens"
+        style_validation = root / "style-validation.tokens"
         base_checkpoint = root / "orbitune-tiny-v0.pt"
         adapter_path = root / "adapter.safetensors"
         _write_pattern(base_tokens, style="base")
+        _write_pattern(base_validation, style="base", bars=32, validation=True)
         _write_pattern(style_tokens, style="style")
+        _write_pattern(style_validation, style="style", bars=32, validation=True)
 
         base_report = train_base(
             [base_tokens],
@@ -65,7 +76,11 @@ def main() -> None:
                 learning_rate=5e-4,
                 device=args.device,
             ),
+            validation_token_paths=[base_validation],
         )
+        if base_report["parameters"] != 2_945_760:
+            raise RuntimeError(f"unexpected v0 parameter count: {base_report['parameters']}")
+
         adapter_report = train_adapter(
             base_checkpoint,
             [style_tokens],
@@ -78,7 +93,11 @@ def main() -> None:
                 learning_rate=1e-3,
                 device=args.device,
             ),
+            validation_token_paths=[style_validation],
         )
+        if adapter_report["trainable_parameters"] != 15_360:
+            raise RuntimeError(f"unexpected v0 adapter parameter count: {adapter_report['trainable_parameters']}")
+
         report = {
             "purpose": "pipeline smoke test only; not a music-quality benchmark",
             "model": "orbitune-tiny-v0",
