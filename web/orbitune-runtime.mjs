@@ -5,6 +5,7 @@ export const ORBITUNE_V0 = Object.freeze({
   positionsPerBar: 16,
   context: 512,
   velocityBins: 32,
+  maxNotesPerPosition: 8,
 });
 
 export function buildVocab() {
@@ -36,8 +37,7 @@ export function parseSafetensors(arrayBuffer) {
   const headerStart = 8;
   const headerEnd = headerStart + headerLength;
   if (headerEnd > view.byteLength) throw new Error('Safetensors header is truncated');
-  const headerText = new TextDecoder().decode(new Uint8Array(arrayBuffer, headerStart, headerLength));
-  const header = JSON.parse(headerText);
+  const header = JSON.parse(new TextDecoder().decode(new Uint8Array(arrayBuffer, headerStart, headerLength)));
   const tensors = new Map();
   for (const [name, spec] of Object.entries(header)) {
     if (name === '__metadata__') continue;
@@ -76,7 +76,7 @@ export function packAdapterSafetensors(arrayBuffer) {
   const targets = JSON.parse(metadata.target_modules || '[]');
   if (JSON.stringify(targets) !== JSON.stringify(['q_proj', 'v_proj'])) throw new Error('Orbitune v0 browser runtime requires q_proj/v_proj targets');
   const alpha = Number(metadata.alpha);
-  if (!Number.isFinite(alpha)) throw new Error('Adapter alpha metadata is missing or invalid');
+  if (!Number.isFinite(alpha) || alpha <= 0) throw new Error('Adapter alpha metadata is missing or invalid');
   const packed = emptyAdapterInputs();
   for (let layer = 0; layer < ORBITUNE_V0.layers; layer += 1) {
     for (let targetIndex = 0; targetIndex < 2; targetIndex += 1) {
@@ -98,31 +98,54 @@ export function packAdapterSafetensors(arrayBuffer) {
 function generationState(tokenIds) {
   let barCount = 0;
   let lastPosition = null;
+  let notesAtPosition = 0;
+  let pitchesAtPosition = new Set();
+  let pendingPosition = null;
   for (const id of tokenIds) {
     const token = VOCAB[id];
-    if (token === 'BAR') { barCount += 1; lastPosition = null; }
-    else if (token?.startsWith('POSITION_')) lastPosition = Number(token.slice('POSITION_'.length));
+    if (token === 'BAR') {
+      barCount += 1;
+      lastPosition = null;
+      notesAtPosition = 0;
+      pitchesAtPosition = new Set();
+      pendingPosition = null;
+    } else if (token?.startsWith('POSITION_')) {
+      const position = Number(token.slice('POSITION_'.length));
+      if (position !== lastPosition) {
+        lastPosition = position;
+        notesAtPosition = 0;
+        pitchesAtPosition = new Set();
+      }
+      pendingPosition = position;
+    } else if (token?.startsWith('NOTE_PITCH_') && pendingPosition === lastPosition) {
+      pitchesAtPosition.add(Number(token.slice('NOTE_PITCH_'.length)));
+      notesAtPosition += 1;
+      pendingPosition = null;
+    }
   }
-  return { barCount, lastPosition };
+  return { barCount, lastPosition, notesAtPosition, pitchesAtPosition };
 }
 
 export function allowedNextTokenIds(tokenIds, requestedBars = 8) {
   if (!(requestedBars > 0)) throw new Error('requestedBars must be positive');
   const last = VOCAB[tokenIds[tokenIds.length - 1]] || 'BOS';
-  const { barCount, lastPosition } = generationState(tokenIds);
+  const state = generationState(tokenIds);
   if (last === 'EOS') return [];
   if (last === 'BOS') return [TOKEN_TO_ID.get('BAR')];
   if (last === 'BAR') return idsWithPrefix('POSITION_');
-  if (last?.startsWith('POSITION_')) return idsWithPrefix('NOTE_PITCH_');
+  if (last?.startsWith('POSITION_')) {
+    return idsWithPrefix('NOTE_PITCH_').filter((id) => !state.pitchesAtPosition.has(Number(VOCAB[id].slice('NOTE_PITCH_'.length))));
+  }
   if (last?.startsWith('NOTE_PITCH_')) return idsWithPrefix('NOTE_DURATION_');
   if (last?.startsWith('NOTE_DURATION_')) return idsWithPrefix('VELOCITY_');
   if (last?.startsWith('VELOCITY_')) {
-    if (lastPosition === null) throw new Error('velocity token encountered before a position token');
-    const higher = [];
-    for (let i = lastPosition + 1; i < ORBITUNE_V0.positionsPerBar; i += 1) higher.push(TOKEN_TO_ID.get(`POSITION_${i}`));
-    const canCloseBar = lastPosition >= 12;
-    if (barCount >= requestedBars) return canCloseBar ? [...higher, TOKEN_TO_ID.get('EOS')] : higher;
-    return canCloseBar ? [...higher, TOKEN_TO_ID.get('BAR')] : higher;
+    if (state.lastPosition === null) throw new Error('velocity token encountered before a position token');
+    const nextPositions = [];
+    if (state.notesAtPosition < ORBITUNE_V0.maxNotesPerPosition) nextPositions.push(TOKEN_TO_ID.get(`POSITION_${state.lastPosition}`));
+    for (let i = state.lastPosition + 1; i < ORBITUNE_V0.positionsPerBar; i += 1) nextPositions.push(TOKEN_TO_ID.get(`POSITION_${i}`));
+    const canCloseBar = state.lastPosition >= 12;
+    if (state.barCount >= requestedBars) return canCloseBar ? [...nextPositions, TOKEN_TO_ID.get('EOS')] : nextPositions;
+    return canCloseBar ? [...nextPositions, TOKEN_TO_ID.get('BAR')] : nextPositions;
   }
   return [TOKEN_TO_ID.get('BAR')];
 }
