@@ -4,9 +4,10 @@ import json
 from pathlib import Path
 
 
-def test_registry_targets_v0_base() -> None:
+def test_registry_targets_immutable_base() -> None:
     registry = json.loads(Path("registry/adapters.json").read_text(encoding="utf-8"))
-    assert registry["base_model"] == "orbitune-tiny-v0"
+    assert registry["base_model"] == "orbitune-base"
+    assert "base_sha256" in registry
     assert registry["tokenizer"] == "theory-remi-v0"
     assert isinstance(registry["adapters"], list)
 
