@@ -9,18 +9,21 @@ from orbitune.registry import build_registry, discover_adapter_directories
 def test_bundled_adapters_are_fully_valid_and_registry_builds() -> None:
     discovered = discover_adapter_directories("adapters")
     ids: set[str] = set()
+    base_hashes: set[str] = set()
     for directory in discovered:
         manifest = validate_adapter_directory(directory)
         adapter_id = manifest["name"]
         assert directory.name == adapter_id
         assert adapter_id not in ids
         ids.add(adapter_id)
+        base_hashes.add(manifest["base_sha256"].lower())
         total_size = sum(path.stat().st_size for path in directory.rglob("*") if path.is_file())
         assert total_size <= 5 * 1024 * 1024, f"{adapter_id} exceeds 5 MiB"
 
     registry = build_registry("adapters")
     assert {item["id"] for item in registry["adapters"]} == ids
-    assert registry["base_model"] == "orbitune-tiny-v0"
+    assert registry["base_model"] == "orbitune-base"
+    assert registry["base_sha256"] == (next(iter(base_hashes)) if base_hashes else "")
     assert registry["tokenizer"] == "theory-remi-v0"
 
 
