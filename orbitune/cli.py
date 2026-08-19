@@ -6,6 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from orbitune.adapter import package_adapter, validate_manifest_file
+from orbitune.dataset import prepare_corpus
 from orbitune.demo import make_demo_events
 from orbitune.inference import generate_midi
 from orbitune.lora import LoRAConfig
@@ -28,6 +29,11 @@ def _cmd_tokenize(args: argparse.Namespace) -> None:
     tokens = tokenizer.encode_events(events)
     tokenizer.write_tokens(tokens, args.out)
     print(f"wrote {len(tokens)} tokens to {args.out}")
+
+
+def _cmd_prepare_corpus(args: argparse.Namespace) -> None:
+    report = prepare_corpus(args.source, args.out, args.report, min_events=args.min_events)
+    print(json.dumps(report, indent=2))
 
 
 def _cmd_detokenize(args: argparse.Namespace) -> None:
@@ -146,6 +152,13 @@ def build_parser() -> argparse.ArgumentParser:
     tokenize.add_argument("midi")
     tokenize.add_argument("--out", required=True)
     tokenize.set_defaults(func=_cmd_tokenize)
+
+    corpus = subparsers.add_parser("prepare-corpus", help="convert a MIDI directory into one training token corpus")
+    corpus.add_argument("source")
+    corpus.add_argument("--out", required=True, help="output Theory-REMI token text file")
+    corpus.add_argument("--report", required=True, help="JSON data-quality report")
+    corpus.add_argument("--min-events", type=int, default=1)
+    corpus.set_defaults(func=_cmd_prepare_corpus)
 
     detokenize = subparsers.add_parser("detokenize", help="convert Theory-REMI tokens to MIDI")
     detokenize.add_argument("tokens")
