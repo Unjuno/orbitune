@@ -1,6 +1,6 @@
 # Orbitune
 
-Orbitune is a lightweight MIDI generation framework for local BGM creation. The repository manages compact Base models and small LoRA Adapters together so contributors can add either new generation foundations or new style tendencies without breaking existing compatibility lineages.
+Orbitune is a lightweight, local-first symbolic MIDI generation framework built around a compact shared Base model and distributable LoRA Adapters. Contributors can publish new adapters against immutable Base checkpoints without breaking existing compatibility lineages.
 
 ## Core dependency model
 
@@ -17,25 +17,49 @@ bases/base-b/model.pt  SHA=B
 
 A Base id is not a rolling version slot. If its checkpoint changes, contribute a new Base id. Existing Bases and their Adapters remain valid.
 
-## Current reference architecture
+## Current reference design
+
+Orbitune's production representation is moving from the earlier flat `theory-remi-v0` prototype toward **Hybrid Compound Events**: one musical event consumes one causal Transformer step, while event attributes are predicted by small factorized heads.
+
+Current reference decisions:
 
 ```text
-Parameters       10,200,960 with the current 204-token vocabulary
-Layers           4
-Hidden size      448
-Attention heads  7
-Head dimension   64
-Context          1024 tokens
-Architecture ABI orbitune-midi-gpt-v0
-Tokenizer ABI    theory-remi-v0
-LoRA rank        4
-LoRA targets     q_proj + v_proj
-Adapter format   Safetensors / orbitune-lora-v0
+Model family          causal decoder-only Transformer
+Base size             ~10M parameters (reference; 5M/10M/20M real-MIDI sweep still required)
+Representation        Hybrid Compound Events
+Temporal grid         96 steps / quarter note (candidate pending external real-MIDI validation)
+NOTE decoder          lightweight intra-event autoregressive MLP cascade
+DELTA/DURATION        7 coarse ranges + 16 residual levels (candidate)
+Continuous values     factorized coarse + residual heads
+Long context          recent dense window + deterministic historical anchors
+LoRA                  runtime adapter over an immutable Base
+Deployment            packed ternary candidate; INT8 and FP16 fallbacks
 ```
 
-The 448-wide architecture was chosen so a substantially larger MIDI tokenizer can be introduced without moving far beyond the 10M parameter class. The tokenizer is still under active design; no public Base should be frozen before that work and dataset research are complete.
+The currently implemented 10.2M / 204-token `theory-remi-v0` model remains a **legacy/reference implementation**, not the frozen production ABI. Do not publish a final Base against the experimental tokenizer until the external real-MIDI validation gates in [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md) are closed.
 
 Orbitune is MIDI-only. Raw audio, vocals, audio-codec tokens, and DAW-quality mixing are outside the current scope.
+
+## Compound MIDI scope
+
+The current production schema candidate covers:
+
+```text
+NOTE
+CC
+PROGRAM
+BANK
+TEMPO
+PEDAL
+PITCH_BEND
+CHANNEL_PRESSURE
+POLY_PRESSURE
+TIME_SIGNATURE
+```
+
+MIDI ingestion is canonicalized deterministically before tokenization: same-onset/channel/pitch duplicate notes are merged, and an overlapping same-channel/same-pitch note is truncated when that pitch is retriggered. This removes MIDI 1.0 note-instance ambiguity from the training representation.
+
+Continuous MIDI values and timing are factorized rather than represented by huge flat vocabularies. This keeps `1 event = 1 Transformer step` while retaining fine-grained reconstruction.
 
 ## Repository layout
 
@@ -45,6 +69,8 @@ adapters/             official and community LoRA Adapters
 models/               local/training candidate outputs
 registry/             generated Base and Adapter dependency registries
 data/continuous/      dataset gate for scheduled continuous training
+experiments/          reproducible architecture/tokenizer evaluation scripts
+docs/                 accepted/candidate/open design decisions
 web/                  local browser runtime / GitHub Pages app
 ```
 
@@ -71,9 +97,13 @@ orbitune prepare-split-corpus data/raw \
   --min-events 8
 ```
 
-Identical MIDI bytes are grouped by SHA-256 so renamed duplicates cannot leak across train and validation. Dataset provenance and rights must be reviewed before the corpus is used for the official Base.
+Identical MIDI bytes are grouped by SHA-256 so renamed duplicates cannot leak across train and validation. Dataset provenance and rights must be reviewed before the corpus is used for an official Base.
 
-## Train the 10M reference Base
+The current production-corpus direction is to prefer explicitly traceable/licensed sources and filter them before training. Dataset selection is still a blocking validation item; see [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md).
+
+## Train the current 10M reference implementation
+
+The command below trains the currently implemented reference model. It does **not** imply that the legacy tokenizer ABI is frozen.
 
 ```bash
 orbitune train-base \
@@ -97,10 +127,7 @@ data/continuous/train.tokens
 data/continuous/validation.tokens
 ```
 
-Once the dataset gate is armed, each run restores the previous model **and AdamW optimizer state**, trains the 10M Base for up to five hours, validates periodically, and persists state in two places:
-
-1. Actions cache for fast restoration.
-2. The mutable `continuous-training` prerelease attached to this repository for durable recovery.
+Once the dataset gate is armed, each run restores the previous model **and AdamW optimizer state**, trains for up to five hours, validates periodically, and persists state in Actions cache and the mutable `continuous-training` prerelease.
 
 Continuous state is separated by purpose:
 
@@ -112,13 +139,7 @@ report.json    health metrics, tokens seen, spikes and snapshot records
 snapshots/     full immutable training states created by token milestones
 ```
 
-A full training snapshot is created every **10,000,000 tokens seen**. Release asset names additionally include the training step and GitHub Actions run id so a later rollback/retrain cannot overwrite an older forensic snapshot.
-
-The health monitor records training loss, rolling loss z-score, pre-clipping gradient norm, validation loss, spike events and cumulative tokens. A single difficult batch does not trigger rollback. Orbitune rolls back to `healthy.pt` when it encounters a non-finite loss/gradient/validation value, persistent loss spikes, or a loss spike accompanied by a severe gradient spike. The state and forensic report are persisted first; the workflow then fails visibly so the anomaly cannot pass silently.
-
-The prerelease is training state only. It is not a published Base compatibility target. Final accepted Bases still enter `bases/<base-id>/` with immutable checkpoint bytes and SHA-256 identities.
-
-`continuous-smoke.yml` verifies actual continuation by training one step, serializing model/optimizer/RNG state, restoring it, advancing another step, and checking cumulative `tokens_seen`, token snapshots and the healthy checkpoint.
+A full training snapshot is created every **10,000,000 tokens seen**. The prerelease is training state only; it is not a published Base compatibility target.
 
 ## Export and contribute a Base
 
@@ -152,11 +173,11 @@ orbitune train-adapter \
   --out adapters/community/my-style-v0/adapter.safetensors
 ```
 
-The current Adapter ABI targets the 10M reference shape: four 448-wide layers, rank-4 LoRA on `q_proj` and `v_proj`. Adapter metadata stores the exact Base checkpoint SHA-256. See [`CONTRIBUTING_ADAPTERS.md`](CONTRIBUTING_ADAPTERS.md).
+The currently implemented Adapter ABI targets the existing 10M reference shape: four 448-wide layers, rank-4 LoRA on `q_proj` and `v_proj`. Future accepted Compound Base checkpoints must declare their exact architecture/tokenizer ABI and hash so adapters remain deterministic. See [`CONTRIBUTING_ADAPTERS.md`](CONTRIBUTING_ADAPTERS.md).
 
 ## Browser deployment
 
-The current Web graph inputs are:
+The current legacy Web graph inputs are:
 
 ```text
 input_ids    int64    [1, sequence]
@@ -165,7 +186,20 @@ lora_b       float32  [4, 2, 448, 4]
 lora_scale   float32  [1]
 ```
 
-The browser context limit is 1024 tokens. Base ONNX bytes are verified by SHA-256 before loading; Adapter Base hashes are checked before LoRA application.
+These describe the current reference implementation, not the final Compound Event Web ABI. Base ONNX bytes are verified by SHA-256 before loading; Adapter Base hashes are checked before LoRA application.
+
+## Design validation status
+
+Architecture ideation is largely complete. The remaining blocking validations are empirical:
+
+1. external real-MIDI validation of 96/qn and the 7+16 timing factorization;
+2. production corpus composition, provenance filtering and deduplication;
+3. real-MIDI 5M/10M/20M scale sweep;
+4. real-device/Web INT8 vs packed-ternary benchmark;
+5. trained-model long-rollout validation of anchored memory;
+6. real-corpus ControlField adherence/quantization validation.
+
+See [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md) for accepted, candidate, rejected and open decisions plus current proxy measurements.
 
 ## CI
 
