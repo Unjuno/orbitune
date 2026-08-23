@@ -36,20 +36,20 @@ jobs:
           python-version: '3.12'
       - name: Install CPU PyTorch
         run: python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
-      - name: Run one-step canary contract
+      - name: Run one-step canary contract through production entrypoint
         env:
           PYTHONPATH: .
         run: |
           set -euo pipefail
           rm -rf /tmp/orbitune-runpod-canary
-          python workloads/runpod-training-canary/run.py \
+          python workloads/runpod-training-canary/entrypoint.py \
             --output-dir /tmp/orbitune-runpod-canary \
             --device cpu \
             --steps 1 \
             --batch-size 1 \
             --seq-len 16 \
             --validation-interval 1
-      - name: Assert bounded result contract
+      - name: Assert bounded success result contract
         run: |
           python - <<'PY'
           import hashlib
@@ -74,5 +74,38 @@ jobs:
           assert artifact['bytes'] <= 64 * 1024 * 1024
           assert artifact['sha256'] == f'sha256:{digest}'
           assert artifact['disposition'] == 'collected'
-          print('RunPod canary CPU contract PASS')
+          print('RunPod canary CPU success contract PASS')
+          PY
+      - name: Assert bounded failure evidence
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/orbitune-runpod-canary-fail
+          set +e
+          python workloads/runpod-training-canary/entrypoint.py \
+            --output-dir /tmp/orbitune-runpod-canary-fail \
+            --device cpu \
+            --require-cuda \
+            --steps 1 \
+            --batch-size 1 \
+            --seq-len 16 \
+            --validation-interval 1
+          code=$?
+          set -e
+          test "$code" -ne 0
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('/tmp/orbitune-runpod-canary-fail/result.json').read_text(encoding='utf-8'))
+          assert result == {
+              'failure_kind': 'runner-exited-without-result',
+              'runner_exit_code': result['runner_exit_code'],
+              'schema_version': 1,
+              'source_sha': 'unbaked-local',
+              'status': 'fail',
+              'workload_id': 'orbitune-runpod-training-canary-v1',
+          }
+          assert result['runner_exit_code'] != 0
+          print('RunPod canary CPU failure-evidence contract PASS')
           PY
