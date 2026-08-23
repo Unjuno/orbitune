@@ -5,7 +5,7 @@
   "repository": "Unjuno/orbitune",
   "dockerfile": "workloads/runpod-training-canary/Dockerfile",
   "image_repository": "ghcr.io/unjuno/orbitune-runpod-canary",
-  "entrypoint": ["python", "workloads/runpod-training-canary/run.py"],
+  "entrypoint": ["python", "workloads/runpod-training-canary/entrypoint.py"],
   "network_required_at_runtime": false,
   "interactive": false,
   "finite": true,
@@ -35,6 +35,7 @@
   "outputs": {
     "directory": "/outputs",
     "required": ["result.json", "canary-base.pt"],
+    "failure_result_required_if_runner_exits": true,
     "max_collected_artifact_bytes": 67108864
   },
   "acceptance": {
