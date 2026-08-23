@@ -18,7 +18,7 @@ Rules:
 - Once adapters are published against a Base checkpoint SHA-256, that checkpoint must never be replaced in-place.
 - A contributor may add another Base under a new id.
 - Each individual checkpoint/ONNX file must remain below 95 MiB in the current repository policy.
-- The current rank-4 LoRA ABI supports Bases implementing `orbitune-midi-gpt-v0` / `theory-remi-v0` with the 4x240 model shape. Other Base architectures may be registered, but require their own Adapter ABI before LoRA adapters are accepted.
+- The current legacy/reference rank-4 LoRA ABI supports Bases implementing `orbitune-midi-gpt-v0` / `theory-remi-v0` with the 4x448 model shape. The experimental Compound production direction is not yet a frozen Base/Adapter ABI. Other Base architectures may be registered, but require a compatible Adapter ABI and runtime implementation before adapters are accepted or browser inference is enabled.
 - `manifest.json` records exact checkpoint and web ONNX SHA-256 values.
 
-`registry/bases.json` is generated from these directories; do not hand-edit generated registry entries after the builder is enabled in CI.
+`registry/bases.json` is generated from these directories; do not hand-edit generated registry entries.
