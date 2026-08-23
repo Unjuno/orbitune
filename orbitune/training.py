@@ -203,6 +203,10 @@ def train_base(
     if model_cfg.vocab_size != len(vocab):
         raise ValueError(f"model vocab_size={model_cfg.vocab_size} != Theory-REMI vocab size={len(vocab)}")
     ids = read_token_ids(token_paths, vocab)
+    # The training seed must cover parameter initialization as well as batch
+    # sampling/dropout. Seeding only inside train_model() is too late because
+    # the Base weights have already been created by then.
+    torch.manual_seed(train_cfg.seed)
     model = OrbituneGPT(model_cfg)
     validation_ids = read_token_ids(validation_token_paths, vocab) if validation_token_paths else None
     start = time.perf_counter()
@@ -247,6 +251,8 @@ def train_adapter(
     ids = read_token_ids(token_paths, vocab)
     validation_ids = read_token_ids(validation_token_paths, vocab) if validation_token_paths else None
     model = OrbituneGPT.load_checkpoint(base)
+    # LoRA A uses random Kaiming initialization, so seed before injection.
+    torch.manual_seed(train_cfg.seed)
     inject_lora(model, lora_cfg)
     start = time.perf_counter()
     if validation_ids is not None:
