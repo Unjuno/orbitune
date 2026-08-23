@@ -22,56 +22,40 @@ from orbitune.training import TrainConfig, train_adapter, train_base
 
 def _cmd_generate_demo(args: argparse.Namespace) -> None:
     events = make_demo_events(bars=args.bars, bpm=args.bpm); write_midi(events, args.out, bpm=args.bpm); print(f"wrote {args.out}")
-
 def _cmd_tokenize(args: argparse.Namespace) -> None:
     tokenizer = TheoryRemiTokenizer(); events = read_midi(args.midi); tokens = tokenizer.encode_events(events); tokenizer.write_tokens(tokens, args.out); print(f"wrote {len(tokens)} tokens to {args.out}")
-
 def _cmd_prepare_corpus(args: argparse.Namespace) -> None:
     print(json.dumps(prepare_corpus(args.source, args.out, args.report, min_events=args.min_events), indent=2))
-
 def _cmd_prepare_split_corpus(args: argparse.Namespace) -> None:
     report = prepare_split_corpus(args.source, args.train_out, args.validation_out, args.report, validation_fraction=args.validation_fraction, split_seed=args.split_seed, min_events=args.min_events); print(json.dumps(report, indent=2))
-
 def _cmd_detokenize(args: argparse.Namespace) -> None:
     tokenizer = TheoryRemiTokenizer(); tokens = tokenizer.read_tokens(args.tokens); events = tokenizer.decode_events(tokens); write_midi(events, args.out, bpm=args.bpm); print(f"wrote {len(events)} events to {args.out}")
-
 def _cmd_inspect(args: argparse.Namespace) -> None:
     path = Path(args.path); midi_files = sorted(path.rglob("*.mid")) if path.is_dir() else [path]; tokenizer = TheoryRemiTokenizer(); report = {"files": [], "total_files": 0, "total_events": 0, "total_tokens": 0}
     for midi_path in midi_files:
         events = read_midi(midi_path); tokens = tokenizer.encode_events(events); report["files"].append({"path": str(midi_path), "events": len(events), "tokens": len(tokens)}); report["total_files"] += 1; report["total_events"] += len(events); report["total_tokens"] += len(tokens)
     out = Path(args.out); out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8"); print(f"wrote {args.out}")
-
 def _cmd_eval_midi(args: argparse.Namespace) -> None:
     print(json.dumps(write_evaluation(args.midi, args.out), indent=2))
-
 def _cmd_init_adapter(args: argparse.Namespace) -> None:
     root = create_adapter_scaffold(args.directory, name=args.name, display_name=args.display_name, adapter_family=args.family, rank=4, bpm=args.bpm, bars=args.bars, temperature=args.temperature); print(f"created adapter scaffold at {root}")
-
 def _train_cfg(args: argparse.Namespace) -> TrainConfig:
     return TrainConfig(steps=args.steps, batch_size=args.batch_size, seq_len=args.seq_len, learning_rate=args.learning_rate, weight_decay=args.weight_decay, device=args.device, seed=args.seed, validation_interval=args.validation_interval)
-
 def _cmd_train_base(args: argparse.Namespace) -> None:
     vocab = TheoryRemiVocab(); cfg = OrbituneConfig(vocab_size=len(vocab), max_seq_len=args.max_seq_len, n_layer=REFERENCE_N_LAYER, n_embd=REFERENCE_N_EMBD, n_head=REFERENCE_N_HEAD, dropout=args.dropout)
     print(json.dumps(train_base(args.tokens, args.out, model_cfg=cfg, train_cfg=_train_cfg(args), validation_token_paths=args.validation_tokens), indent=2))
-
 def _cmd_train_adapter(args: argparse.Namespace) -> None:
     lora_cfg = LoRAConfig(rank=4, alpha=args.alpha, dropout=args.lora_dropout); print(json.dumps(train_adapter(args.base, args.tokens, args.out, lora_cfg=lora_cfg, train_cfg=_train_cfg(args), validation_token_paths=args.validation_tokens), indent=2))
-
 def _cmd_generate(args: argparse.Namespace) -> None:
     events = generate_midi(args.base, args.out, adapter=args.adapter, bpm=args.bpm, bars=args.bars, temperature=args.temperature, top_p=args.top_p, max_new_tokens=args.max_new_tokens, device=args.device); print(f"wrote {args.out} with {events} note events")
-
 def _cmd_export_onnx(args: argparse.Namespace) -> None:
     print(f"wrote {export_onnx(args.base, args.out, example_seq_len=args.example_seq_len)}")
-
 def _cmd_export_web_onnx(args: argparse.Namespace) -> None:
     print(f"wrote {export_web_onnx(args.base, args.out, example_seq_len=args.example_seq_len)}")
-
 def _cmd_model_info(args: argparse.Namespace) -> None:
-    model = OrbituneGPT.load_checkpoint(args.checkpoint) if args.checkpoint else OrbituneGPT(OrbituneConfig(vocab_size=len(TheoryRemiVocab()))); print(json.dumps({"architecture": model.architecture, "parameters": model.parameter_count(), "config": asdict(model.config)}, indent=2))
-
+    model = OrbituneGPT.load_checkpoint(args.checkpoint) if args.checkpoint else OrbituneGPT(OrbituneConfig(vocab_size=len(TheoryRemiVocab()))); print(json.dumps({"architecture": model.architecture, "tokenizer": model.tokenizer, "parameters": model.parameter_count(), "config": asdict(model.config)}, indent=2))
 def _cmd_validate_adapter(args: argparse.Namespace) -> None:
     validate_manifest_file(args.manifest); print(f"valid adapter manifest: {args.manifest}")
-
 def _cmd_package_adapter(args: argparse.Namespace) -> None:
     package_adapter(args.adapter_dir, args.manifest, args.out); print(f"wrote {args.out}")
 
@@ -98,10 +82,39 @@ def build_parser() -> argparse.ArgumentParser:
     p=sub.add_parser("package-adapter"); p.add_argument("adapter_dir"); p.add_argument("--manifest",required=True); p.add_argument("--out",required=True); p.set_defaults(func=_cmd_package_adapter)
     return parser
 
+
+def _validate_args(args: argparse.Namespace) -> None:
+    if hasattr(args, "validation_interval"):
+        if args.validation_interval < 0:
+            raise SystemExit("--validation-interval must be >= 0")
+        if args.validation_interval > 0 and not args.validation_tokens:
+            raise SystemExit("--validation-interval requires --validation-tokens")
+    for name in ("steps", "batch_size", "seq_len", "max_seq_len", "max_new_tokens", "example_seq_len", "min_events"):
+        if hasattr(args, name) and getattr(args, name) <= 0:
+            raise SystemExit(f"--{name.replace('_', '-')} must be positive")
+    if hasattr(args, "bars") and args.bars <= 0:
+        raise SystemExit("--bars must be positive")
+    if hasattr(args, "bpm") and not 1 <= args.bpm <= 999:
+        raise SystemExit("--bpm must be in 1..999")
+    if hasattr(args, "temperature") and args.temperature <= 0:
+        raise SystemExit("--temperature must be > 0")
+    if hasattr(args, "top_p") and not 0 < args.top_p <= 1:
+        raise SystemExit("--top-p must be in (0, 1]")
+    if hasattr(args, "learning_rate") and args.learning_rate <= 0:
+        raise SystemExit("--learning-rate must be > 0")
+    if hasattr(args, "weight_decay") and args.weight_decay < 0:
+        raise SystemExit("--weight-decay must be >= 0")
+    if hasattr(args, "dropout") and not 0 <= args.dropout < 1:
+        raise SystemExit("--dropout must be in [0, 1)")
+    if hasattr(args, "lora_dropout") and not 0 <= args.lora_dropout < 1:
+        raise SystemExit("--lora-dropout must be in [0, 1)")
+    if hasattr(args, "alpha") and args.alpha <= 0:
+        raise SystemExit("--alpha must be > 0")
+
+
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    if getattr(args,"validation_interval",0) < 0: raise SystemExit("--validation-interval must be >= 0")
-    if getattr(args,"validation_interval",0) > 0 and not getattr(args,"validation_tokens",None): raise SystemExit("--validation-interval requires --validation-tokens")
+    _validate_args(args)
     args.func(args)
 
 if __name__ == "__main__": main()
