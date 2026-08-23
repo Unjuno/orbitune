@@ -61,6 +61,8 @@ jobs:
           platforms: linux/amd64
           provenance: true
           sbom: true
+          build-args: |
+            ORBITUNE_SOURCE_SHA=${{ inputs.source_sha }}
           tags: |
             ghcr.io/unjuno/orbitune-runpod-canary:sha-${{ inputs.source_sha }}
 
@@ -84,6 +86,8 @@ jobs:
               "repository": "Unjuno/orbitune",
               "source_sha": sha,
               "dockerfile": "workloads/runpod-training-canary/Dockerfile",
+              "workload_id": "orbitune-runpod-training-canary-v1",
+              "baked_source_sha": sha,
               "image": f"ghcr.io/unjuno/orbitune-runpod-canary@{digest}",
               "digest": digest,
               "platform": "linux/amd64",
