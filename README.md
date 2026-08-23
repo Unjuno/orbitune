@@ -2,6 +2,8 @@
 
 Orbitune is a lightweight, local-first symbolic MIDI generation framework built around a compact shared Base model and distributable LoRA Adapters. Contributors can publish new adapters against immutable Base checkpoints without breaking existing compatibility lineages.
 
+> **Development continuation:** read [`docs/HANDOFF.md`](docs/HANDOFF.md) first when resuming implementation in a new session. It records the current critical path, implemented Compound pipeline, unresolved experiment gates, and decisions that should not be reopened without contradictory evidence.
+
 ## Core dependency model
 
 A Base is identified by a stable `base-id` plus the exact SHA-256 of its checkpoint bytes. An Adapter always targets exactly one Base checkpoint.
@@ -38,6 +40,8 @@ Deployment            packed ternary candidate; INT8 and FP16 fallbacks
 
 The currently implemented 10.2M / 204-token `theory-remi-v0` model remains a **legacy/reference implementation**, not the frozen production ABI. Do not publish a final Base against the experimental tokenizer until the external real-MIDI validation gates in [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md) are closed.
 
+The experimental Compound data path is now implemented through MIDI parsing, factorized event records, song-preserving JSONL preparation, and fixed-length training-window loading. The next critical implementation is the Compound Base model and masked factorized losses; see [`docs/HANDOFF.md`](docs/HANDOFF.md).
+
 Orbitune is MIDI-only. Raw audio, vocals, audio-codec tokens, and DAW-quality mixing are outside the current scope.
 
 ## Compound MIDI scope
@@ -70,7 +74,7 @@ models/               local/training candidate outputs
 registry/             generated Base and Adapter dependency registries
 data/continuous/      dataset gate for scheduled continuous training
 experiments/          reproducible architecture/tokenizer evaluation scripts
-docs/                 accepted/candidate/open design decisions
+docs/                 accepted/candidate/open decisions and session handoff
 web/                  local browser runtime / GitHub Pages app
 ```
 
@@ -88,6 +92,8 @@ orbitune model-info
 
 ## Prepare MIDI data
 
+The legacy/reference tokenizer path remains available:
+
 ```bash
 orbitune prepare-split-corpus data/raw \
   --train-out data/tokens/train.tokens \
@@ -97,7 +103,7 @@ orbitune prepare-split-corpus data/raw \
   --min-events 8
 ```
 
-Identical MIDI bytes are grouped by SHA-256 so renamed duplicates cannot leak across train and validation. Dataset provenance and rights must be reviewed before the corpus is used for an official Base.
+For the experimental Compound path, use the Compound corpus preparation script and keep its JSONL output separate from legacy `.tokens` files. Identical MIDI bytes are grouped by SHA-256 so renamed duplicates cannot leak across train and validation. Dataset provenance and rights must be reviewed before the corpus is used for an official Base.
 
 The current production-corpus direction is to prefer explicitly traceable/licensed sources and filter them before training. Dataset selection is still a blocking validation item; see [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md).
 
@@ -197,9 +203,10 @@ Architecture ideation is largely complete. The remaining blocking validations ar
 3. real-MIDI 5M/10M/20M scale sweep;
 4. real-device/Web INT8 vs packed-ternary benchmark;
 5. trained-model long-rollout validation of anchored memory;
-6. real-corpus ControlField adherence/quantization validation.
+6. real-corpus ControlField adherence/quantization validation;
+7. Base-rollout post-training necessity gate; policy learning remains optional and experiment-gated.
 
-See [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md) for accepted, candidate, rejected and open decisions plus current proxy measurements.
+See [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md) for accepted, candidate, rejected and open decisions, [`docs/POST_TRAINING_RESEARCH.md`](docs/POST_TRAINING_RESEARCH.md) for the optional post-training branch, and [`docs/HANDOFF.md`](docs/HANDOFF.md) for the current implementation handoff.
 
 ## CI
 
