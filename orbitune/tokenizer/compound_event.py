@@ -15,6 +15,9 @@ from orbitune.compound import (
 from orbitune.quantization import FactorizedValue, dequantize_unsigned, quantize_unsigned
 
 
+COMPOUND_RECORD_WIDTH = 12
+
+
 @dataclass(frozen=True, slots=True)
 class CompoundRecord:
     """One model step for the experimental Compound tokenizer.
@@ -38,7 +41,7 @@ class CompoundRecord:
     continuous_residual: int = 0
 
     def as_tuple(self) -> tuple[int, ...]:
-        return (
+        values = (
             self.event_type,
             self.channel,
             self.delta_coarse,
@@ -52,6 +55,9 @@ class CompoundRecord:
             self.continuous_coarse,
             self.continuous_residual,
         )
+        if len(values) != COMPOUND_RECORD_WIDTH:
+            raise AssertionError("CompoundRecord layout does not match COMPOUND_RECORD_WIDTH")
+        return values
 
 
 class CompoundEventTokenizer:
@@ -62,6 +68,7 @@ class CompoundEventTokenizer:
     """
 
     abi = COMPOUND_TOKENIZER_ABI
+    record_width = COMPOUND_RECORD_WIDTH
 
     def encode_events(self, events: Iterable[CompoundEvent]) -> list[CompoundRecord]:
         output: list[CompoundRecord] = []
