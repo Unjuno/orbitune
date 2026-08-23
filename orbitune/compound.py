@@ -23,6 +23,23 @@ TIME_RESIDUAL_LEVELS = 16
 COMPOUND_TOKENIZER_ABI = "orbitune-compound-v0-experimental"
 TEMPORAL_RESOLUTION = 96
 
+# Canonical ordering for events that quantize to the same musical step. Global
+# timing metadata must precede channel state, bank selection must precede a
+# program change, and note onsets come after state/control changes so a causal
+# model can condition the NOTE on the state that applies at that onset.
+_EVENT_SORT_PRIORITY: dict[CompoundEventType, int] = {
+    CompoundEventType.TIME_SIGNATURE: 0,
+    CompoundEventType.TEMPO: 1,
+    CompoundEventType.BANK: 2,
+    CompoundEventType.PROGRAM: 3,
+    CompoundEventType.CC: 4,
+    CompoundEventType.PEDAL: 5,
+    CompoundEventType.PITCH_BEND: 6,
+    CompoundEventType.CHANNEL_PRESSURE: 7,
+    CompoundEventType.POLY_PRESSURE: 8,
+    CompoundEventType.NOTE: 9,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class CompoundEvent:
@@ -92,8 +109,9 @@ def quantize_time(value: int) -> FactorizedTime:
     """Quantize a non-negative 96/qn timing value into 7 coarse + 16 residual.
 
     Values beyond the current reference range are clipped at 1536 steps. This
-    function is an ABI primitive; long values may later be represented through
-    repeated/extended events without changing the model's Transformer step.
+    behavior is experimental and is a blocking production-validation item: the
+    final ABI must either extend the representable range or introduce an
+    explicit long-time representation before official Base training.
     """
 
     if value < 0:
@@ -127,8 +145,8 @@ def canonicalize_events(events: Iterable[CompoundEvent]) -> list[CompoundEvent]:
 
     Same onset/channel/pitch NOTE duplicates are merged. If the same channel and
     pitch is retriggered while an earlier note is still active, the earlier note
-    is truncated at the retrigger. This removes note-instance ambiguity before
-    the sequence is presented to the model.
+    is truncated at the retrigger. Same-step events are emitted in semantic
+    state-before-note order via :data:`_EVENT_SORT_PRIORITY`.
     """
 
     checked = list(events)
@@ -189,9 +207,10 @@ def to_delta_events(events: Sequence[CompoundEvent]) -> list[tuple[CompoundEvent
     return output
 
 
-def _sort_key(event: CompoundEvent) -> tuple[int, int, int, int, int, int, int]:
+def _sort_key(event: CompoundEvent) -> tuple[int, int, int, int, int, int, int, int]:
     return (
         event.step,
+        _EVENT_SORT_PRIORITY[event.type],
         event.channel,
         int(event.type),
         event.a1,
