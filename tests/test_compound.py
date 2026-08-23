@@ -64,6 +64,22 @@ def test_same_step_state_precedes_note_and_bank_precedes_program():
     ]
 
 
+def test_unused_fields_are_rejected():
+    with pytest.raises(ValueError, match="unused fields"):
+        CompoundEvent(CompoundEventType.PROGRAM, step=0, channel=0, a1=5, a2=1).validate()
+    with pytest.raises(ValueError, match="unused fields"):
+        CompoundEvent(CompoundEventType.NOTE, step=0, channel=0, a1=60, a2=24, a3=80, a4=1).validate()
+
+
+def test_global_metadata_requires_channel_zero_and_bounded_values():
+    with pytest.raises(ValueError, match="global"):
+        CompoundEvent(CompoundEventType.TEMPO, step=0, channel=1, a1=120).validate()
+    with pytest.raises(ValueError, match="1..999"):
+        CompoundEvent(CompoundEventType.TEMPO, step=0, channel=0, a1=1000).validate()
+    with pytest.raises(ValueError, match="power of two"):
+        CompoundEvent(CompoundEventType.TIME_SIGNATURE, step=0, channel=0, a1=4, a2=3).validate()
+
+
 @pytest.mark.parametrize("raw", [0, 1, 6, 12, 24, 48, 96, 192, 384, 768, 1536])
 def test_time_factorization_is_bounded(raw: int):
     encoded = quantize_time(raw)
