@@ -2,7 +2,7 @@
 
 Orbitune is a lightweight, local-first symbolic MIDI generation framework built around a compact shared Base model and distributable LoRA Adapters. Contributors can publish new adapters against immutable Base checkpoints without breaking existing compatibility lineages.
 
-> **Development continuation:** read [`docs/HANDOFF.md`](docs/HANDOFF.md) first when resuming implementation in a new session. It records the current critical path, implemented Compound pipeline, unresolved experiment gates, and decisions that should not be reopened without contradictory evidence.
+> **Development continuation:** read [`docs/AUDIT_2026-08-23.md`](docs/AUDIT_2026-08-23.md) and [`docs/HANDOFF.md`](docs/HANDOFF.md) first when resuming implementation. They record current risks, implemented Compound pipeline, unresolved experiment gates, and decisions that should not be reopened without contradictory evidence.
 
 ## Core dependency model
 
@@ -38,9 +38,9 @@ LoRA                  runtime adapter over an immutable Base
 Deployment            packed ternary candidate; INT8 and FP16 fallbacks
 ```
 
-The currently implemented 10.2M / 204-token `theory-remi-v0` model remains a **legacy/reference implementation**, not the frozen production ABI. Do not publish a final Base against the experimental tokenizer until the external real-MIDI validation gates in [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md) are closed.
+The currently implemented 10.2M / 204-token `theory-remi-v0` model remains a **legacy/reference implementation**, not the frozen production ABI. Do not publish a final Base against the experimental tokenizer until the external real-MIDI validation gates in [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md) and audit blockers are closed.
 
-The experimental Compound data path is now implemented through MIDI parsing, factorized event records, song-preserving JSONL preparation, and fixed-length training-window loading. The next critical implementation is the Compound Base model and masked factorized losses; see [`docs/HANDOFF.md`](docs/HANDOFF.md).
+The experimental Compound data path is now implemented through MIDI parsing, factorized event records, ABI-tagged song-preserving JSONL preparation, and fixed-length training-window loading. The next critical implementation is the Compound Base model and masked factorized losses.
 
 Orbitune is MIDI-only. Raw audio, vocals, audio-codec tokens, and DAW-quality mixing are outside the current scope.
 
@@ -61,9 +61,11 @@ POLY_PRESSURE
 TIME_SIGNATURE
 ```
 
-MIDI ingestion is canonicalized deterministically before tokenization: same-onset/channel/pitch duplicate notes are merged, and an overlapping same-channel/same-pitch note is truncated when that pitch is retriggered. This removes MIDI 1.0 note-instance ambiguity from the training representation.
+MIDI ingestion is canonicalized deterministically before tokenization: same-onset/channel/pitch duplicate notes are merged, and an overlapping same-channel/same-pitch note is truncated when that pitch is retriggered. Same-step metadata/control events are ordered before NOTE events so the causal model sees applicable state first.
 
 Continuous MIDI values and timing are factorized rather than represented by huge flat vocabularies. This keeps `1 event = 1 Transformer step` while retaining fine-grained reconstruction.
+
+The current Compound schema is **semantic rather than lossless SMF serialization**. Known open items include long timing values beyond 1536 steps, BOS/EOS/start semantics, half-pedal representation, and some rare/meta MIDI semantics; see the audit document.
 
 ## Repository layout
 
@@ -72,9 +74,9 @@ bases/<base-id>/      accepted immutable Base checkpoints and Web ONNX files
 adapters/             official and community LoRA Adapters
 models/               local/training candidate outputs
 registry/             generated Base and Adapter dependency registries
-data/continuous/      dataset gate for scheduled continuous training
+data/continuous/      explicitly gated legacy scheduled-training data
 experiments/          reproducible architecture/tokenizer evaluation scripts
-docs/                 accepted/candidate/open decisions and session handoff
+docs/                 audit, accepted/candidate/open decisions and handoff
 web/                  local browser runtime / GitHub Pages app
 ```
 
@@ -103,13 +105,13 @@ orbitune prepare-split-corpus data/raw \
   --min-events 8
 ```
 
-For the experimental Compound path, use the Compound corpus preparation script and keep its JSONL output separate from legacy `.tokens` files. Identical MIDI bytes are grouped by SHA-256 so renamed duplicates cannot leak across train and validation. Dataset provenance and rights must be reviewed before the corpus is used for an official Base.
+For the experimental Compound path, use `scripts/prepare_compound_corpus.py` and keep its ABI-tagged JSONL output separate from legacy `.tokens` files. Identical MIDI bytes are grouped by SHA-256 so renamed duplicates cannot leak across train and validation. This is **exact duplicate protection only**; production near-duplicate/composition-aware grouping remains a validation gate.
 
-The current production-corpus direction is to prefer explicitly traceable/licensed sources and filter them before training. Dataset selection is still a blocking validation item; see [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md).
+Dataset provenance and rights must be reviewed before the corpus is used for an official Base.
 
 ## Train the current 10M reference implementation
 
-The command below trains the currently implemented reference model. It does **not** imply that the legacy tokenizer ABI is frozen.
+The command below trains the currently implemented Theory-REMI reference model. It does **not** imply that the legacy tokenizer ABI is frozen.
 
 ```bash
 orbitune train-base \
@@ -126,14 +128,17 @@ With periodic validation enabled, Orbitune restores the checkpoint with minimum 
 
 ## Continuous GitHub Actions training
 
-`.github/workflows/continuous-train.yml` is scheduled every six hours at minute 17. It is intentionally idle until both files exist:
+`.github/workflows/continuous-train.yml` is scheduled every six hours at minute 17 but remains **legacy Theory-REMI reference training only**. To prevent accidental obsolete training, it stays idle unless all three files exist and are non-empty:
 
 ```text
+data/continuous/ENABLE_LEGACY_REFERENCE_TRAINING
 data/continuous/train.tokens
 data/continuous/validation.tokens
 ```
 
-Once the dataset gate is armed, each run restores the previous model **and AdamW optimizer state**, trains for up to five hours, validates periodically, and persists state in Actions cache and the mutable `continuous-training` prerelease.
+Do not add the marker merely to make CI run. The corpora must already pass provenance/license, quality, deduplication, and split review.
+
+Once explicitly armed, each run restores the previous model **and AdamW optimizer state**, validates periodically, and persists state in Actions cache and the mutable `continuous-training` prerelease.
 
 Continuous state is separated by purpose:
 
@@ -145,7 +150,7 @@ report.json    health metrics, tokens seen, spikes and snapshot records
 snapshots/     full immutable training states created by token milestones
 ```
 
-A full training snapshot is created every **10,000,000 tokens seen**. The prerelease is training state only; it is not a published Base compatibility target.
+A full legacy-reference training snapshot is created every **10,000,000 tokens seen**. The prerelease is training state only; it is not a published Base compatibility target. Compound continuous training will use a separate gate after the Compound model/checkpoint ABI exists.
 
 ## Export and contribute a Base
 
@@ -162,7 +167,7 @@ python scripts/add_base.py \
   --training-license original
 ```
 
-This creates `bases/my-base/`, computes artifact hashes and writes the Base manifest. See [`CONTRIBUTING_BASES.md`](CONTRIBUTING_BASES.md).
+This current contribution path targets the operational legacy/reference ABI. Do not publish immutable community Bases against `orbitune-compound-v0-experimental`. See [`CONTRIBUTING_BASES.md`](CONTRIBUTING_BASES.md).
 
 ## Train an Adapter
 
@@ -179,7 +184,7 @@ orbitune train-adapter \
   --out adapters/community/my-style-v0/adapter.safetensors
 ```
 
-The currently implemented Adapter ABI targets the existing 10M reference shape: four 448-wide layers, rank-4 LoRA on `q_proj` and `v_proj`. Future accepted Compound Base checkpoints must declare their exact architecture/tokenizer ABI and hash so adapters remain deterministic. See [`CONTRIBUTING_ADAPTERS.md`](CONTRIBUTING_ADAPTERS.md).
+The currently implemented Adapter ABI targets the existing reference shape: four 448-wide layers, rank-4 LoRA on `q_proj` and `v_proj`. Future accepted Compound Base checkpoints must declare their exact architecture/tokenizer/Adapter ABI and hash so adapters remain deterministic. See [`CONTRIBUTING_ADAPTERS.md`](CONTRIBUTING_ADAPTERS.md).
 
 ## Browser deployment
 
@@ -196,26 +201,28 @@ These describe the current reference implementation, not the final Compound Even
 
 ## Design validation status
 
-Architecture ideation is largely complete. The remaining blocking validations are empirical:
+Architecture ideation is largely complete. The remaining blocking validations are empirical and ABI-specific:
 
 1. external real-MIDI validation of 96/qn and the 7+16 timing factorization;
-2. production corpus composition, provenance filtering and deduplication;
-3. real-MIDI 5M/10M/20M scale sweep;
-4. real-device/Web INT8 vs packed-ternary benchmark;
-5. trained-model long-rollout validation of anchored memory;
-6. real-corpus ControlField adherence/quantization validation;
-7. Base-rollout post-training necessity gate; policy learning remains optional and experiment-gated.
+2. long DELTA/DURATION representation beyond the current 1536-step experimental range;
+3. BOS/EOS/start semantics plus explicit field cardinalities and masks;
+4. production corpus composition, provenance filtering and near-duplicate/composition-aware deduplication;
+5. real-MIDI 5M/10M/20M scale sweep;
+6. real-device/Web INT8 vs packed-ternary benchmark;
+7. trained-model long-rollout validation of anchored memory;
+8. real-corpus ControlField adherence/quantization validation;
+9. Base-rollout post-training necessity gate; policy learning remains optional and experiment-gated.
 
-See [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md) for accepted, candidate, rejected and open decisions, [`docs/POST_TRAINING_RESEARCH.md`](docs/POST_TRAINING_RESEARCH.md) for the optional post-training branch, and [`docs/HANDOFF.md`](docs/HANDOFF.md) for the current implementation handoff.
+See [`docs/AUDIT_2026-08-23.md`](docs/AUDIT_2026-08-23.md), [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md), [`docs/POST_TRAINING_RESEARCH.md`](docs/POST_TRAINING_RESEARCH.md), and [`docs/HANDOFF.md`](docs/HANDOFF.md).
 
 ## CI
 
-- `test.yml`: Python unit/integration tests
-- `web-test.yml`: browser runtime tests
-- `ml-smoke.yml`: full 10.2M Base + LoRA CPU training smoke
-- `continuous-smoke.yml`: resumable model/optimizer state, tokens-seen, health-state and snapshot smoke
-- `continuous-train.yml`: six-hour scheduled continuation loop with spike monitoring, automatic rollback and 10M-token snapshots once real data is configured
-- `export-smoke.yml`: ONNX export and runtime execution
+- `test.yml`: Python unit/integration tests, including Compound tests
+- `web-test.yml`: legacy browser runtime tests
+- `ml-smoke.yml`: full legacy 10.2M Base + LoRA CPU training smoke
+- `continuous-smoke.yml`: legacy resumable model/optimizer state, tokens-seen, health-state and snapshot smoke
+- `continuous-train.yml`: explicitly gated legacy scheduled continuation loop
+- `export-smoke.yml`: legacy ONNX export and runtime execution
 - `validate-adapters.yml`: Base/Adapter manifest, hash, dependency and size validation
 - `pages.yml`: generated Base/Adapter registries and static browser assets
 
