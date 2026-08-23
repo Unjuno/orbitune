@@ -10,6 +10,9 @@ on:
       - "web/**"
       - ".github/workflows/web-test.yml"
 
+permissions:
+  contents: read
+
 jobs:
   node-test:
     runs-on: ubuntu-latest
