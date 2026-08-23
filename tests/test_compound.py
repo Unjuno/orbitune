@@ -46,6 +46,24 @@ def test_other_event_types_survive_canonicalization():
     assert canonicalize_events([cc, program]) == [program, cc]
 
 
+def test_same_step_state_precedes_note_and_bank_precedes_program():
+    events = [
+        note(0, 24),
+        CompoundEvent(CompoundEventType.PROGRAM, step=0, channel=0, a1=5),
+        CompoundEvent(CompoundEventType.BANK, step=0, channel=0, a1=1, a2=2),
+        CompoundEvent(CompoundEventType.TEMPO, step=0, channel=0, a1=120),
+        CompoundEvent(CompoundEventType.TIME_SIGNATURE, step=0, channel=0, a1=4, a2=4),
+    ]
+    canonical = canonicalize_events(events)
+    assert [event.type for event in canonical] == [
+        CompoundEventType.TIME_SIGNATURE,
+        CompoundEventType.TEMPO,
+        CompoundEventType.BANK,
+        CompoundEventType.PROGRAM,
+        CompoundEventType.NOTE,
+    ]
+
+
 @pytest.mark.parametrize("raw", [0, 1, 6, 12, 24, 48, 96, 192, 384, 768, 1536])
 def test_time_factorization_is_bounded(raw: int):
     encoded = quantize_time(raw)
