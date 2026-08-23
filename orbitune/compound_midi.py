@@ -50,14 +50,10 @@ def _parse_compound_track(track: bytes, *, division: int) -> list[CompoundEvent]
             if meta_type == 0x2F:
                 break
             if meta_type == 0x51 and length == 3:
-                events.append(
-                    CompoundEvent(
-                        CompoundEventType.TEMPO,
-                        _step(time, division),
-                        0,
-                        int.from_bytes(payload, "big"),
-                    )
-                )
+                microseconds_per_quarter = int.from_bytes(payload, "big")
+                if microseconds_per_quarter > 0:
+                    bpm = max(1, min(999, round(60_000_000 / microseconds_per_quarter)))
+                    events.append(CompoundEvent(CompoundEventType.TEMPO, _step(time, division), 0, bpm))
             elif meta_type == 0x58 and length >= 2:
                 events.append(
                     CompoundEvent(
