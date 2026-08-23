@@ -13,6 +13,7 @@ from orbitune.compat import (
     REFERENCE_N_EMBD,
     REFERENCE_N_HEAD,
     REFERENCE_N_LAYER,
+    TOKENIZER_ABI,
     sha256_file,
 )
 
@@ -74,6 +75,7 @@ class Block(nn.Module):
 
 class OrbituneGPT(nn.Module):
     architecture = ARCHITECTURE_ABI
+    tokenizer = TOKENIZER_ABI
 
     def __init__(self, cfg: OrbituneConfig) -> None:
         super().__init__()
@@ -141,7 +143,15 @@ class OrbituneGPT(nn.Module):
     def save_checkpoint(self, path: str | Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save({"architecture": self.architecture, "config": asdict(self.config), "state_dict": self.state_dict()}, path)
+        torch.save(
+            {
+                "architecture": self.architecture,
+                "tokenizer": self.tokenizer,
+                "config": asdict(self.config),
+                "state_dict": self.state_dict(),
+            },
+            path,
+        )
 
     @classmethod
     def load_checkpoint(cls, path: str | Path, *, map_location: str | torch.device = "cpu") -> "OrbituneGPT":
@@ -149,6 +159,11 @@ class OrbituneGPT(nn.Module):
         payload = torch.load(path, map_location=map_location, weights_only=True)
         if payload.get("architecture") != cls.architecture:
             raise ValueError("checkpoint architecture mismatch")
+        # Old Orbitune v0 checkpoints predate the explicit tokenizer field and
+        # are unambiguously Theory-REMI because that was the only architecture
+        # supported by this class. New checkpoints must match explicitly.
+        if payload.get("tokenizer", cls.tokenizer) != cls.tokenizer:
+            raise ValueError("checkpoint tokenizer mismatch")
         model = cls(OrbituneConfig(**payload["config"]))
         model.load_state_dict(payload["state_dict"])
         model.base_sha256 = sha256_file(path)
