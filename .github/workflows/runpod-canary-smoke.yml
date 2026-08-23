@@ -23,11 +23,15 @@ permissions:
 
 jobs:
   cpu-contract-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
       - name: Install CPU PyTorch
@@ -36,6 +40,7 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
+          set -euo pipefail
           rm -rf /tmp/orbitune-runpod-canary
           python workloads/runpod-training-canary/run.py \
             --output-dir /tmp/orbitune-runpod-canary \
@@ -57,6 +62,7 @@ jobs:
           digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
           assert result['schema_version'] == 1
           assert result['workload_id'] == 'orbitune-runpod-training-canary-v1'
+          assert result['source_sha'] == 'unbaked-local'
           assert result['status'] == 'pass'
           assert result['device_type'] == 'cpu'
           assert result['parameters'] == 10_200_960
