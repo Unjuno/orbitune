@@ -5,7 +5,17 @@ import re
 from pathlib import Path
 from typing import Any
 
-from orbitune.compat import ARCHITECTURE_ABI, TOKENIZER_ABI, sha256_file, validate_sha256
+from orbitune.compat import (
+    ARCHITECTURE_ABI,
+    REFERENCE_MAX_SEQ_LEN,
+    REFERENCE_N_EMBD,
+    REFERENCE_N_HEAD,
+    REFERENCE_N_LAYER,
+    REFERENCE_PARAMETER_COUNT,
+    TOKENIZER_ABI,
+    sha256_file,
+    validate_sha256,
+)
 
 BASE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 REQUIRED_FIELDS = {
@@ -94,6 +104,41 @@ def validate_base_manifest(manifest: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _validate_current_checkpoint(path: Path, manifest: dict[str, Any]):
+    """Validate checkpoint contents for the currently implemented Python ABI.
+
+    Unknown/future ABIs remain registry-extensible, but a Base claiming the
+    current OrbituneGPT/Theory-REMI ABI must actually deserialize as that model
+    and agree with its manifest parameter count.
+    """
+    if manifest["architecture"] != ARCHITECTURE_ABI or manifest["tokenizer"] != TOKENIZER_ABI:
+        return None
+    from orbitune.model import OrbituneGPT
+
+    try:
+        model = OrbituneGPT.load_checkpoint(path, map_location="cpu").eval()
+    except Exception as exc:
+        raise ValueError("Base claims the current Orbitune ABI but checkpoint is incompatible") from exc
+    actual_count = model.parameter_count()
+    if actual_count != manifest["parameter_count"]:
+        raise ValueError(
+            f"checkpoint parameter_count {actual_count} does not match manifest {manifest['parameter_count']}"
+        )
+    return model
+
+
+def _reference_web_shape(model: object | None, manifest: dict[str, Any]) -> bool:
+    if model is None or manifest["parameter_count"] != REFERENCE_PARAMETER_COUNT:
+        return False
+    cfg = model.config
+    return (
+        cfg.max_seq_len == REFERENCE_MAX_SEQ_LEN
+        and cfg.n_layer == REFERENCE_N_LAYER
+        and cfg.n_embd == REFERENCE_N_EMBD
+        and cfg.n_head == REFERENCE_N_HEAD
+    )
+
+
 def validate_base_directory(directory: str | Path) -> dict[str, Any]:
     directory = Path(directory)
     manifest_path = directory / "manifest.json"
@@ -115,6 +160,7 @@ def validate_base_directory(directory: str | Path) -> dict[str, Any]:
             raise ValueError(f"{field} byte size mismatch")
         if sha256_file(path) != spec["sha256"].lower():
             raise ValueError(f"{field} SHA-256 mismatch")
+    _validate_current_checkpoint(directory / manifest["checkpoint"]["filename"], manifest)
     if not readme_path.read_text(encoding="utf-8").strip():
         raise ValueError("Base README.md must not be empty")
     return manifest
@@ -137,10 +183,8 @@ def build_base_registry(root: str | Path = "bases") -> dict[str, Any]:
         if base_id in seen:
             raise ValueError(f"duplicate Base id: {base_id}")
         seen.add(base_id)
-        web_runtime_compatible = (
-            manifest["architecture"] == ARCHITECTURE_ABI
-            and manifest["tokenizer"] == TOKENIZER_ABI
-        )
+        model = _validate_current_checkpoint(directory / manifest["checkpoint"]["filename"], manifest)
+        web_runtime_compatible = _reference_web_shape(model, manifest)
         bases.append({
             "id": base_id,
             "display_name": manifest["display_name"],
