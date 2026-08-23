@@ -40,7 +40,7 @@ A differently shaped Base may coexist in the registry only when its runtime/expo
 
 ## Staging a current legacy/reference ABI Base
 
-After training and ONNX export:
+After training and ONNX export, stage only after you have actually checked the model/data rights. The staging command requires an explicit acknowledgement and will not manufacture `rights_confirmed=true` implicitly:
 
 ```bash
 python scripts/add_base.py \
@@ -49,10 +49,11 @@ python scripts/add_base.py \
   --checkpoint models/my-base.pt \
   --web-onnx my-base-web.onnx \
   --license Apache-2.0 \
-  --training-license original
+  --training-license original \
+  --rights-confirmed
 ```
 
-This copies the artifacts into `bases/my-base/`, computes SHA-256 values, and creates the manifest/README.
+This copies the artifacts into `bases/my-base/`, computes SHA-256 values, and creates the manifest/README. `--id` is validated before any output path is created, so Base ids cannot escape the configured output root.
 
 Then regenerate registries:
 
@@ -79,6 +80,6 @@ CI rejects unknown Base ids and SHA mismatches. The Adapter's declared architect
 
 ## Rights and provenance
 
-A Base contribution must declare its code/model license and training-data rights status. `training_data.rights_confirmed` must be true before the Base can be accepted.
+A Base contribution must declare its code/model license and training-data rights status. `training_data.rights_confirmed` must be true before the Base can be accepted. The CLI's `--rights-confirmed` flag is an acknowledgement, not evidence by itself; reviewers must still verify the provenance declaration.
 
 For official Orbitune Bases, rights confirmation is necessary but not sufficient: the corpus pipeline must also record provenance, parsing/quality filtering, deduplication and train/validation separation. Exact-byte hash grouping alone is not considered composition-level deduplication.
