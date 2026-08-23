@@ -18,12 +18,27 @@ A Base id is an immutable compatibility lineage. Never replace the checkpoint by
 
 - parameter count: <= 100,000,000
 - each Base binary artifact: <= 95 MiB
-- checkpoint and web ONNX must both be committed under the Base directory
+- checkpoint and Web artifact must both be committed under the Base directory for the currently supported contribution path
 - exact SHA-256 and byte counts are mandatory in `manifest.json`
 
-The current rank-4 LoRA Adapter ABI supports the `orbitune-midi-gpt-v0` / `theory-remi-v0` 4x240 architecture. A differently shaped Base may still be listed as a Base, but it needs a compatible Adapter ABI before community LoRA adapters can target it.
+## ABI status
 
-## Staging a current-ABI Base
+The currently operational public contribution tooling is still the **legacy/reference** ABI:
+
+```text
+architecture     orbitune-midi-gpt-v0
+tokenizer        theory-remi-v0
+reference shape  4 layers / hidden 448 / 7 heads / context 1024
+adapter format   orbitune-lora-v0
+```
+
+The historical hidden-240 ~3M configuration is not the current reference Base.
+
+The production-candidate Compound path uses `orbitune-compound-v0-experimental` while it is under validation. **Do not publish an immutable community Base against that experimental ABI yet.** A future accepted Compound Base must declare a frozen architecture/tokenizer/runtime ABI before adapters target it.
+
+A differently shaped Base may coexist in the registry only when its runtime/export path is actually supported. Listing an arbitrary architecture string does not by itself make the current browser or Adapter loader compatible with it.
+
+## Staging a current legacy/reference ABI Base
 
 After training and ONNX export:
 
@@ -60,8 +75,10 @@ Every Adapter names both:
 }
 ```
 
-CI rejects unknown Base ids and SHA mismatches.
+CI rejects unknown Base ids and SHA mismatches. The Adapter's declared architecture/tokenizer/format must also be compatible with the selected Base and runtime.
 
-## Rights
+## Rights and provenance
 
 A Base contribution must declare its code/model license and training-data rights status. `training_data.rights_confirmed` must be true before the Base can be accepted.
+
+For official Orbitune Bases, rights confirmation is necessary but not sufficient: the corpus pipeline must also record provenance, parsing/quality filtering, deduplication and train/validation separation. Exact-byte hash grouping alone is not considered composition-level deduplication.
