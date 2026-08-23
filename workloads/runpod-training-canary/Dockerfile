@@ -15,7 +15,8 @@ LABEL org.opencontainers.image.source="https://github.com/Unjuno/orbitune" \
 
 COPY orbitune/ ./orbitune/
 COPY workloads/runpod-training-canary/run.py ./workloads/runpod-training-canary/run.py
+COPY workloads/runpod-training-canary/entrypoint.py ./workloads/runpod-training-canary/entrypoint.py
 
 RUN mkdir -p /outputs
 
-ENTRYPOINT ["python", "workloads/runpod-training-canary/run.py"]
+ENTRYPOINT ["python", "workloads/runpod-training-canary/entrypoint.py"]
