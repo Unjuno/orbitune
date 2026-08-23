@@ -13,6 +13,12 @@ This file records current engineering decisions separately from experiments. A d
 - Continuous attributes: factorized coarse + residual prediction.
 - Long-running generation requires sparse historical context in addition to a recent sliding window.
 - Training data must pass provenance/license, parsing, quality, deduplication, and split gates before pretraining.
+- Post-training/policy learning is **not mandatory by default**. It is an experiment-gated branch evaluated only after Base rollout quality is measured.
+
+## IMPLEMENTED EXPERIMENTAL ABI
+
+- `orbitune.compound` now defines `orbitune-compound-v0-experimental` primitives for Compound Event types, deterministic MIDI-1 canonicalization, 96/qn timing constants, and 7-coarse + 16-residual timing factorization.
+- This ABI is intentionally marked experimental. It must not be used as an immutable public Base compatibility target until the external real-MIDI gates below are closed.
 
 ## CANDIDATE (reference settings)
 
@@ -36,6 +42,7 @@ This file records current engineering decisions separately from experiments. A d
 - Training-time hard grammar masks combined with scheduled sampling.
 - PyTorch STE ternary inference as a production runtime.
 - Recent-only sliding context for infinite generation when long-range structural dependencies matter.
+- Adding DPO/RL merely because those methods exist; post-training must first pass a necessity gate.
 
 ## OPEN / BLOCKING VALIDATION
 
@@ -45,6 +52,7 @@ This file records current engineering decisions separately from experiments. A d
 4. Real-device/Web runtime benchmark for INT8 vs packed ternary.
 5. Real-MIDI long-rollout comparison of plain sliding vs anchored/dilated memory.
 6. Real-corpus ControlField quantization and control-adherence validation.
+7. **Post-training necessity gate after Base pretraining.** Compare Base against high-quality SFT using held-out pairwise continuation-fit, standalone quality, diversity, and control-adherence judgments. DPO is tested only if a real rollout-selection gap remains; reward-based RL is research-only until reward validity and anti-collapse conditions are demonstrated. See `docs/POST_TRAINING_RESEARCH.md`.
 
 ## Latest proxy results
 
@@ -69,4 +77,8 @@ With a fixed 32-bar context budget and dependencies extending to 256 bars, true 
 | 16 levels/dim | 24 | 0.000425 |
 | 32 levels/dim | 30 | 0.000100 |
 
-The next gating milestone is external real-MIDI validation, not additional architecture ideation.
+## Post-training evidence summary
+
+Current external evidence does not justify making policy learning mandatory. NotaGen reports gains from pretraining + high-quality fine-tuning + CLaMP-DPO, and a recent on-device piano autocomplete project reports strong pairwise DPO gains. Conversely, reward-optimization work in symbolic music reports diversity collapse and sensitivity to reward/training setup. Orbitune therefore treats post-training as an empirical branch, not an architectural assumption.
+
+The next gating milestone is external real-MIDI validation and Base pretraining, not additional architecture ideation or premature policy-learning infrastructure.
