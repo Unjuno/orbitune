@@ -19,15 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check whether the real training corpus is configured
+      - name: Check whether legacy reference training is explicitly armed
         id: data
         shell: bash
         run: |
-          if [[ -s data/continuous/train.tokens && -s data/continuous/validation.tokens ]]; then
+          if [[ -s data/continuous/ENABLE_LEGACY_REFERENCE_TRAINING && -s data/continuous/train.tokens && -s data/continuous/validation.tokens ]]; then
             echo 'ready=true' >> "$GITHUB_OUTPUT"
           else
             echo 'ready=false' >> "$GITHUB_OUTPUT"
-            echo 'Continuous training is armed but idle: add data/continuous/train.tokens and validation.tokens after dataset research.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Scheduled training is idle. This workflow still trains the legacy Theory-REMI reference path. To arm it intentionally, provide reviewed train.tokens + validation.tokens and the ENABLE_LEGACY_REFERENCE_TRAINING marker. Compound production training will use a separate gate after its Base model is implemented.' >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - uses: actions/setup-python@v5
@@ -68,7 +68,7 @@ jobs:
               --pattern 'report.json' || true
           fi
 
-      - name: Continue the 10M Base training with health monitoring
+      - name: Continue the legacy 10M reference Base training with health monitoring
         if: steps.data.outputs.ready == 'true'
         run: |
           python scripts/continuous_train.py \
@@ -105,7 +105,7 @@ jobs:
         shell: bash
         run: |
           if ! gh release view continuous-training >/dev/null 2>&1; then
-            gh release create continuous-training --prerelease --title 'Continuous training state' --notes 'Mutable latest/healthy state plus immutable token snapshots. Not a published Base compatibility target.'
+            gh release create continuous-training --prerelease --title 'Continuous training state' --notes 'Mutable legacy-reference latest/healthy state plus immutable token snapshots. Not a published Base compatibility target.'
           fi
           gh release upload continuous-training \
             .orbitune-ci-state/state.pt \
