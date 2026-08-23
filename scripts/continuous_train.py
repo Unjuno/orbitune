@@ -13,10 +13,12 @@ from pathlib import Path
 
 import torch
 
-from orbitune.compat import REFERENCE_PARAMETER_COUNT
+from orbitune.compat import REFERENCE_PARAMETER_COUNT, TOKENIZER_ABI
 from orbitune.model import OrbituneConfig, OrbituneGPT
 from orbitune.tokenizer.vocab import TheoryRemiVocab
 from orbitune.training import _sample_batch, evaluate_token_loss, read_token_ids
+
+CONTINUOUS_STATE_FORMAT = 1
 
 
 def _atomic_torch_save(payload: object, path: Path) -> None:
@@ -36,9 +38,13 @@ def _capture_state(
     best_validation_loss: float,
     best_step: int,
     rng: random.Random,
+    loss_history: list[float] | None = None,
+    consecutive_spikes: int = 0,
 ) -> dict[str, object]:
     return {
+        "state_format": CONTINUOUS_STATE_FORMAT,
         "architecture": model.architecture,
+        "tokenizer": model.tokenizer,
         "config": config,
         "model_state": {key: value.detach().cpu() for key, value in model.state_dict().items()},
         "optimizer_state": optimizer.state_dict(),
@@ -48,6 +54,8 @@ def _capture_state(
         "best_step": best_step,
         "rng_state": rng.getstate(),
         "torch_rng_state": torch.get_rng_state(),
+        "loss_history": list(loss_history or []),
+        "consecutive_spikes": consecutive_spikes,
     }
 
 
@@ -59,10 +67,21 @@ def _restore_state(
     *,
     expected_config: dict[str, object],
 ) -> tuple[int, int, float, int]:
+    if not isinstance(payload, dict):
+        raise ValueError("continuous training state must be a mapping")
+    state_format = int(payload.get("state_format", 0))
+    if state_format not in (0, CONTINUOUS_STATE_FORMAT):
+        raise ValueError(f"unsupported continuous training state format: {state_format}")
     if payload.get("architecture") != model.architecture or payload.get("config") != expected_config:
         raise ValueError("continuous training state architecture/config mismatch")
-    model.load_state_dict(payload["model_state"])
-    optimizer.load_state_dict(payload["optimizer_state"])
+    if payload.get("tokenizer", TOKENIZER_ABI) != model.tokenizer:
+        raise ValueError("continuous training state tokenizer mismatch")
+    model_state = payload.get("model_state")
+    optimizer_state = payload.get("optimizer_state")
+    if not isinstance(model_state, dict) or not isinstance(optimizer_state, dict):
+        raise ValueError("continuous training state is missing model/optimizer mappings")
+    model.load_state_dict(model_state)
+    optimizer.load_state_dict(optimizer_state)
     if "rng_state" in payload:
         rng.setstate(payload["rng_state"])
     if "torch_rng_state" in payload:
@@ -73,6 +92,29 @@ def _restore_state(
         float(payload.get("best_validation_loss", float("inf"))),
         int(payload.get("best_step", 0)),
     )
+
+
+def _restored_health_state(payload: dict[str, object], *, maxlen: int) -> tuple[deque[float], int]:
+    raw_history = payload.get("loss_history", [])
+    if not isinstance(raw_history, (list, tuple)):
+        raise ValueError("continuous training loss_history must be a sequence")
+    history: deque[float] = deque(maxlen=maxlen)
+    for raw in raw_history[-maxlen:]:
+        value = float(raw)
+        if not math.isfinite(value):
+            raise ValueError("continuous training loss_history contains a non-finite value")
+        history.append(value)
+    consecutive = int(payload.get("consecutive_spikes", 0))
+    if consecutive < 0:
+        raise ValueError("continuous training consecutive_spikes must be non-negative")
+    return history, consecutive
+
+
+def _load_training_state(path: Path) -> dict[str, object]:
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    if not isinstance(payload, dict):
+        raise ValueError("continuous training state must be a mapping")
+    return payload
 
 
 def _loss_zscore(history: deque[float], value: float, *, min_samples: int) -> float | None:
@@ -117,10 +159,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
-    if args.max_seconds <= 0 or args.validation_interval <= 0:
-        raise SystemExit("max-seconds and validation-interval must be positive")
-    if args.snapshot_token_interval <= 0:
-        raise SystemExit("snapshot-token-interval must be positive")
+    if args.max_seconds <= 0 or args.max_steps <= 0 or args.validation_interval <= 0:
+        raise SystemExit("max-seconds, max-steps and validation-interval must be positive")
+    if args.snapshot_token_interval <= 0 or args.batch_size <= 0 or args.seq_len <= 0:
+        raise SystemExit("snapshot-token-interval, batch-size and seq-len must be positive")
+    if args.learning_rate <= 0 or args.weight_decay < 0:
+        raise SystemExit("learning-rate must be positive and weight-decay non-negative")
     if args.spike_window < 2 or not 2 <= args.spike_min_samples <= args.spike_window:
         raise SystemExit("spike window/min-samples are inconsistent")
     if args.spike_z_threshold <= 0 or args.spike_consecutive_limit <= 0 or args.gradient_spike_threshold <= 0:
@@ -138,6 +182,10 @@ def main() -> None:
 
     cfg = OrbituneConfig(vocab_size=len(vocab))
     config_dict = asdict(cfg)
+    # Seed before parameter construction. A resume immediately overwrites RNG
+    # and model/optimizer state from the checkpoint, while a fresh run now has
+    # deterministic initial weights as promised by --seed.
+    torch.manual_seed(args.seed)
     model = OrbituneGPT(cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     rng = random.Random(args.seed)
@@ -145,14 +193,15 @@ def main() -> None:
     tokens_seen = 0
     best_validation_loss = float("inf")
     best_step = 0
+    rolling_losses: deque[float] = deque(maxlen=args.spike_window)
+    consecutive_spikes = 0
 
     if state_path.is_file():
-        payload = torch.load(state_path, map_location="cpu", weights_only=False)
+        payload = _load_training_state(state_path)
         global_step, tokens_seen, best_validation_loss, best_step = _restore_state(
             payload, model, optimizer, rng, expected_config=config_dict
         )
-    else:
-        torch.manual_seed(args.seed)
+        rolling_losses, consecutive_spikes = _restored_health_state(payload, maxlen=args.spike_window)
 
     if model.parameter_count() != REFERENCE_PARAMETER_COUNT:
         raise RuntimeError(f"reference parameter count drifted: {model.parameter_count()} != {REFERENCE_PARAMETER_COUNT}")
@@ -165,8 +214,6 @@ def main() -> None:
     validation_history: list[dict[str, float | int]] = []
     gradient_norms: list[float] = []
     spike_events: list[dict[str, float | int | str]] = []
-    rolling_losses: deque[float] = deque(maxlen=args.spike_window)
-    consecutive_spikes = 0
     rolled_back = False
     rollback_reason: str | None = None
     created_snapshots: list[str] = []
@@ -183,6 +230,8 @@ def main() -> None:
         best_validation_loss=best_validation_loss,
         best_step=best_step,
         rng=rng,
+        loss_history=list(rolling_losses),
+        consecutive_spikes=consecutive_spikes,
     )
     _atomic_torch_save(initial_state, healthy_path)
 
@@ -230,8 +279,6 @@ def main() -> None:
                 "gradient_norm": grad_norm,
             })
 
-        # A single hard batch is not enough to roll back. Require repeated loss
-        # spikes, or a loss spike accompanied by a severe gradient spike.
         if consecutive_spikes >= args.spike_consecutive_limit or (is_loss_spike and is_gradient_spike):
             rolled_back = True
             rollback_reason = "persistent_training_spike"
@@ -257,6 +304,8 @@ def main() -> None:
                 best_validation_loss=best_validation_loss,
                 best_step=best_step,
                 rng=rng,
+                loss_history=list(rolling_losses),
+                consecutive_spikes=consecutive_spikes,
             )
             _atomic_torch_save(snapshot_state, snapshot_path)
             created_snapshots.append(str(snapshot_path))
@@ -281,16 +330,19 @@ def main() -> None:
                 best_validation_loss=best_validation_loss,
                 best_step=best_step,
                 rng=rng,
+                loss_history=list(rolling_losses),
+                consecutive_spikes=consecutive_spikes,
             )
             _atomic_torch_save(healthy_state, healthy_path)
             last_healthy_step = global_step
             last_healthy_tokens = tokens_seen
 
     if rolled_back:
-        healthy_payload = torch.load(healthy_path, map_location="cpu", weights_only=False)
+        healthy_payload = _load_training_state(healthy_path)
         global_step, tokens_seen, best_validation_loss, best_step = _restore_state(
             healthy_payload, model, optimizer, rng, expected_config=config_dict
         )
+        rolling_losses, consecutive_spikes = _restored_health_state(healthy_payload, maxlen=args.spike_window)
     else:
         if not validation_history or validation_history[-1]["step"] != global_step:
             validation_loss = evaluate_token_loss(model, validation_ids, seq_len=args.seq_len, device=args.device)
@@ -310,6 +362,8 @@ def main() -> None:
             best_validation_loss=best_validation_loss,
             best_step=best_step,
             rng=rng,
+            loss_history=list(rolling_losses),
+            consecutive_spikes=consecutive_spikes,
         )
         _atomic_torch_save(healthy_state, healthy_path)
         last_healthy_step = global_step
@@ -325,12 +379,16 @@ def main() -> None:
         best_validation_loss=best_validation_loss,
         best_step=best_step,
         rng=rng,
+        loss_history=list(rolling_losses),
+        consecutive_spikes=consecutive_spikes,
     )
     _atomic_torch_save(state, state_path)
 
     report = {
         "status": "rolled_back" if rolled_back else "healthy",
         "rollback_reason": rollback_reason,
+        "state_format": CONTINUOUS_STATE_FORMAT,
+        "tokenizer": model.tokenizer,
         "parameters": model.parameter_count(),
         "run_start_step": run_start_step,
         "global_step": global_step,
@@ -345,6 +403,8 @@ def main() -> None:
         "gradient_norm_mean": statistics.fmean(gradient_norms) if gradient_norms else None,
         "spike_count": len(spike_events),
         "spike_events": spike_events[-100:],
+        "health_history_samples": len(rolling_losses),
+        "consecutive_spikes": consecutive_spikes,
         "best_validation_loss": best_validation_loss,
         "best_step": best_step,
         "last_healthy_step": last_healthy_step,
