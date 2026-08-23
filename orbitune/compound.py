@@ -41,6 +41,12 @@ _EVENT_SORT_PRIORITY: dict[CompoundEventType, int] = {
 }
 
 
+def _require_zero(event_name: str, **fields: int) -> None:
+    nonzero = [name for name, value in fields.items() if value != 0]
+    if nonzero:
+        raise ValueError(f"{event_name} unused fields must be zero: {', '.join(nonzero)}")
+
+
 @dataclass(frozen=True, slots=True)
 class CompoundEvent:
     """Canonical event used by the experimental production tokenizer.
@@ -73,30 +79,49 @@ class CompoundEvent:
                 raise ValueError("NOTE duration must be positive")
             if not 1 <= self.a3 <= 127:
                 raise ValueError("NOTE velocity must be in 1..127")
+            _require_zero("NOTE", a4=self.a4)
         elif self.type is CompoundEventType.CC:
             if not 0 <= self.a1 <= 127 or not 0 <= self.a2 <= 127:
                 raise ValueError("CC id/value must be in 0..127")
+            _require_zero("CC", a3=self.a3, a4=self.a4)
         elif self.type is CompoundEventType.PROGRAM:
             if not 0 <= self.a1 <= 127:
                 raise ValueError("program must be in 0..127")
+            _require_zero("PROGRAM", a2=self.a2, a3=self.a3, a4=self.a4)
         elif self.type is CompoundEventType.BANK:
             if not 0 <= self.a1 <= 127 or not 0 <= self.a2 <= 127:
                 raise ValueError("bank MSB/LSB must be in 0..127")
+            _require_zero("BANK", a3=self.a3, a4=self.a4)
+        elif self.type is CompoundEventType.TEMPO:
+            if self.channel != 0:
+                raise ValueError("TEMPO is global and must use channel 0")
+            if not 1 <= self.a1 <= 999:
+                raise ValueError("TEMPO BPM must be in 1..999")
+            _require_zero("TEMPO", a2=self.a2, a3=self.a3, a4=self.a4)
         elif self.type is CompoundEventType.PEDAL:
             if self.a1 not in (0, 1):
                 raise ValueError("pedal state must be 0 or 1")
+            _require_zero("PEDAL", a2=self.a2, a3=self.a3, a4=self.a4)
         elif self.type is CompoundEventType.PITCH_BEND:
             if not 0 <= self.a1 <= 16383:
                 raise ValueError("pitch bend must be in 0..16383")
+            _require_zero("PITCH_BEND", a2=self.a2, a3=self.a3, a4=self.a4)
         elif self.type is CompoundEventType.CHANNEL_PRESSURE:
             if not 0 <= self.a1 <= 127:
                 raise ValueError("channel pressure must be in 0..127")
+            _require_zero("CHANNEL_PRESSURE", a2=self.a2, a3=self.a3, a4=self.a4)
         elif self.type is CompoundEventType.POLY_PRESSURE:
             if not 0 <= self.a1 <= 127 or not 0 <= self.a2 <= 127:
                 raise ValueError("poly pressure pitch/value must be in 0..127")
+            _require_zero("POLY_PRESSURE", a3=self.a3, a4=self.a4)
         elif self.type is CompoundEventType.TIME_SIGNATURE:
-            if self.a1 <= 0 or self.a2 <= 0:
-                raise ValueError("time signature numerator/denominator must be positive")
+            if self.channel != 0:
+                raise ValueError("TIME_SIGNATURE is global and must use channel 0")
+            if not 1 <= self.a1 <= 255:
+                raise ValueError("time signature numerator must be in 1..255")
+            if self.a2 <= 0 or self.a2 > (1 << 62) or self.a2 & (self.a2 - 1):
+                raise ValueError("time signature denominator must be a power of two representable in int64")
+            _require_zero("TIME_SIGNATURE", a3=self.a3, a4=self.a4)
 
 
 @dataclass(frozen=True, slots=True)
