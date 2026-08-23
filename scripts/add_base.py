@@ -33,6 +33,9 @@ def main() -> int:
         if path.stat().st_size > MAX_BASE_FILE_BYTES:
             raise SystemExit(f"{path} exceeds the 95 MiB repository policy")
 
+    # This staging tool intentionally uses the currently operational
+    # OrbituneGPT class. Architecture and tokenizer are derived from the loaded
+    # checkpoint/model class rather than duplicated as manifest literals.
     model = OrbituneGPT.load_checkpoint(checkpoint, map_location="cpu").eval()
     target = Path(args.out_root) / args.id
     if target.exists():
@@ -50,7 +53,7 @@ def main() -> int:
         "description": args.description,
         "author": args.author,
         "architecture": model.architecture,
-        "tokenizer": "theory-remi-v0",
+        "tokenizer": model.tokenizer,
         "parameter_count": model.parameter_count(),
         "checkpoint": {"filename": checkpoint_out.name, "sha256": sha256_file(checkpoint_out), "bytes": checkpoint_out.stat().st_size},
         "web_onnx": {"filename": onnx_out.name, "sha256": sha256_file(onnx_out), "bytes": onnx_out.stat().st_size},
