@@ -66,6 +66,26 @@ pytorch/pytorch@sha256:b85566342b86d13a67712e9315d40cdc2dad7f8d86df1aff3831f8083
 
 The image entrypoint is finite and non-interactive. At runtime it needs no network access.
 
+## gpu-control source gate
+
+`gpu-control` requires a public repository, exact 40-character commit SHA, exact Dockerfile path, bounded GPU profile/runtime/cost, and verifies the Dockerfile at that immutable SHA before later execution gates.
+
+After choosing the exact Orbitune commit, the source-validation handoff is:
+
+```bash
+ORBITUNE_SHA=<40-character-commit-sha>
+
+gpu-control verify-source \
+  --target-repo Unjuno/orbitune \
+  --target-sha "$ORBITUNE_SHA" \
+  --dockerfile-path workloads/runpod-training-canary/Dockerfile \
+  --gpu-profile cheap-24gb \
+  --max-runtime-minutes 30 \
+  --max-cost-usd 0.30
+```
+
+This is still a dry/source verification step; it does not authorize or create a paid Pod. Image publication, live pricing, cleanup guarantees, explicit paid-compute authorization, and the remaining RunPod adapter gates stay owned by `gpu-control`.
+
 ## Outputs
 
 The workload writes exactly two primary files to `/outputs`:
@@ -107,7 +127,7 @@ python workloads/runpod-training-canary/run.py \
   --validation-interval 1
 ```
 
-This validates imports, model construction, one optimizer update, validation, checkpointing and result serialization. It does **not** validate CUDA.
+This validates imports, model construction, one optimizer update, validation, checkpointing and result serialization. It does **not** validate CUDA. The same contract is run automatically by `.github/workflows/runpod-canary-smoke.yml`.
 
 ### First paid RunPod canary
 
