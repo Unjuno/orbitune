@@ -98,7 +98,7 @@ jobs:
           path: .orbitune-ci-state
           key: continuous-10m-${{ github.run_id }}
 
-      - name: Persist latest, healthy, best, and new immutable snapshots
+      - name: Persist latest, healthy, optional best, and new immutable snapshots
         if: steps.data.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -107,12 +107,12 @@ jobs:
           if ! gh release view continuous-training >/dev/null 2>&1; then
             gh release create continuous-training --prerelease --title 'Continuous training state' --notes 'Mutable legacy-reference latest/healthy state plus immutable token snapshots. Not a published Base compatibility target.'
           fi
-          gh release upload continuous-training \
-            .orbitune-ci-state/state.pt \
-            .orbitune-ci-state/healthy.pt \
-            .orbitune-ci-state/best.pt \
-            .orbitune-ci-state/report.json \
-            --clobber
+
+          upload=(.orbitune-ci-state/state.pt .orbitune-ci-state/healthy.pt .orbitune-ci-state/report.json)
+          if [[ -s .orbitune-ci-state/best.pt ]]; then
+            upload+=(.orbitune-ci-state/best.pt)
+          fi
+          gh release upload continuous-training "${upload[@]}" --clobber
 
           python - <<'PY' > /tmp/new-snapshots.txt
           import json
@@ -124,7 +124,7 @@ jobs:
           while IFS= read -r snapshot; do
             [[ -n "$snapshot" && -f "$snapshot" ]] || continue
             base="$(basename "$snapshot" .pt)"
-            immutable=".orbitune-ci-state/${base}-step-$(python -c "import torch; p=torch.load('$snapshot', map_location='cpu', weights_only=False); print(p['global_step'])")-run-${GITHUB_RUN_ID}.pt"
+            immutable=".orbitune-ci-state/${base}-step-$(python -c "import torch; p=torch.load('$snapshot', map_location='cpu', weights_only=True); print(p['global_step'])")-run-${GITHUB_RUN_ID}.pt"
             cp "$snapshot" "$immutable"
             gh release upload continuous-training "$immutable"
           done < /tmp/new-snapshots.txt
