@@ -11,6 +11,9 @@ from orbitune.midi_metadata import inspect_midi_metadata
 from orbitune.tokenizer import CompoundEventTokenizer
 
 
+COMPOUND_RECORD_WIDTH = 12
+
+
 def _collect(source: str | Path, *, min_events: int) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
     tokenizer = CompoundEventTokenizer()
     accepted: list[dict[str, object]] = []
@@ -27,6 +30,8 @@ def _collect(source: str | Path, *, min_events: int) -> tuple[list[dict[str, obj
             metadata = inspect_midi_metadata(path)
             accepted.append(
                 {
+                    "tokenizer_abi": tokenizer.abi,
+                    "record_width": COMPOUND_RECORD_WIDTH,
                     "path": str(path),
                     "sha256": digest,
                     "events": len(events),
@@ -62,8 +67,9 @@ def prepare_compound_split_corpus(
     """Prepare song-preserving Compound Event train/validation JSONL files.
 
     Exact MIDI byte duplicates are grouped by SHA-256 and cannot cross the
-    split. Each JSONL row remains one source composition/file, so training code
-    can choose windows without destroying song boundaries.
+    split. Each JSONL row remains one source composition/file and carries the
+    exact experimental tokenizer ABI plus record width, preventing silent
+    mixing of incompatible record layouts.
     """
 
     if not 0.0 < validation_fraction < 1.0:
@@ -121,7 +127,7 @@ def prepare_compound_split_corpus(
         "validation_files": len(validation),
         "train_events": sum(int(record["events"]) for record in train),
         "validation_events": sum(int(record["events"]) for record in validation),
-        "record_width": 12,
+        "record_width": COMPOUND_RECORD_WIDTH,
         "rejected": rejected,
     }
     target_report = Path(out_report)
