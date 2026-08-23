@@ -17,6 +17,8 @@ from orbitune.compat import (
     sha256_file,
 )
 
+MAX_ORBITUNE_PARAMETERS = 100_000_000
+
 
 @dataclass(slots=True)
 class OrbituneConfig:
@@ -32,6 +34,31 @@ class OrbituneConfig:
         if self.n_embd % self.n_head:
             raise ValueError("n_embd must be divisible by n_head")
         return self.n_embd // self.n_head
+
+    @property
+    def estimated_parameter_count(self) -> int:
+        """Exact parameter count for the current tied-embedding OrbituneGPT."""
+        n = self.n_embd
+        return (
+            self.vocab_size * n
+            + self.max_seq_len * n
+            + self.n_layer * (12 * n * n + 9 * n)
+            + 2 * n
+        )
+
+    def validate(self) -> None:
+        for name in ("vocab_size", "max_seq_len", "n_layer", "n_embd", "n_head"):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.n_embd % self.n_head:
+            raise ValueError("n_embd must be divisible by n_head")
+        if not 0.0 <= self.dropout < 1.0:
+            raise ValueError("dropout must be in [0, 1)")
+        if self.estimated_parameter_count > MAX_ORBITUNE_PARAMETERS:
+            raise ValueError(
+                f"model config exceeds {MAX_ORBITUNE_PARAMETERS} parameter safety/repository limit"
+            )
 
 
 class CausalSelfAttention(nn.Module):
@@ -79,6 +106,7 @@ class OrbituneGPT(nn.Module):
 
     def __init__(self, cfg: OrbituneConfig) -> None:
         super().__init__()
+        cfg.validate()
         self.config = cfg
         self.base_sha256: str | None = None
         self.token_emb = nn.Embedding(cfg.vocab_size, cfg.n_embd)
@@ -157,6 +185,8 @@ class OrbituneGPT(nn.Module):
     def load_checkpoint(cls, path: str | Path, *, map_location: str | torch.device = "cpu") -> "OrbituneGPT":
         path = Path(path)
         payload = torch.load(path, map_location=map_location, weights_only=True)
+        if not isinstance(payload, dict):
+            raise ValueError("checkpoint payload must be a mapping")
         if payload.get("architecture") != cls.architecture:
             raise ValueError("checkpoint architecture mismatch")
         # Old Orbitune v0 checkpoints predate the explicit tokenizer field and
@@ -164,7 +194,20 @@ class OrbituneGPT(nn.Module):
         # supported by this class. New checkpoints must match explicitly.
         if payload.get("tokenizer", cls.tokenizer) != cls.tokenizer:
             raise ValueError("checkpoint tokenizer mismatch")
-        model = cls(OrbituneConfig(**payload["config"]))
-        model.load_state_dict(payload["state_dict"])
+        raw_config = payload.get("config")
+        if not isinstance(raw_config, dict):
+            raise ValueError("checkpoint config must be a mapping")
+        try:
+            cfg = OrbituneConfig(**raw_config)
+            cfg.validate()
+        except (TypeError, ValueError) as exc:
+            raise ValueError("checkpoint config is invalid or exceeds the supported parameter budget") from exc
+        state_dict = payload.get("state_dict")
+        if not isinstance(state_dict, dict):
+            raise ValueError("checkpoint state_dict must be a mapping")
+        model = cls(cfg)
+        model.load_state_dict(state_dict)
+        if model.parameter_count() != cfg.estimated_parameter_count:
+            raise ValueError("checkpoint model parameter count does not match config estimate")
         model.base_sha256 = sha256_file(path)
         return model
