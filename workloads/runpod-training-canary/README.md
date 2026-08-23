@@ -1,0 +1,143 @@
+# RunPod training canary
+
+This workload is the **first paid-GPU integration target** for Orbitune and `Unjuno/gpu-control`.
+
+It is intentionally not a production Base training run and not a Compound-model quality experiment. Its purpose is to prove the remote execution path end to end:
+
+```text
+immutable Orbitune commit
+→ digest-pinned CUDA image
+→ RunPod single GPU
+→ CUDA-visible PyTorch
+→ forward/backward
+→ AdamW update
+→ deterministic validation
+→ checkpoint save
+→ /outputs/result.json
+→ bounded result collection
+→ provider cleanup
+```
+
+## Why the legacy/reference 10.2M model is used
+
+The production-candidate Compound Base is not implemented yet. Using it for the infrastructure canary would couple two independent unknowns: the new model and the remote GPU control plane.
+
+The existing `orbitune-midi-gpt-v0` / `theory-remi-v0` 10.2M model is already executable and checkpointed, so it is the correct canary for isolating RunPod/container failures. A successful canary does **not** approve Theory-REMI as the production tokenizer.
+
+## Fixed remote workload size
+
+Default container execution uses:
+
+```text
+steps                 250
+batch_size               8
+sequence_length         256
+tokens / optimizer step 2048
+total training tokens 512000
+validation interval      50 steps
+validation points         5
+model parameters   10200960
+seed                20260824
+```
+
+The 512k-token amount is deliberate: it is large enough to exercise sustained CUDA kernels, optimizer state, validation and checkpoint I/O, but tiny relative to a real pretraining run. It should fit comfortably inside the `gpu-control` `cheap-24gb` profile (one GPU, >=24 GB VRAM, <=30 minutes, <=$0.30), subject to live provider price verification.
+
+Do not increase the first paid run merely to consume available GPU time. If this canary fails, the useful signal is infrastructure/debugging, not additional training.
+
+## Data
+
+The workload generates a deterministic synthetic Theory-REMI token stream inside the container. It has:
+
+- no dataset download;
+- no runtime network dependency;
+- no private data;
+- no corpus-license ambiguity;
+- no claim of musical-quality validity.
+
+This keeps the first live run focused on the GPU/control-plane boundary.
+
+## Image
+
+The Dockerfile uses the PyTorch 2.10.0 CUDA 12.8/cuDNN 9 runtime image pinned by manifest digest:
+
+```text
+pytorch/pytorch@sha256:b85566342b86d13a67712e9315d40cdc2dad7f8d86df1aff3831f80835edbcca
+```
+
+The image entrypoint is finite and non-interactive. At runtime it needs no network access.
+
+## Outputs
+
+The workload writes exactly two primary files to `/outputs`:
+
+```text
+/outputs/result.json
+/outputs/canary-base.pt
+```
+
+`result.json` includes:
+
+- workload/schema identity;
+- architecture/tokenizer identity;
+- CUDA availability and selected device;
+- GPU name;
+- PyTorch/CUDA versions;
+- steps/batch/sequence/tokens processed;
+- elapsed time and throughput;
+- peak allocated VRAM;
+- training and validation losses;
+- checkpoint byte size and SHA-256;
+- bounded artifact metadata compatible with the `gpu-control` result-collection direction.
+
+The 10.2M FP32 checkpoint is expected to remain below the current 64 MiB single-collected-artifact limit. If it grows beyond that boundary, the result marks it `reference_only` rather than pretending it is a small collected artifact.
+
+## Acceptance gates
+
+### Local CPU smoke
+
+The code path may be tested without a GPU using a very small override:
+
+```bash
+python workloads/runpod-training-canary/run.py \
+  --output-dir /tmp/orbitune-canary \
+  --device cpu \
+  --steps 1 \
+  --batch-size 1 \
+  --seq-len 16 \
+  --validation-interval 1
+```
+
+This validates imports, model construction, one optimizer update, validation, checkpointing and result serialization. It does **not** validate CUDA.
+
+### First paid RunPod canary
+
+Use the image's default arguments. The control-plane result is accepted only if all of the following are independently checked:
+
+```text
+container exit code == 0
+result.status == pass
+result.device_type == cuda
+result.cuda_available == true
+result.parameters == 10200960
+result.tokens_processed == 512000
+validation_history has 5 finite points
+last validation loss < first validation loss
+checkpoint exists
+checkpoint bytes <= 64 MiB
+checkpoint SHA-256 matches result metadata
+provider lifecycle finalized
+cleanup confirmed
+```
+
+A CPU `pass` result is valid only as a local/container smoke; it is a **FAIL** for the paid GPU canary.
+
+## Relation to future Compound training
+
+After this infrastructure canary passes, do not immediately start a large official Base. The next GPU workloads should be:
+
+1. Compound Base synthetic overfit, once the Compound model exists;
+2. tiny real-MIDI overfit;
+3. controlled 5M/10M/20M scale calibration;
+4. only then corpus-scale pretraining.
+
+This preserves the debugging hierarchy: infrastructure first, model correctness second, data/model-scale research third, expensive pretraining last.
