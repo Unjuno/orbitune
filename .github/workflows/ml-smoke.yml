@@ -10,7 +10,7 @@ on:
       - "orbitune/training.py"
       - "orbitune/inference.py"
       - "orbitune/tokenizer/**"
-      - "orbitune/release.py"
+      - "orbitune/compat.py"
       - "scripts/smoke_train.py"
       - "scripts/continuous_train.py"
       - "pyproject.toml"
@@ -22,11 +22,14 @@ on:
       - "orbitune/training.py"
       - "orbitune/inference.py"
       - "orbitune/tokenizer/**"
-      - "orbitune/release.py"
+      - "orbitune/compat.py"
       - "scripts/smoke_train.py"
       - "scripts/continuous_train.py"
       - "pyproject.toml"
       - ".github/workflows/ml-smoke.yml"
+
+permissions:
+  contents: read
 
 jobs:
   train-smoke:
