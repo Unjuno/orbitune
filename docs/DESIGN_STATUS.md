@@ -17,7 +17,12 @@ This file records current engineering decisions separately from experiments. A d
 
 ## IMPLEMENTED EXPERIMENTAL ABI
 
-- `orbitune.compound` now defines `orbitune-compound-v0-experimental` primitives for Compound Event types, deterministic MIDI-1 canonicalization, 96/qn timing constants, and 7-coarse + 16-residual timing factorization.
+- `orbitune.compound` defines `orbitune-compound-v0-experimental` primitives for Compound Event types, deterministic MIDI-1 canonicalization, 96/qn timing constants, and 7-coarse + 16-residual timing factorization.
+- `orbitune.compound_midi` is a parallel MIDI type-0/1 parser that preserves NOTE, CC, Program, Bank, Tempo, Pedal, Pitch Bend, Channel/Poly Pressure, and Time Signature without changing the legacy `read_midi()` behavior.
+- `orbitune.quantization` implements shared 8-coarse + 8-residual unsigned quantization for CC values, pitch bend and pressure-like controls.
+- `CompoundEventTokenizer` maps one canonical event to one 12-field training record. DELTA and NOTE duration are factorized; continuous controls use the shared factorized pair.
+- `orbitune.compound_dataset` prepares duplicate-safe, song-preserving train/validation JSONL splits. `orbitune.compound_training` samples next-event windows without crossing composition boundaries.
+- `scripts/prepare_compound_corpus.py` exposes the experimental corpus preparation path without replacing legacy CLI commands.
 - This ABI is intentionally marked experimental. It must not be used as an immutable public Base compatibility target until the external real-MIDI gates below are closed.
 
 ## CANDIDATE (reference settings)
