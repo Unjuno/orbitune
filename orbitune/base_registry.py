@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from orbitune.compat import validate_sha256, sha256_file
+from orbitune.compat import ARCHITECTURE_ABI, TOKENIZER_ABI, sha256_file, validate_sha256
 
 BASE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 REQUIRED_FIELDS = {
@@ -15,6 +15,7 @@ REQUIRED_FIELDS = {
 OPTIONAL_FIELDS = {"description", "author"}
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
 MAX_BASE_FILE_BYTES = 95 * 1024 * 1024
+TRAINING_DATA_FIELDS = {"source_type", "license", "rights_confirmed", "notes"}
 
 
 def load_base_manifest(path: str | Path) -> dict[str, Any]:
@@ -22,6 +23,13 @@ def load_base_manifest(path: str | Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("Base manifest must be a JSON object")
     return payload
+
+
+def _safe_artifact_filename(value: object) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    path = Path(value)
+    return path.name == value and value not in {".", ".."}
 
 
 def validate_base_manifest(manifest: dict[str, Any]) -> list[str]:
@@ -43,7 +51,7 @@ def validate_base_manifest(manifest: dict[str, Any]) -> list[str]:
         if not isinstance(manifest.get(field), str) or not manifest.get(field):
             errors.append(f"{field} is required")
     count = manifest.get("parameter_count")
-    if not isinstance(count, int) or count <= 0 or count > 100_000_000:
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0 or count > 100_000_000:
         errors.append("parameter_count must be an integer in 1..100000000")
     for field in ("checkpoint", "web_onnx"):
         spec = manifest.get(field)
@@ -53,18 +61,36 @@ def validate_base_manifest(manifest: dict[str, Any]) -> list[str]:
         if set(spec) != {"filename", "sha256", "bytes"}:
             errors.append(f"{field} must contain exactly filename, sha256, bytes")
             continue
-        if not isinstance(spec.get("filename"), str) or not spec["filename"]:
-            errors.append(f"{field}.filename is required")
+        if not _safe_artifact_filename(spec.get("filename")):
+            errors.append(f"{field}.filename must be a simple file name without path separators")
         if not isinstance(spec.get("sha256"), str) or not validate_sha256(spec["sha256"]):
             errors.append(f"{field}.sha256 must be a 64-character SHA-256")
-        if not isinstance(spec.get("bytes"), int) or not 0 < spec["bytes"] <= MAX_BASE_FILE_BYTES:
+        size = spec.get("bytes")
+        if not isinstance(size, int) or isinstance(size, bool) or not 0 < size <= MAX_BASE_FILE_BYTES:
             errors.append(f"{field}.bytes must be in 1..{MAX_BASE_FILE_BYTES}")
     training = manifest.get("training_data")
-    if not isinstance(training, dict) or training.get("rights_confirmed") is not True:
-        errors.append("training_data.rights_confirmed must be true")
+    if not isinstance(training, dict):
+        errors.append("training_data must be an object")
+    else:
+        unknown_training = sorted(training.keys() - TRAINING_DATA_FIELDS)
+        missing_training = sorted({"source_type", "license", "rights_confirmed"} - training.keys())
+        if missing_training:
+            errors.append(f"training_data missing required fields: {', '.join(missing_training)}")
+        if unknown_training:
+            errors.append(f"unknown training_data fields: {', '.join(unknown_training)}")
+        if not isinstance(training.get("source_type"), str) or not training.get("source_type"):
+            errors.append("training_data.source_type is required")
+        if not isinstance(training.get("license"), str) or not training.get("license"):
+            errors.append("training_data.license is required")
+        if training.get("rights_confirmed") is not True:
+            errors.append("training_data.rights_confirmed must be true")
+        if "notes" in training and not isinstance(training["notes"], str):
+            errors.append("training_data.notes must be a string")
     tags = manifest.get("tags")
     if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
         errors.append("tags must be an array of strings")
+    elif len(tags) != len(set(tags)):
+        errors.append("tags must not contain duplicates")
     return errors
 
 
@@ -111,6 +137,10 @@ def build_base_registry(root: str | Path = "bases") -> dict[str, Any]:
         if base_id in seen:
             raise ValueError(f"duplicate Base id: {base_id}")
         seen.add(base_id)
+        web_runtime_compatible = (
+            manifest["architecture"] == ARCHITECTURE_ABI
+            and manifest["tokenizer"] == TOKENIZER_ABI
+        )
         bases.append({
             "id": base_id,
             "display_name": manifest["display_name"],
@@ -122,8 +152,9 @@ def build_base_registry(root: str | Path = "bases") -> dict[str, Any]:
             "checkpoint_url": f"./bases/{base_id}/{manifest['checkpoint']['filename']}",
             "web_onnx_sha256": manifest["web_onnx"]["sha256"],
             "web_onnx_url": f"./bases/{base_id}/{manifest['web_onnx']['filename']}",
+            "web_runtime_compatible": web_runtime_compatible,
             "license": manifest["license"],
             "tags": manifest.get("tags", []),
         })
     bases.sort(key=lambda item: (item["display_name"].lower(), item["id"]))
-    return {"schema_version": "0.1.0", "bases": bases}
+    return {"schema_version": "0.2.0", "bases": bases}
