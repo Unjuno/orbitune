@@ -25,6 +25,9 @@ on:
       - '.github/workflows/export-smoke.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   export-and-run:
     runs-on: ubuntu-latest
@@ -88,6 +91,7 @@ jobs:
             --web-onnx orbitune-base-web.onnx \
             --license Apache-2.0 \
             --training-license test-only \
+            --rights-confirmed \
             --source-type synthetic_smoke \
             --out-root /tmp/orbitune-bases
           python scripts/build_registry.py \
@@ -102,6 +106,7 @@ jobs:
           assert manifest['architecture']=='orbitune-midi-gpt-v0'
           assert manifest['tokenizer']=='theory-remi-v0'
           assert manifest['parameter_count']==10_200_960
+          assert manifest['training_data']['rights_confirmed'] is True
           assert registry['bases'][0]['checkpoint_sha256']==manifest['checkpoint']['sha256']
           assert registry['bases'][0]['web_runtime_compatible'] is True
           print('repository Base staging contract PASS')
