@@ -9,9 +9,7 @@ from typing import Iterable
 import torch
 
 from orbitune.compound import COMPOUND_TOKENIZER_ABI
-
-
-COMPOUND_RECORD_WIDTH = 12
+from orbitune.tokenizer.compound_event import COMPOUND_RECORD_WIDTH
 
 
 @dataclass(frozen=True, slots=True)
