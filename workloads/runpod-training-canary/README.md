@@ -6,6 +6,7 @@ It is intentionally not a production Base training run and not a Compound-model 
 
 ```text
 immutable Orbitune commit
+→ exact-SHA image build with source SHA baked into the image
 → digest-pinned CUDA image
 → RunPod single GPU
 → CUDA-visible PyTorch
@@ -56,7 +57,7 @@ The workload generates a deterministic synthetic Theory-REMI token stream inside
 
 This keeps the first live run focused on the GPU/control-plane boundary.
 
-## Image
+## Image and source identity
 
 The Dockerfile uses the PyTorch 2.10.0 CUDA 12.8/cuDNN 9 runtime image pinned by manifest digest:
 
@@ -64,7 +65,13 @@ The Dockerfile uses the PyTorch 2.10.0 CUDA 12.8/cuDNN 9 runtime image pinned by
 pytorch/pytorch@sha256:b85566342b86d13a67712e9315d40cdc2dad7f8d86df1aff3831f80835edbcca
 ```
 
+The exact Orbitune source SHA is supplied at image build time as `ORBITUNE_SOURCE_SHA`. The image stores that value in both an OCI revision label and the runtime environment. `result.json` records the baked `source_sha`.
+
+A local direct Python smoke uses the explicit sentinel `unbaked-local`. A paid RunPod result must instead contain the exact 40-character SHA bound to the published image and ApprovedExecutionPlan.
+
 The image entrypoint is finite and non-interactive. At runtime it needs no network access.
+
+Image publication is manual through `.github/workflows/publish-runpod-canary.yml`. It checks out the requested exact SHA, builds only that source, passes the same SHA into the Docker build, and emits publication evidence containing the source SHA and immutable image digest.
 
 ## gpu-control source gate
 
@@ -98,6 +105,7 @@ The workload writes exactly two primary files to `/outputs`:
 `result.json` includes:
 
 - workload/schema identity;
+- baked Orbitune source SHA;
 - architecture/tokenizer identity;
 - CUDA availability and selected device;
 - GPU name;
@@ -127,7 +135,7 @@ python workloads/runpod-training-canary/run.py \
   --validation-interval 1
 ```
 
-This validates imports, model construction, one optimizer update, validation, checkpointing and result serialization. It does **not** validate CUDA. The same contract is run automatically by `.github/workflows/runpod-canary-smoke.yml`.
+This validates imports, model construction, one optimizer update, validation, checkpointing and result serialization. It does **not** validate CUDA. The direct local result records `source_sha=unbaked-local`. The same contract is run automatically by `.github/workflows/runpod-canary-smoke.yml`.
 
 ### First paid RunPod canary
 
@@ -136,6 +144,8 @@ Use the image's default arguments. The control-plane result is accepted only if 
 ```text
 container exit code == 0
 result.status == pass
+result.source_sha == exact approved Orbitune SHA
+published image digest == ApprovedExecutionPlan image digest
 result.device_type == cuda
 result.cuda_available == true
 result.parameters == 10200960
@@ -148,6 +158,8 @@ checkpoint SHA-256 matches result metadata
 provider lifecycle finalized
 cleanup confirmed
 ```
+
+The baked source SHA is correlation evidence, not workload-completion authentication. `gpu-control` must still supply the authenticated completion-evidence mechanism required by its own policy.
 
 A CPU `pass` result is valid only as a local/container smoke; it is a **FAIL** for the paid GPU canary.
 
