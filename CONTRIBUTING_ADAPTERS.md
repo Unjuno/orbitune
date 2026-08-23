@@ -1,6 +1,6 @@
 # Contributing Orbitune Adapters
 
-Orbitune accepts small LoRA adapters for any compatible Base registered under `bases/`.
+Orbitune accepts small LoRA adapters for compatible immutable Base checkpoints registered under `bases/`.
 
 ## Compatibility rule
 
@@ -23,7 +23,7 @@ adapters/community/<adapter-id>/
   README.md
 ```
 
-## Current Adapter ABI
+## Current operational Adapter ABI
 
 ```text
 architecture     orbitune-midi-gpt-v0
@@ -31,13 +31,16 @@ tokenizer        theory-remi-v0
 adapter format   orbitune-lora-v0
 rank             4
 target_modules   q_proj + v_proj
+reference shape  4 layers / hidden 448 / 7 heads / context 1024
 ```
 
-This ABI currently targets the 4-layer, hidden-240 Base shape. Other Base architectures may coexist in `bases/`, but require a corresponding Adapter ABI before LoRA contributions can target them.
+The old hidden-240 ~3M configuration is historical and is not the current reference shape.
 
-## Create and train
+The Compound production path is still experimental (`orbitune-compound-v0-experimental`). Do not publish community adapters against it until a Compound Base architecture/tokenizer/Adapter ABI is frozen. A future Compound Adapter ABI may use different target modules, packing or rank defaults.
 
-The default scaffold targets `orbitune-base`. For another registered Base, set `base_model` in the manifest to that Base id and use its exact checkpoint SHA-256.
+## Create and train a current reference Adapter
+
+The default scaffold targets `orbitune-base`. For another registered compatible Base, set `base_model` in the manifest to that Base id and use its exact checkpoint SHA-256.
 
 ```bash
 orbitune train-adapter \
@@ -63,7 +66,7 @@ Every Adapter must declare its license and training-data rights status. `rights_
 - [ ] `base_model` exists in `bases/`
 - [ ] `base_sha256` exactly matches that Base checkpoint
 - [ ] manifest Base hash equals Safetensors Base hash
-- [ ] Adapter ABI is compatible with the selected Base
+- [ ] Adapter architecture/tokenizer/format ABI is compatible with the selected Base
 - [ ] `demo.mid` is playable and non-empty
 - [ ] README, license, and training-data declaration are complete
 - [ ] Base/Adapter dependency validation CI passes
