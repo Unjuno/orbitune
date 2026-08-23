@@ -4,13 +4,15 @@ import pytest
 import torch
 
 from orbitune.compat import REFERENCE_PARAMETER_COUNT, TOKENIZER_ABI
-from orbitune.model import OrbituneConfig, OrbituneGPT
+from orbitune.model import MAX_ORBITUNE_PARAMETERS, OrbituneConfig, OrbituneGPT
 from orbitune.tokenizer.vocab import TheoryRemiVocab
 
 
 def test_orbitune_reference_parameter_budget():
     vocab = TheoryRemiVocab()
-    model = OrbituneGPT(OrbituneConfig(vocab_size=len(vocab)))
+    cfg = OrbituneConfig(vocab_size=len(vocab))
+    model = OrbituneGPT(cfg)
+    assert cfg.estimated_parameter_count == REFERENCE_PARAMETER_COUNT
     assert model.parameter_count() == REFERENCE_PARAMETER_COUNT == 10_200_960
     assert model.config.n_embd == 448
     assert model.config.n_head == 7
@@ -53,3 +55,34 @@ def test_checkpoint_rejects_wrong_tokenizer_but_accepts_pre_metadata_v0(tmp_path
     torch.save(payload, old)
     loaded = OrbituneGPT.load_checkpoint(old)
     assert loaded.tokenizer == TOKENIZER_ABI
+
+
+def test_checkpoint_rejects_oversized_config_before_model_allocation(tmp_path: Path):
+    path = tmp_path / "oversized.pt"
+    torch.save(
+        {
+            "architecture": OrbituneGPT.architecture,
+            "tokenizer": OrbituneGPT.tokenizer,
+            "config": {
+                "vocab_size": 1_000_000,
+                "max_seq_len": 1_000_000,
+                "n_layer": 64,
+                "n_embd": 8192,
+                "n_head": 64,
+                "dropout": 0.1,
+            },
+            "state_dict": {},
+        },
+        path,
+    )
+    with pytest.raises(ValueError, match="parameter budget"):
+        OrbituneGPT.load_checkpoint(path)
+
+
+def test_model_config_rejects_invalid_dimensions_and_budget():
+    with pytest.raises(ValueError, match="positive integer"):
+        OrbituneGPT(OrbituneConfig(vocab_size=0))
+    oversized = OrbituneConfig(vocab_size=1_000_000, max_seq_len=1024, n_layer=4, n_embd=448, n_head=7)
+    assert oversized.estimated_parameter_count > MAX_ORBITUNE_PARAMETERS
+    with pytest.raises(ValueError, match="parameter"):
+        OrbituneGPT(oversized)
