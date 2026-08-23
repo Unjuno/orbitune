@@ -39,8 +39,10 @@ async function loadJson(url, fallback) {
 function refreshAdapterOptions() {
   const current = adapterSelect.value;
   adapterSelect.replaceChildren(new Option('Base only', ''));
+  const base = selectedBase();
   for (const adapter of adapters.adapters || []) {
-    if (adapter.base_model !== baseSelect.value) continue;
+    if (!base || adapter.base_model !== base.id) continue;
+    if (adapter.base_sha256?.toLowerCase() !== base.checkpoint_sha256?.toLowerCase()) continue;
     adapterSelect.appendChild(new Option(adapter.display_name || adapter.id, adapter.id));
   }
   if ([...adapterSelect.options].some((option) => option.value === current)) adapterSelect.value = current;
@@ -73,6 +75,7 @@ function applyAdapterDefaults() {
 async function ensureBaseLoaded() {
   const base = selectedBase();
   if (!base) throw new Error('No Base is available');
+  if (base.web_runtime_compatible !== true) throw new Error(`Base ${base.id} is not compatible with the current Theory-REMI Web runtime`);
   if (!globalThis.ort) throw new Error('ONNX Runtime Web failed to load');
   if (runtime && loadedBaseId === base.id) return base;
   runtime = new OrbituneBrowserRuntime(globalThis.ort);
@@ -92,12 +95,18 @@ async function initialize() {
     loadJson('./data/bases.json', { bases: [] }),
     loadJson('./data/adapters.json', { adapters: [] }),
   ]);
-  for (const base of bases.bases || []) baseSelect.appendChild(new Option(base.display_name || base.id, base.id));
-  if (!bases.bases?.length) {
+  const allBases = Array.isArray(bases.bases) ? bases.bases : [];
+  const compatibleBases = allBases.filter((base) => base.web_runtime_compatible === true);
+  bases = { ...bases, bases: compatibleBases };
+  for (const base of compatibleBases) baseSelect.appendChild(new Option(base.display_name || base.id, base.id));
+  if (!compatibleBases.length) {
     generateButton.disabled = true;
-    baseMeta.textContent = 'No Base models are committed yet.';
+    baseMeta.textContent = 'No compatible Base models are committed yet.';
     adapterMeta.textContent = 'Adapters become available with their compatible Base.';
-    setStatus('Repository runtime is ready, but no Base model has been published in bases/.');
+    const hidden = allBases.length - compatibleBases.length;
+    setStatus(hidden > 0
+      ? `Repository contains ${hidden} Base model(s), but none match the current Theory-REMI Web runtime ABI.`
+      : 'Repository runtime is ready, but no Base model has been published in bases/.');
     return;
   }
   applyBaseMetadata();
@@ -110,6 +119,9 @@ async function loadSelectedAdapter(base) {
   runtime.clearAdapter();
   if (!adapter) return;
   if (adapter.base_model !== base.id) throw new Error(`Adapter requires Base ${adapter.base_model}`);
+  if (adapter.base_sha256?.toLowerCase() !== base.checkpoint_sha256?.toLowerCase()) {
+    throw new Error('Adapter registry Base hash does not match the selected Base checkpoint');
+  }
   const response = await fetch(adapter.adapter_url, { cache: 'force-cache' });
   if (!response.ok) throw new Error(`adapter download failed: HTTP ${response.status}`);
   const bytes = await response.arrayBuffer();
