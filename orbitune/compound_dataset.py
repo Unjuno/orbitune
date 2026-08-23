@@ -8,10 +8,7 @@ from pathlib import Path
 from orbitune.compound_midi import read_compound_midi
 from orbitune.dataset import find_midi_files
 from orbitune.midi_metadata import inspect_midi_metadata
-from orbitune.tokenizer import CompoundEventTokenizer
-
-
-COMPOUND_RECORD_WIDTH = 12
+from orbitune.tokenizer.compound_event import COMPOUND_RECORD_WIDTH, CompoundEventTokenizer
 
 
 def _collect(source: str | Path, *, min_events: int) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
