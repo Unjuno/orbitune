@@ -93,6 +93,10 @@ def main() -> int:
     if args.steps <= 0 or args.batch_size <= 0 or args.seq_len <= 1 or args.validation_interval <= 0:
         raise SystemExit("steps/batch-size/validation-interval must be positive and seq-len must exceed 1")
 
+    source_sha = os.environ.get("ORBITUNE_SOURCE_SHA", "unbaked-local").strip()
+    if source_sha != "unbaked-local" and (len(source_sha) != 40 or any(ch not in "0123456789abcdef" for ch in source_sha)):
+        raise SystemExit("ORBITUNE_SOURCE_SHA must be unbaked-local or a lowercase 40-character commit SHA")
+
     cuda_available = torch.cuda.is_available()
     if args.require_cuda and not cuda_available:
         raise SystemExit("CUDA is required for this run but torch.cuda.is_available() is false")
@@ -171,6 +175,7 @@ def main() -> int:
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "workload_id": WORKLOAD_ID,
+        "source_sha": source_sha,
         "status": "pass" if passed else "fail",
         "purpose": "GPU/container/training/checkpoint infrastructure canary; not a musical-quality benchmark",
         "architecture": model.architecture,
