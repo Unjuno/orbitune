@@ -15,7 +15,6 @@ from orbitune.compat import REFERENCE_PARAMETER_COUNT, TOKENIZER_ABI
 from orbitune.model import OrbituneConfig, OrbituneGPT
 from orbitune.tokenizer.vocab import TheoryRemiVocab
 
-
 SCHEMA_VERSION = 1
 WORKLOAD_ID = "orbitune-runpod-training-canary-v1"
 DEFAULT_STEPS = 250
@@ -34,9 +33,6 @@ def _sha256(path: Path) -> str:
 
 
 def _synthetic_ids(vocab: TheoryRemiVocab, *, repetitions: int = 4096) -> list[int]:
-    # Deterministic Theory-REMI phrases. This is deliberately synthetic: the
-    # canary validates GPU/container/training/checkpoint infrastructure, not
-    # musical quality or corpus suitability.
     phrases = [
         ["BAR", "POSITION_0", "NOTE_PITCH_60", "NOTE_DURATION_4", "VELOCITY_16", "POSITION_4", "NOTE_PITCH_64", "NOTE_DURATION_4", "VELOCITY_18", "POSITION_8", "NOTE_PITCH_67", "NOTE_DURATION_4", "VELOCITY_20", "POSITION_12", "NOTE_PITCH_72", "NOTE_DURATION_4", "VELOCITY_18"],
         ["BAR", "POSITION_0", "NOTE_PITCH_48", "NOTE_DURATION_8", "VELOCITY_14", "POSITION_8", "NOTE_PITCH_55", "NOTE_DURATION_8", "VELOCITY_14", "POSITION_12", "NOTE_PITCH_60", "NOTE_DURATION_4", "VELOCITY_16"],
@@ -45,20 +41,12 @@ def _synthetic_ids(vocab: TheoryRemiVocab, *, repetitions: int = 4096) -> list[i
     ]
     ids: list[int] = [vocab.token_to_id["BOS"]]
     for index in range(repetitions):
-        phrase = phrases[index % len(phrases)]
-        ids.extend(vocab.token_to_id[token] for token in phrase)
+        ids.extend(vocab.token_to_id[token] for token in phrases[index % len(phrases)])
     ids.append(vocab.token_to_id["EOS"])
     return ids
 
 
-def _sample_batch(
-    ids: list[int],
-    *,
-    batch_size: int,
-    seq_len: int,
-    device: torch.device,
-    rng: random.Random,
-) -> tuple[torch.Tensor, torch.Tensor]:
+def _sample_batch(ids: list[int], *, batch_size: int, seq_len: int, device: torch.device, rng: random.Random) -> tuple[torch.Tensor, torch.Tensor]:
     if len(ids) <= seq_len + 1:
         raise ValueError("synthetic corpus is too small for requested sequence length")
     maximum = len(ids) - seq_len - 1
@@ -72,9 +60,7 @@ def _sample_batch(
 def _validation_loss(model: OrbituneGPT, ids: list[int], *, seq_len: int, device: torch.device) -> float:
     model.eval()
     losses: list[float] = []
-    stride = seq_len
-    # Fixed windows make validation deterministic and cheap.
-    for start in range(0, min(len(ids) - seq_len - 1, seq_len * 8), stride):
+    for start in range(0, min(len(ids) - seq_len - 1, seq_len * 8), seq_len):
         x = torch.tensor([ids[start : start + seq_len]], dtype=torch.long, device=device)
         y = torch.tensor([ids[start + 1 : start + seq_len + 1]], dtype=torch.long, device=device)
         _, loss = model(x, y)
@@ -122,8 +108,7 @@ def main() -> int:
 
     vocab = TheoryRemiVocab()
     ids = _synthetic_ids(vocab)
-    cfg = OrbituneConfig(vocab_size=len(vocab), dropout=0.0)
-    model = OrbituneGPT(cfg).to(device)
+    model = OrbituneGPT(OrbituneConfig(vocab_size=len(vocab), dropout=0.0)).to(device)
     if model.parameter_count() != REFERENCE_PARAMETER_COUNT:
         raise RuntimeError(f"reference parameter count drifted: {model.parameter_count()} != {REFERENCE_PARAMETER_COUNT}")
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=0.01)
@@ -132,7 +117,6 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = output_dir / "canary-base.pt"
     result_path = output_dir / "result.json"
-
     validation_history: list[dict[str, float | int]] = []
     first_loss: float | None = None
     final_loss: float | None = None
@@ -156,7 +140,6 @@ def main() -> int:
         value = float(loss.detach().cpu())
         first_loss = value if first_loss is None else first_loss
         final_loss = value
-
         if step % args.validation_interval == 0 or step == args.steps:
             validation = _validation_loss(model, ids, seq_len=args.seq_len, device=device)
             if not math.isfinite(validation):
@@ -166,6 +149,8 @@ def main() -> int:
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     elapsed = time.perf_counter() - start_time
+    gpu_name = torch.cuda.get_device_name(device) if device.type == "cuda" else None
+    peak_vram_bytes = int(torch.cuda.max_memory_allocated(device)) if device.type == "cuda" else 0
 
     model.cpu().save_checkpoint(checkpoint)
     checkpoint_bytes = checkpoint.stat().st_size
@@ -173,16 +158,16 @@ def main() -> int:
     tokens_processed = args.steps * args.batch_size * args.seq_len
     final_validation = float(validation_history[-1]["loss"])
     initial_validation = float(validation_history[0]["loss"])
-    gpu_name = torch.cuda.get_device_name(device) if device.type == "cuda" else None
-    peak_vram_bytes = int(torch.cuda.max_memory_allocated(device)) if device.type == "cuda" else 0
+    validation_improved = len(validation_history) == 1 or final_validation < initial_validation
+    passed = final_loss is not None and math.isfinite(final_loss) and math.isfinite(final_validation) and checkpoint_bytes > 0 and validation_improved
 
-    passed = (
-        final_loss is not None
-        and math.isfinite(final_loss)
-        and math.isfinite(final_validation)
-        and checkpoint_bytes > 0
-        and final_validation < initial_validation
-    )
+    artifact = {
+        "name": checkpoint.name,
+        "bytes": checkpoint_bytes,
+        "sha256": f"sha256:{checkpoint_sha256}",
+        "media_type": "application/x-pytorch-checkpoint",
+        "disposition": "collected" if checkpoint_bytes <= 64 * 1024 * 1024 else "reference_only",
+    }
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "workload_id": WORKLOAD_ID,
@@ -206,17 +191,11 @@ def main() -> int:
         "final_training_loss": final_loss,
         "validation_history": validation_history,
         "peak_vram_bytes": peak_vram_bytes,
-        "checkpoint": {
-            "name": checkpoint.name,
-            "bytes": checkpoint_bytes,
-            "sha256": checkpoint_sha256,
-        },
+        "artifacts": [artifact],
     }
     _atomic_json(payload, result_path)
     print(json.dumps(payload, indent=2, sort_keys=True))
-    if not passed:
-        return 2
-    return 0
+    return 0 if passed else 2
 
 
 if __name__ == "__main__":
