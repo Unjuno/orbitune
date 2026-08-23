@@ -1,6 +1,6 @@
 # Orbitune Development Handoff
 
-Last updated: 2026-08-23 after full repository audit.
+Last updated: 2026-08-24 after repository audit and initial gpu-control workload integration.
 
 For a fresh session, read in this order:
 
@@ -8,6 +8,7 @@ For a fresh session, read in this order:
 2. this file
 3. `docs/DESIGN_STATUS.md`
 4. `docs/POST_TRAINING_RESEARCH.md`
+5. `workloads/runpod-training-canary/README.md` when working on remote GPU execution
 
 The audit is the authoritative list of known risks. Do not jump directly into model code without checking its P0 blockers.
 
@@ -116,26 +117,67 @@ Only after this should the Compound model output heads be frozen.
 
 Current split blocks exact-byte duplicates only. Production evaluation needs near-duplicate/composition-aware grouping.
 
-## 5. Immediate implementation sequence
+## 5. Remote GPU infrastructure canary
 
-The next critical task remains the **Compound Base model**, but the P0 field/start/time decisions must be resolved or isolated before output ABI freeze.
+`Unjuno/gpu-control` is the separate control-plane repository for bounded GPU execution. Orbitune now contains its first workload target under:
+
+```text
+workloads/runpod-training-canary/
+  Dockerfile
+  run.py
+  README.md
+```
+
+The canary intentionally trains the already-working legacy/reference 10.2M Theory-REMI Base instead of the unfinished Compound Base. This isolates infrastructure failures from new-model failures.
+
+Default paid-canary training volume:
+
+```text
+250 optimizer steps
+batch 8
+sequence 256
+512,000 training tokens
+validation every 50 steps
+5 validation points
+single GPU
+```
+
+It uses deterministic synthetic tokens and performs no runtime dataset/network access. It writes `/outputs/result.json` plus a ~10M Base checkpoint with SHA-256 metadata. The Docker base is PyTorch 2.10.0 CUDA 12.8/cuDNN 9 pinned by immutable manifest digest.
+
+The current `gpu-control` `cheap-24gb` policy is the intended first profile: one GPU, at least 24 GB VRAM, at most 30 minutes and at most $0.30, with live price verification still required by the control plane.
+
+A one-step CPU CI contract is implemented in `.github/workflows/runpod-canary-smoke.yml`. CPU PASS proves only the workload/container code path. A paid canary is PASS only when `result.device_type == cuda`, CUDA is visible, 512k tokens are processed, validation improves, checkpoint digest matches, provider lifecycle finalizes and cleanup is confirmed.
+
+Do **not** interpret canary training loss as evidence for the production tokenizer/model or increase the first run just because a larger GPU is available.
+
+After this infrastructure canary passes, the GPU experiment progression is:
+
+1. Compound Base synthetic overfit;
+2. tiny real-MIDI overfit;
+3. 5M/10M/20M scale calibration;
+4. corpus-scale pretraining.
+
+## 6. Immediate implementation sequence
+
+The next model-critical task remains the **Compound Base model**, but the P0 field/start/time decisions must be resolved or isolated before output ABI freeze. Remote GPU canary work may proceed independently because it uses the legacy/reference Base solely as an infrastructure probe.
 
 Recommended sequence:
 
-1. run long-time representation experiment and remove silent timing truncation;
-2. define BOS/EOS/start semantics;
-3. define explicit field cardinalities/masks from one module;
-4. implement Compound input embeddings and a small configurable causal Transformer;
-5. implement event-type-conditioned lightweight autoregressive attribute heads;
-6. implement masked losses so unused attributes do not contribute;
-7. run synthetic one-batch forward/backward + deterministic overfit test;
-8. run tiny real-MIDI overfit test;
-9. parameterize 5M/10M/20M from the same model path;
-10. only then connect full checkpoint/continuous/export infrastructure.
+1. run the RunPod canary CPU CI and, once `gpu-control` live gates exist, the bounded 512k-token paid GPU canary;
+2. run long-time representation experiment and remove silent timing truncation;
+3. define BOS/EOS/start semantics;
+4. define explicit field cardinalities/masks from one module;
+5. implement Compound input embeddings and a small configurable causal Transformer;
+6. implement event-type-conditioned lightweight autoregressive attribute heads;
+7. implement masked losses so unused attributes do not contribute;
+8. run synthetic one-batch forward/backward + deterministic overfit test;
+9. run tiny real-MIDI overfit test;
+10. parameterize 5M/10M/20M from the same model path;
+11. only then connect full Compound checkpoint/continuous/export infrastructure.
 
 Invariant: the Transformer advances once per musical event. Attribute autoregression is intra-event and must not inflate Transformer sequence length.
 
-## 6. Other semantic experiments still required
+## 7. Other semantic experiments still required
 
 - external real-MIDI 96/qn + 7+16 validation;
 - CC64 half-pedal distribution: binary versus factorized continuous PEDAL;
@@ -146,7 +188,7 @@ Invariant: the Transformer advances once per musical event. Attribute autoregres
 - production corpus provenance/license/quality gates;
 - near-duplicate/composition-aware split grouping.
 
-## 7. Base scale / long memory / control / runtime
+## 8. Base scale / long memory / control / runtime
 
 After the model and corpus path work:
 
@@ -159,7 +201,7 @@ After the model and corpus path work:
 
 PyTorch STE ternary timings are not production runtime evidence.
 
-## 8. Post-training / policy-learning policy
+## 9. Post-training / policy-learning policy
 
 Status: **OPEN / NOT REQUIRED BY DEFAULT**.
 
@@ -184,7 +226,7 @@ Keep these evaluation dimensions separate:
 
 Do not collapse them into one opaque reward before validity is established.
 
-## 9. Continuous training policy
+## 10. Continuous training policy
 
 The existing scheduled continuous workflow is explicitly **legacy/reference-only** after the audit. It requires:
 
@@ -205,13 +247,13 @@ Important state invariants to carry into future Compound training:
 - full immutable milestone snapshots;
 - mutable training state must never become an Adapter compatibility target.
 
-## 10. Base/Adapter compatibility invariant
+## 11. Base/Adapter compatibility invariant
 
 A published Base is identified by stable Base id + exact checkpoint SHA-256. An Adapter targets exactly one Base checkpoint. If checkpoint bytes change, create a new Base id/lineage.
 
 Do not publish Compound community Bases/Adapters until a structured Compound architecture/tokenizer/runtime/Adapter compatibility contract is frozen.
 
-## 11. Current empirical evidence
+## 12. Current empirical evidence
 
 Proxy evidence in `docs/DESIGN_STATUS.md` includes:
 
@@ -222,18 +264,21 @@ Proxy evidence in `docs/DESIGN_STATUS.md` includes:
 
 The timing roundtrip proxy does **not** prove correctness for values above the current 1536-step cap.
 
-## 12. Session continuation checklist
+The 512k-token RunPod workload is an infrastructure canary only and is not additional model-quality evidence.
+
+## 13. Session continuation checklist
 
 At a new session:
 
 1. read `docs/AUDIT_2026-08-23.md`;
-2. inspect the latest GitHub Actions `test` result for the audit commits;
+2. inspect latest GitHub Actions, including `test` and `runpod-canary-smoke`;
 3. read this file and `docs/DESIGN_STATUS.md`;
-4. preserve the legacy Theory-REMI path unless explicitly migrating it;
-5. start with long-time/BOS-field-schema blockers, then Compound Base implementation;
-6. update the audit/status/handoff when a blocker is closed or a candidate is rejected.
+4. if working on GPU execution, read `workloads/runpod-training-canary/README.md` and the current `Unjuno/gpu-control` RunPod policy/docs;
+5. preserve the legacy Theory-REMI path unless explicitly migrating it;
+6. proceed with long-time/BOS-field-schema blockers and Compound Base implementation;
+7. update audit/status/handoff when a blocker is closed or a candidate is rejected.
 
-## 13. Critical-path summary
+## 14. Critical-path summary
 
 ```text
 DONE: concept / compatibility model / Compound representation direction
@@ -241,7 +286,9 @@ DONE: experimental Compound event primitives
 DONE: Compound MIDI parser
 DONE: factorized Compound tokenizer records
 DONE: ABI-tagged song-preserving Compound dataset + validated training-window loader
-DONE: audit fixes for same-step ordering, legacy docs and accidental legacy continuous training
+DONE: broad repository audit/hardening
+DONE: bounded 512k-token RunPod training canary workload + CPU CI contract
+PARALLEL: gpu-control image-publish/live-adapter/paid authorization gates
 NEXT: long-time representation experiment
 NEXT: BOS/EOS/start semantics + explicit field schema/masks
 THEN: Compound Base model + masked factorized losses
