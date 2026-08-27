@@ -70,6 +70,16 @@ def _completion_values() -> dict[str, str] | None:
     return present
 
 
+def _runner_environment() -> tuple[dict[str, str] | None, dict[str, str]]:
+    """Capture trusted completion inputs and remove them from the training child."""
+
+    completion_values = _completion_values()
+    child_environment = os.environ.copy()
+    for env_name in _COMPLETION_ENV.values():
+        child_environment.pop(env_name, None)
+    return completion_values, child_environment
+
+
 def _emit_file_marker(prefix: str, path: Path) -> None:
     encoded = base64.urlsafe_b64encode(path.read_bytes())
     marker = prefix.encode("ascii") + encoded
@@ -128,13 +138,19 @@ def main() -> int:
     output_dir = _output_dir(argv)
     result_path = output_dir / "result.json"
     command = [sys.executable, "workloads/runpod-training-canary/run.py", *argv]
-    completed = subprocess.run(command, check=False)
+
+    try:
+        completion_values, runner_environment = _runner_environment()
+    except Exception as exc:
+        print(f"completion environment error: {exc}", file=sys.stderr)
+        return 4
+
+    completed = subprocess.run(command, check=False, env=runner_environment)
     result_missing = not result_path.is_file()
     if result_missing:
         _write_failure_result(result_path, exit_code=completed.returncode)
 
     try:
-        completion_values = _completion_values()
         completion_path = None
         if completion_values is not None:
             completion_path = _write_completion_evidence(output_dir, result_path, completion_values)
