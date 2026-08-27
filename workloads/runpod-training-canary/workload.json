@@ -34,10 +34,19 @@
   },
   "outputs": {
     "directory": "/outputs",
+    "authenticated_directory_override_allowed": false,
     "required": ["result.json", "canary-base.pt"],
     "required_for_authenticated_paid_completion": ["completion.json"],
-    "failure_result_required_if_runner_exits": true,
-    "max_collected_artifact_bytes": 67108864
+    "bounded_log_transport": {
+      "result_marker": "GPU_CONTROL_RESULT_JSON_V1:",
+      "completion_marker": "GPU_CONTROL_COMPLETION_JSON_V2:",
+      "max_marker_bytes": 16384,
+      "hash_and_emit_same_byte_snapshot": true
+    },
+    "authenticated_outputs_sealed_read_only_after_signing": true,
+    "checkpoint_transport": "container-local-only",
+    "max_local_checkpoint_bytes": 67108864,
+    "failure_result_required_if_runner_exits": true
   },
   "acceptance": {
     "process_exit_code": 0,
@@ -49,7 +58,7 @@
     "validation_points": 5,
     "require_finite_validation": true,
     "require_last_validation_below_first": true,
-    "require_checkpoint_sha256_match": true,
+    "require_authenticated_checkpoint_metadata": true,
     "require_baked_source_sha_match": true,
     "require_image_digest_match_approved_plan": true,
     "require_authenticated_completion_evidence": true,
@@ -60,16 +69,25 @@
     "docker_socket_required": false,
     "runtime_network_required": false,
     "source_identity": "baked-into-image-at-build-time",
-    "completion_evidence_protocol": "gpu-control-hmac-sha256-v1",
+    "completion_evidence_protocol": "gpu-control-hmac-sha256-v2",
     "completion_evidence_file": "/outputs/completion.json",
+    "completion_provider_job_id_binding": "control-plane-receipt-only",
     "completion_secret_persistence": "forbidden",
     "completion_environment_owner": "gpu-control-only",
+    "completion_signer_uid": 0,
+    "training_uid": 10001,
+    "training_gid": 10001,
+    "training_process_must_not_read_signer_environment": true,
+    "completion_secret_removed_from_python_environment_after_capture": true,
+    "completion_secret_training_process_access": "forbidden-by-uid-separation",
+    "training_supplementary_groups": [],
+    "training_umask": "0077",
     "completion_environment": [
       "GPU_CONTROL_COMPLETION_KEY_B64",
       "GPU_CONTROL_COMPLETION_KEY_ID",
       "GPU_CONTROL_COMPLETION_NONCE",
+      "GPU_CONTROL_EXECUTION_NAME",
       "GPU_CONTROL_PLAN_FINGERPRINT",
-      "GPU_CONTROL_PROVIDER_JOB_ID",
       "GPU_CONTROL_IMAGE_DIGEST"
     ]
   }

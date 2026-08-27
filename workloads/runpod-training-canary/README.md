@@ -15,9 +15,11 @@ immutable Orbitune commit
 → deterministic validation
 → checkpoint save
 → /outputs/result.json
-→ bounded result collection
+→ authenticated bounded result/completion log collection
 → provider cleanup
 ```
+
+The first canary does **not** transfer the checkpoint bytes off the Pod. It proves that the exact workload saved a checkpoint and authenticated the resulting checkpoint metadata in `result.json`. A later artifact-transfer contract is required before any checkpoint may be represented by `gpu-control` as a collected artifact.
 
 ## Why the legacy/reference 10.2M model is used
 
@@ -73,6 +75,20 @@ The image entrypoint is finite and non-interactive. At runtime it needs no netwo
 
 Image publication is manual through `.github/workflows/publish-runpod-canary.yml`. It checks out the requested exact SHA, builds only that source, passes the same SHA into the Docker build, and emits publication evidence containing the source SHA and immutable image digest.
 
+## Completion signer / training process boundary
+
+Authenticated completion uses privilege separation inside the container.
+
+The image entrypoint starts as UID 0 because it is the only process allowed to receive and use the ephemeral `GPU_CONTROL_COMPLETION_KEY_B64`. It captures the completion context, removes every `GPU_CONTROL_COMPLETION_*` value from its live Python environment, and launches the actual training program as numeric UID/GID `10001:10001` with no supplementary groups and umask `0077`.
+
+This separation is intentional. Merely omitting the secret from the child environment is insufficient when the wrapper and child run under the same UID, because a same-UID process may be able to inspect the parent process through `/proc`. The canary CI therefore includes a Linux-level regression test that the UID 10001 training process cannot read the root signer's `/proc/$PPID/environ`.
+
+Authenticated mode also fixes the writable result directory to exactly `/outputs`; arbitrary output-directory overrides are rejected. Before training, the wrapper grants UID/GID 10001 temporary ownership of `/outputs`. Immediately after the training process exits, the wrapper reclaims the directory as root before reading or signing any result. `result.json` is opened with a no-follow regular-file check, so a symlink cannot be substituted for signed result content.
+
+The wrapper snapshots the exact `result.json` bytes once, hashes those bytes into the completion envelope, and emits the same byte snapshot through the bounded stdout marker. This avoids a hash/read time-of-check-to-time-of-use mismatch. After signing and marker emission, `result.json`, `completion.json`, and the local checkpoint are root-owned read-only files and `/outputs` is sealed read-only for the remainder of the process lifetime.
+
+The HMAC key is still considered ephemeral secret material. The workload never persists it, logs it, forwards it to the training process, or includes it in result/completion JSON.
+
 ## gpu-control source gate
 
 `gpu-control` requires a public repository, exact 40-character commit SHA, exact Dockerfile path, bounded GPU profile/runtime/cost, and verifies the Dockerfile at that immutable SHA before later execution gates.
@@ -93,13 +109,19 @@ gpu-control verify-source \
 
 This is still a dry/source verification step; it does not authorize or create a paid Pod. Image publication, live pricing, cleanup guarantees, explicit paid-compute authorization, and the remaining RunPod adapter gates stay owned by `gpu-control`.
 
-## Outputs
+## Outputs and collection boundary
 
-The workload writes exactly two primary files to `/outputs`:
+The workload writes these primary files to `/outputs`:
 
 ```text
 /outputs/result.json
 /outputs/canary-base.pt
+```
+
+When authenticated completion is enabled it also writes:
+
+```text
+/outputs/completion.json
 ```
 
 `result.json` includes:
@@ -115,9 +137,13 @@ The workload writes exactly two primary files to `/outputs`:
 - peak allocated VRAM;
 - training and validation losses;
 - checkpoint byte size and SHA-256;
-- bounded artifact metadata compatible with the `gpu-control` result-collection direction.
+- an explicit `transport: container-local-only` marker for the checkpoint metadata.
 
-The 10.2M FP32 checkpoint is expected to remain below the current 64 MiB single-collected-artifact limit. If it grows beyond that boundary, the result marks it `reference_only` rather than pretending it is a small collected artifact.
+The bounded log protocol transports the exact bytes of `result.json` and, for an authenticated paid execution, `completion.json`. Each complete encoded marker, including its prefix, is limited to 16 KiB. The checkpoint itself is **not** included in this log transport.
+
+Therefore `gpu-control` may use the authenticated result to verify that the trusted workload reports a checkpoint save, size and SHA-256, but it must not mark `canary-base.pt` as a collected artifact unless a separate byte-transfer path actually retrieves and verifies that file.
+
+The 10.2M FP32 checkpoint is expected to remain below 64 MiB. That limit constrains the local canary output and a possible future bounded artifact-transfer path; it does not imply that the current log collector transferred the checkpoint.
 
 ## Acceptance gates
 
@@ -139,7 +165,7 @@ This validates imports, model construction, one optimizer update, validation, ch
 
 ### First paid RunPod canary
 
-Use the image's default arguments. The control-plane result is accepted only if all of the following are independently checked:
+Use the image's default arguments. The control-plane result is accepted only if all of the following are independently checked where the transport permits independent checking:
 
 ```text
 container exit code == 0
@@ -152,12 +178,14 @@ result.parameters == 10200960
 result.tokens_processed == 512000
 validation_history has 5 finite points
 last validation loss < first validation loss
-checkpoint exists
-checkpoint bytes <= 64 MiB
-checkpoint SHA-256 matches result metadata
+authenticated result reports a non-empty checkpoint
+reported checkpoint bytes <= 64 MiB
+authenticated result contains checkpoint SHA-256 metadata
 provider lifecycle finalized
 cleanup confirmed
 ```
+
+The control plane independently authenticates the exact collected `result.json` bytes and their SHA-256 through the completion envelope. It does **not** independently re-hash `canary-base.pt` off-Pod in the first canary because the checkpoint bytes are not transported. The checkpoint claim is an authenticated statement made by the exact immutable workload that created and hashed the local file.
 
 The baked source SHA is correlation evidence, not workload-completion authentication. `gpu-control` must still supply the authenticated completion-evidence mechanism required by its own policy.
 
