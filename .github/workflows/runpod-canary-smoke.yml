@@ -85,9 +85,61 @@ jobs:
           assert decoded == result_bytes
           print('RunPod canary CPU success/log contract PASS')
           PY
+      - name: Assert training UID cannot read signer environment
+        env:
+          GPU_CONTROL_COMPLETION_KEY_B64: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+          GPU_CONTROL_COMPLETION_KEY_ID: paid-runpod-v2
+          GPU_CONTROL_COMPLETION_NONCE: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          GPU_CONTROL_EXECUTION_NAME: gpu-control-111111111111-aaaaaaaaaaaa
+          GPU_CONTROL_PLAN_FINGERPRINT: sha256:1111111111111111111111111111111111111111111111111111111111111111
+          GPU_CONTROL_IMAGE_DIGEST: sha256:2222222222222222222222222222222222222222222222222222222222222222
+        run: |
+          set -euo pipefail
+          PYTHON_BIN="$(command -v python)"
+          sudo env -i \
+            PATH="$PATH" \
+            PYTHONPATH=. \
+            GPU_CONTROL_COMPLETION_KEY_B64="$GPU_CONTROL_COMPLETION_KEY_B64" \
+            GPU_CONTROL_COMPLETION_KEY_ID="$GPU_CONTROL_COMPLETION_KEY_ID" \
+            GPU_CONTROL_COMPLETION_NONCE="$GPU_CONTROL_COMPLETION_NONCE" \
+            GPU_CONTROL_EXECUTION_NAME="$GPU_CONTROL_EXECUTION_NAME" \
+            GPU_CONTROL_PLAN_FINGERPRINT="$GPU_CONTROL_PLAN_FINGERPRINT" \
+            GPU_CONTROL_IMAGE_DIGEST="$GPU_CONTROL_IMAGE_DIGEST" \
+            "$PYTHON_BIN" - <<'PY'
+          import importlib.util
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          path = Path('workloads/runpod-training-canary/entrypoint.py')
+          spec = importlib.util.spec_from_file_location('orbitune_runpod_entrypoint_isolation', path)
+          module = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(module)
+          values = module._capture_completion_values()
+          assert values is not None
+          environment = module._runner_environment()
+          probe = r'''
+          import os
+          assert os.geteuid() == 10001
+          try:
+              with open(f"/proc/{os.getppid()}/environ", "rb") as handle:
+                  handle.read()
+          except PermissionError:
+              raise SystemExit(0)
+          raise SystemExit(9)
+          '''
+          completed = subprocess.run(
+              [sys.executable, '-c', probe],
+              capture_output=True,
+              text=True,
+              **module._authenticated_subprocess_kwargs(environment),
+          )
+          assert completed.returncode == 0, (completed.stdout, completed.stderr, completed.returncode)
+          print('RunPod signer/training UID isolation PASS')
+          PY
       - name: Assert authenticated completion envelope contract
         env:
-          PYTHONPATH: .
           ORBITUNE_SOURCE_SHA: dddddddddddddddddddddddddddddddddddddddd
           GPU_CONTROL_COMPLETION_KEY_B64: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
           GPU_CONTROL_COMPLETION_KEY_ID: paid-runpod-v2
@@ -97,14 +149,25 @@ jobs:
           GPU_CONTROL_IMAGE_DIGEST: sha256:2222222222222222222222222222222222222222222222222222222222222222
         run: |
           set -euo pipefail
-          rm -rf /tmp/orbitune-runpod-canary-auth
-          python workloads/runpod-training-canary/entrypoint.py \
-            --output-dir /tmp/orbitune-runpod-canary-auth \
-            --device cpu \
-            --steps 1 \
-            --batch-size 1 \
-            --seq-len 16 \
-            --validation-interval 1 | tee /tmp/orbitune-runpod-canary-auth.log
+          PYTHON_BIN="$(command -v python)"
+          sudo rm -rf /outputs /tmp/orbitune-runner
+          sudo env -i \
+            PATH="$PATH" \
+            PYTHONPATH=. \
+            ORBITUNE_SOURCE_SHA="$ORBITUNE_SOURCE_SHA" \
+            GPU_CONTROL_COMPLETION_KEY_B64="$GPU_CONTROL_COMPLETION_KEY_B64" \
+            GPU_CONTROL_COMPLETION_KEY_ID="$GPU_CONTROL_COMPLETION_KEY_ID" \
+            GPU_CONTROL_COMPLETION_NONCE="$GPU_CONTROL_COMPLETION_NONCE" \
+            GPU_CONTROL_EXECUTION_NAME="$GPU_CONTROL_EXECUTION_NAME" \
+            GPU_CONTROL_PLAN_FINGERPRINT="$GPU_CONTROL_PLAN_FINGERPRINT" \
+            GPU_CONTROL_IMAGE_DIGEST="$GPU_CONTROL_IMAGE_DIGEST" \
+            "$PYTHON_BIN" workloads/runpod-training-canary/entrypoint.py \
+              --output-dir /outputs \
+              --device cpu \
+              --steps 1 \
+              --batch-size 1 \
+              --seq-len 16 \
+              --validation-interval 1 | tee /tmp/orbitune-runpod-canary-auth.log
           python - <<'PY'
           import base64
           import hashlib
@@ -112,9 +175,12 @@ jobs:
           import json
           from pathlib import Path
 
-          root = Path('/tmp/orbitune-runpod-canary-auth')
-          result_bytes = (root / 'result.json').read_bytes()
-          completion_bytes = (root / 'completion.json').read_bytes()
+          root = Path('/outputs')
+          result_path = root / 'result.json'
+          completion_path = root / 'completion.json'
+          checkpoint = root / 'canary-base.pt'
+          result_bytes = result_path.read_bytes()
+          completion_bytes = completion_path.read_bytes()
           evidence = json.loads(completion_bytes)
           assert evidence['schema_version'] == 2
           assert evidence['source_sha'] == 'd' * 40
@@ -132,6 +198,10 @@ jobs:
           secret = base64.b64decode('AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=')
           expected = hmac.new(secret, canonical, hashlib.sha256).hexdigest()
           assert hmac.compare_digest(evidence['mac_sha256'], expected)
+          assert root.stat().st_mode & 0o777 == 0o555
+          for path in (result_path, completion_path, checkpoint):
+              assert path.stat().st_uid == 0
+              assert path.stat().st_mode & 0o777 == 0o444
 
           lines = Path('/tmp/orbitune-runpod-canary-auth.log').read_text(encoding='utf-8').splitlines()
           result_markers = [line for line in lines if line.startswith('GPU_CONTROL_RESULT_JSON_V1:')]
@@ -142,6 +212,7 @@ jobs:
           assert base64.urlsafe_b64decode(completion_markers[0].split(':', 1)[1]) == completion_bytes
           print('RunPod authenticated completion/log envelope PASS')
           PY
+          sudo rm -rf /outputs /tmp/orbitune-runner
       - name: Assert marker byte bound and missing-result fail closed
         env:
           PYTHONPATH: .
@@ -165,23 +236,21 @@ jobs:
           production_marker_limit = module._MAX_MARKER_BYTES
           assert production_marker_limit == 16 * 1024
 
-          with tempfile.TemporaryDirectory() as directory:
-              payload = Path(directory) / 'payload.bin'
-              module._MAX_MARKER_BYTES = 64
-              payload.write_bytes(b'x' * 45)
-              output = io.StringIO()
-              with contextlib.redirect_stdout(output):
-                  module._emit_file_marker('P:', payload)
-              marker = output.getvalue().rstrip('\n').encode('ascii')
-              assert len(marker) <= 64
+          module._MAX_MARKER_BYTES = 64
+          accepted = b'x' * 45
+          output = io.StringIO()
+          with contextlib.redirect_stdout(output):
+              module._emit_bytes_marker('P:', 'payload.bin', accepted)
+          marker = output.getvalue().rstrip('\n').encode('ascii')
+          assert len(marker) <= 64
 
-              payload.write_bytes(b'x' * 46)
-              try:
-                  module._emit_file_marker('P:', payload)
-              except ValueError as exc:
-                  assert 'encoded log marker exceeds' in str(exc)
-              else:
-                  raise AssertionError('oversized encoded marker was accepted')
+          rejected = b'x' * 46
+          try:
+              module._emit_bytes_marker('P:', 'payload.bin', rejected)
+          except ValueError as exc:
+              assert 'encoded log marker exceeds' in str(exc)
+          else:
+              raise AssertionError('oversized encoded marker was accepted')
 
           for env_name in module._COMPLETION_ENV.values():
               os.environ.pop(env_name, None)
