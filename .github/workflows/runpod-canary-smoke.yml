@@ -162,6 +162,8 @@ jobs:
           module = importlib.util.module_from_spec(spec)
           assert spec.loader is not None
           spec.loader.exec_module(module)
+          production_marker_limit = module._MAX_MARKER_BYTES
+          assert production_marker_limit == 16 * 1024
 
           with tempfile.TemporaryDirectory() as directory:
               payload = Path(directory) / 'payload.bin'
@@ -183,7 +185,7 @@ jobs:
 
           for env_name in module._COMPLETION_ENV.values():
               os.environ.pop(env_name, None)
-          module._MAX_MARKER_BYTES = 128 * 1024
+          module._MAX_MARKER_BYTES = production_marker_limit
           module.subprocess.run = lambda *args, **kwargs: SimpleNamespace(returncode=0)
           with tempfile.TemporaryDirectory() as directory:
               previous_argv = sys.argv
