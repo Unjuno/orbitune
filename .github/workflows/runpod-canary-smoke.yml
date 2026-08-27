@@ -1,5 +1,6 @@
 name: runpod-canary-smoke
 
+# Candidate freeze requires this workflow and the full pytest workflow to be green on the exact same SHA.
 on:
   workflow_dispatch:
   push:
