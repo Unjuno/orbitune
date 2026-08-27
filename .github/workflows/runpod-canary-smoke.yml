@@ -49,16 +49,18 @@ jobs:
             --steps 1 \
             --batch-size 1 \
             --seq-len 16 \
-            --validation-interval 1
-      - name: Assert bounded success result contract
+            --validation-interval 1 | tee /tmp/orbitune-runpod-canary.log
+      - name: Assert bounded success result contract and log transport
         run: |
           python - <<'PY'
+          import base64
           import hashlib
           import json
           from pathlib import Path
 
           root = Path('/tmp/orbitune-runpod-canary')
-          result = json.loads((root / 'result.json').read_text(encoding='utf-8'))
+          result_bytes = (root / 'result.json').read_bytes()
+          result = json.loads(result_bytes)
           checkpoint = root / 'canary-base.pt'
           digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
           assert result['schema_version'] == 1
@@ -76,17 +78,22 @@ jobs:
           assert artifact['sha256'] == f'sha256:{digest}'
           assert artifact['disposition'] == 'collected'
           assert not (root / 'completion.json').exists()
-          print('RunPod canary CPU success contract PASS')
+          lines = Path('/tmp/orbitune-runpod-canary.log').read_text(encoding='utf-8').splitlines()
+          markers = [line for line in lines if line.startswith('GPU_CONTROL_RESULT_JSON_V1:')]
+          assert len(markers) == 1
+          decoded = base64.urlsafe_b64decode(markers[0].split(':', 1)[1])
+          assert decoded == result_bytes
+          print('RunPod canary CPU success/log contract PASS')
           PY
       - name: Assert authenticated completion envelope contract
         env:
           PYTHONPATH: .
           ORBITUNE_SOURCE_SHA: dddddddddddddddddddddddddddddddddddddddd
           GPU_CONTROL_COMPLETION_KEY_B64: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
-          GPU_CONTROL_COMPLETION_KEY_ID: paid-runpod-v1
+          GPU_CONTROL_COMPLETION_KEY_ID: paid-runpod-v2
           GPU_CONTROL_COMPLETION_NONCE: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          GPU_CONTROL_EXECUTION_NAME: gpu-control-111111111111-aaaaaaaaaaaa
           GPU_CONTROL_PLAN_FINGERPRINT: sha256:1111111111111111111111111111111111111111111111111111111111111111
-          GPU_CONTROL_PROVIDER_JOB_ID: pod-123
           GPU_CONTROL_IMAGE_DIGEST: sha256:2222222222222222222222222222222222222222222222222222222222222222
         run: |
           set -euo pipefail
@@ -97,7 +104,7 @@ jobs:
             --steps 1 \
             --batch-size 1 \
             --seq-len 16 \
-            --validation-interval 1
+            --validation-interval 1 | tee /tmp/orbitune-runpod-canary-auth.log
           python - <<'PY'
           import base64
           import hashlib
@@ -107,23 +114,33 @@ jobs:
 
           root = Path('/tmp/orbitune-runpod-canary-auth')
           result_bytes = (root / 'result.json').read_bytes()
-          evidence = json.loads((root / 'completion.json').read_text(encoding='utf-8'))
-          assert evidence['schema_version'] == 1
+          completion_bytes = (root / 'completion.json').read_bytes()
+          evidence = json.loads(completion_bytes)
+          assert evidence['schema_version'] == 2
           assert evidence['source_sha'] == 'd' * 40
-          assert evidence['provider_job_id'] == 'pod-123'
+          assert evidence['execution_name'] == 'gpu-control-111111111111-aaaaaaaaaaaa'
+          assert 'provider_job_id' not in evidence
           assert evidence['result_sha256'] == 'sha256:' + hashlib.sha256(result_bytes).hexdigest()
           signed = {
               key: evidence[key]
               for key in (
-                  'image_digest', 'key_id', 'nonce', 'plan_fingerprint',
-                  'provider_job_id', 'result_sha256', 'source_sha'
+                  'execution_name', 'image_digest', 'key_id', 'nonce',
+                  'plan_fingerprint', 'result_sha256', 'source_sha'
               )
           }
           canonical = json.dumps(signed, ensure_ascii=True, sort_keys=True, separators=(',', ':')).encode()
           secret = base64.b64decode('AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=')
           expected = hmac.new(secret, canonical, hashlib.sha256).hexdigest()
           assert hmac.compare_digest(evidence['mac_sha256'], expected)
-          print('RunPod authenticated completion envelope PASS')
+
+          lines = Path('/tmp/orbitune-runpod-canary-auth.log').read_text(encoding='utf-8').splitlines()
+          result_markers = [line for line in lines if line.startswith('GPU_CONTROL_RESULT_JSON_V1:')]
+          completion_markers = [line for line in lines if line.startswith('GPU_CONTROL_COMPLETION_JSON_V2:')]
+          assert len(result_markers) == 1
+          assert len(completion_markers) == 1
+          assert base64.urlsafe_b64decode(result_markers[0].split(':', 1)[1]) == result_bytes
+          assert base64.urlsafe_b64decode(completion_markers[0].split(':', 1)[1]) == completion_bytes
+          print('RunPod authenticated completion/log envelope PASS')
           PY
       - name: Assert bounded failure evidence
         env:
@@ -139,14 +156,17 @@ jobs:
             --steps 1 \
             --batch-size 1 \
             --seq-len 16 \
-            --validation-interval 1
+            --validation-interval 1 > /tmp/orbitune-runpod-canary-fail.log 2>&1
           code=$?
           set -e
           test "$code" -ne 0
           python - <<'PY'
+          import base64
           import json
           from pathlib import Path
-          result = json.loads(Path('/tmp/orbitune-runpod-canary-fail/result.json').read_text(encoding='utf-8'))
+          path = Path('/tmp/orbitune-runpod-canary-fail/result.json')
+          result_bytes = path.read_bytes()
+          result = json.loads(result_bytes)
           assert result == {
               'failure_kind': 'runner-exited-without-result',
               'runner_exit_code': result['runner_exit_code'],
@@ -156,5 +176,9 @@ jobs:
               'workload_id': 'orbitune-runpod-training-canary-v1',
           }
           assert result['runner_exit_code'] != 0
-          print('RunPod canary CPU failure-evidence contract PASS')
+          lines = Path('/tmp/orbitune-runpod-canary-fail.log').read_text(encoding='utf-8').splitlines()
+          markers = [line for line in lines if line.startswith('GPU_CONTROL_RESULT_JSON_V1:')]
+          assert len(markers) == 1
+          assert base64.urlsafe_b64decode(markers[0].split(':', 1)[1]) == result_bytes
+          print('RunPod canary CPU failure-evidence/log contract PASS')
           PY
