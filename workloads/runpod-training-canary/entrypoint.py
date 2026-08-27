@@ -11,16 +11,19 @@ import sys
 from pathlib import Path
 
 SCHEMA_VERSION = 1
+COMPLETION_SCHEMA_VERSION = 2
 WORKLOAD_ID = "orbitune-runpod-training-canary-v1"
+COMPLETION_LOG_PREFIX = "GPU_CONTROL_COMPLETION_V2:"
 _COMPLETION_ENV = {
     "key_b64": "GPU_CONTROL_COMPLETION_KEY_B64",
     "key_id": "GPU_CONTROL_COMPLETION_KEY_ID",
     "nonce": "GPU_CONTROL_COMPLETION_NONCE",
+    "execution_name": "GPU_CONTROL_EXECUTION_NAME",
     "plan_fingerprint": "GPU_CONTROL_PLAN_FINGERPRINT",
-    "provider_job_id": "GPU_CONTROL_PROVIDER_JOB_ID",
     "image_digest": "GPU_CONTROL_IMAGE_DIGEST",
 }
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_EXECUTION_NAME_RE = re.compile(r"^gpu-control-[0-9a-f]{12}-[0-9a-f]{12}$")
 
 
 def _output_dir(argv: list[str]) -> Path:
@@ -64,7 +67,7 @@ def _completion_values() -> dict[str, str] | None:
     return present
 
 
-def _write_completion_evidence(output_dir: Path, result_path: Path, values: dict[str, str]) -> None:
+def _completion_evidence(result_path: Path, values: dict[str, str]) -> dict[str, object]:
     source_sha = os.environ.get("ORBITUNE_SOURCE_SHA", "").strip()
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
         raise ValueError("authenticated completion requires a baked 40-character ORBITUNE_SOURCE_SHA")
@@ -74,8 +77,13 @@ def _write_completion_evidence(output_dir: Path, result_path: Path, values: dict
         raise ValueError("GPU_CONTROL_PLAN_FINGERPRINT must be a lowercase sha256 digest")
     if not _SHA256_RE.fullmatch(values["image_digest"]):
         raise ValueError("GPU_CONTROL_IMAGE_DIGEST must be a lowercase sha256 digest")
-    if not values["provider_job_id"]:
-        raise ValueError("GPU_CONTROL_PROVIDER_JOB_ID is required")
+    if not _EXECUTION_NAME_RE.fullmatch(values["execution_name"]):
+        raise ValueError("GPU_CONTROL_EXECUTION_NAME is invalid")
+    expected_execution_name = (
+        f"gpu-control-{values['plan_fingerprint'][7:19]}-{values['nonce'][:12]}"
+    )
+    if values["execution_name"] != expected_execution_name:
+        raise ValueError("GPU_CONTROL_EXECUTION_NAME does not match plan fingerprint and nonce")
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", values["key_id"]):
         raise ValueError("GPU_CONTROL_COMPLETION_KEY_ID is invalid")
     try:
@@ -87,21 +95,39 @@ def _write_completion_evidence(output_dir: Path, result_path: Path, values: dict
 
     result_digest = "sha256:" + hashlib.sha256(result_path.read_bytes()).hexdigest()
     signed = {
+        "execution_name": values["execution_name"],
         "image_digest": values["image_digest"],
         "key_id": values["key_id"],
         "nonce": values["nonce"],
         "plan_fingerprint": values["plan_fingerprint"],
-        "provider_job_id": values["provider_job_id"],
         "result_sha256": result_digest,
         "source_sha": source_sha,
     }
     canonical = json.dumps(signed, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    evidence: dict[str, object] = {
+    return {
         **signed,
         "mac_sha256": hmac.new(secret, canonical, hashlib.sha256).hexdigest(),
-        "schema_version": 1,
+        "schema_version": COMPLETION_SCHEMA_VERSION,
     }
+
+
+def _completion_log_marker(result_bytes: bytes, evidence: dict[str, object]) -> str:
+    bundle = {
+        "schema_version": 1,
+        "result_b64": base64.b64encode(result_bytes).decode("ascii"),
+        "completion_evidence": evidence,
+    }
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(bundle, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    return COMPLETION_LOG_PREFIX + encoded
+
+
+def _write_completion_evidence(output_dir: Path, result_path: Path, values: dict[str, str]) -> None:
+    result_bytes = result_path.read_bytes()
+    evidence = _completion_evidence(result_path, values)
     _atomic_json(output_dir / "completion.json", evidence)
+    print(_completion_log_marker(result_bytes, evidence), flush=True)
 
 
 def main() -> int:
