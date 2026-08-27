@@ -150,7 +150,12 @@ jobs:
         run: |
           set -euo pipefail
           PYTHON_BIN="$(command -v python)"
-          sudo rm -rf /outputs /tmp/orbitune-runner
+          AUTH_WORKSPACE=/tmp/orbitune-auth-workspace
+          sudo rm -rf /outputs /tmp/orbitune-runner "$AUTH_WORKSPACE"
+          sudo mkdir -p "$AUTH_WORKSPACE"
+          sudo cp -a orbitune workloads "$AUTH_WORKSPACE"/
+          sudo chmod -R a+rX "$AUTH_WORKSPACE"
+          cd "$AUTH_WORKSPACE"
           sudo env -i \
             PATH="$PATH" \
             PYTHONPATH=. \
@@ -212,7 +217,8 @@ jobs:
           assert base64.urlsafe_b64decode(completion_markers[0].split(':', 1)[1]) == completion_bytes
           print('RunPod authenticated completion/log envelope PASS')
           PY
-          sudo rm -rf /outputs /tmp/orbitune-runner
+          cd /
+          sudo rm -rf /outputs /tmp/orbitune-runner "$AUTH_WORKSPACE"
       - name: Assert marker byte bound and missing-result fail closed
         env:
           PYTHONPATH: .
