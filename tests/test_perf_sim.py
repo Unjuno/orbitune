@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 
@@ -8,6 +9,7 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "tools" / "perf_sim.py"
 spec = importlib.util.spec_from_file_location("orbitune_perf_sim", MODULE_PATH)
 assert spec and spec.loader
 perf_sim = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = perf_sim
 spec.loader.exec_module(perf_sim)
 
 
