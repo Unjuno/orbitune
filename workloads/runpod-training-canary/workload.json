@@ -41,8 +41,9 @@
       "completion_marker": "GPU_CONTROL_COMPLETION_JSON_V2:",
       "max_marker_bytes": 131072
     },
-    "failure_result_required_if_runner_exits": true,
-    "max_collected_artifact_bytes": 67108864
+    "checkpoint_transport": "container-local-only",
+    "max_local_checkpoint_bytes": 67108864,
+    "failure_result_required_if_runner_exits": true
   },
   "acceptance": {
     "process_exit_code": 0,
@@ -54,7 +55,7 @@
     "validation_points": 5,
     "require_finite_validation": true,
     "require_last_validation_below_first": true,
-    "require_checkpoint_sha256_match": true,
+    "require_authenticated_checkpoint_metadata": true,
     "require_baked_source_sha_match": true,
     "require_image_digest_match_approved_plan": true,
     "require_authenticated_completion_evidence": true,
