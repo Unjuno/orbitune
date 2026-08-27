@@ -39,7 +39,7 @@
     "bounded_log_transport": {
       "result_marker": "GPU_CONTROL_RESULT_JSON_V1:",
       "completion_marker": "GPU_CONTROL_COMPLETION_JSON_V2:",
-      "max_marker_bytes": 131072
+      "max_marker_bytes": 16384
     },
     "checkpoint_transport": "container-local-only",
     "max_local_checkpoint_bytes": 67108864,
