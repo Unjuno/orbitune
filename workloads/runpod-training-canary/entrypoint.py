@@ -11,16 +11,21 @@ import sys
 from pathlib import Path
 
 SCHEMA_VERSION = 1
+COMPLETION_SCHEMA_VERSION = 2
 WORKLOAD_ID = "orbitune-runpod-training-canary-v1"
+RESULT_LOG_MARKER = "GPU_CONTROL_RESULT_JSON_V1:"
+COMPLETION_LOG_MARKER = "GPU_CONTROL_COMPLETION_JSON_V2:"
+_MAX_MARKER_BYTES = 128 * 1024
 _COMPLETION_ENV = {
     "key_b64": "GPU_CONTROL_COMPLETION_KEY_B64",
     "key_id": "GPU_CONTROL_COMPLETION_KEY_ID",
     "nonce": "GPU_CONTROL_COMPLETION_NONCE",
+    "execution_name": "GPU_CONTROL_EXECUTION_NAME",
     "plan_fingerprint": "GPU_CONTROL_PLAN_FINGERPRINT",
-    "provider_job_id": "GPU_CONTROL_PROVIDER_JOB_ID",
     "image_digest": "GPU_CONTROL_IMAGE_DIGEST",
 }
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_EXECUTION_NAME_RE = re.compile(r"^gpu-control-[0-9a-f]{12}-[0-9a-f]{12}$")
 
 
 def _output_dir(argv: list[str]) -> Path:
@@ -64,7 +69,15 @@ def _completion_values() -> dict[str, str] | None:
     return present
 
 
-def _write_completion_evidence(output_dir: Path, result_path: Path, values: dict[str, str]) -> None:
+def _emit_file_marker(prefix: str, path: Path) -> None:
+    raw = path.read_bytes()
+    if len(raw) > _MAX_MARKER_BYTES:
+        raise ValueError(f"{path.name} exceeds bounded log marker size")
+    encoded = base64.urlsafe_b64encode(raw).decode("ascii")
+    print(prefix + encoded, flush=True)
+
+
+def _write_completion_evidence(output_dir: Path, result_path: Path, values: dict[str, str]) -> Path:
     source_sha = os.environ.get("ORBITUNE_SOURCE_SHA", "").strip()
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
         raise ValueError("authenticated completion requires a baked 40-character ORBITUNE_SOURCE_SHA")
@@ -74,8 +87,11 @@ def _write_completion_evidence(output_dir: Path, result_path: Path, values: dict
         raise ValueError("GPU_CONTROL_PLAN_FINGERPRINT must be a lowercase sha256 digest")
     if not _SHA256_RE.fullmatch(values["image_digest"]):
         raise ValueError("GPU_CONTROL_IMAGE_DIGEST must be a lowercase sha256 digest")
-    if not values["provider_job_id"]:
-        raise ValueError("GPU_CONTROL_PROVIDER_JOB_ID is required")
+    if not _EXECUTION_NAME_RE.fullmatch(values["execution_name"]):
+        raise ValueError("GPU_CONTROL_EXECUTION_NAME is invalid")
+    expected_name = f"gpu-control-{values['plan_fingerprint'][7:19]}-{values['nonce'][:12]}"
+    if values["execution_name"] != expected_name:
+        raise ValueError("GPU_CONTROL_EXECUTION_NAME does not match plan fingerprint and nonce")
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", values["key_id"]):
         raise ValueError("GPU_CONTROL_COMPLETION_KEY_ID is invalid")
     try:
@@ -87,11 +103,11 @@ def _write_completion_evidence(output_dir: Path, result_path: Path, values: dict
 
     result_digest = "sha256:" + hashlib.sha256(result_path.read_bytes()).hexdigest()
     signed = {
+        "execution_name": values["execution_name"],
         "image_digest": values["image_digest"],
         "key_id": values["key_id"],
         "nonce": values["nonce"],
         "plan_fingerprint": values["plan_fingerprint"],
-        "provider_job_id": values["provider_job_id"],
         "result_sha256": result_digest,
         "source_sha": source_sha,
     }
@@ -99,9 +115,11 @@ def _write_completion_evidence(output_dir: Path, result_path: Path, values: dict
     evidence: dict[str, object] = {
         **signed,
         "mac_sha256": hmac.new(secret, canonical, hashlib.sha256).hexdigest(),
-        "schema_version": 1,
+        "schema_version": COMPLETION_SCHEMA_VERSION,
     }
-    _atomic_json(output_dir / "completion.json", evidence)
+    path = output_dir / "completion.json"
+    _atomic_json(path, evidence)
+    return path
 
 
 def main() -> int:
@@ -112,17 +130,20 @@ def main() -> int:
     completed = subprocess.run(command, check=False)
     if not result_path.is_file():
         _write_failure_result(result_path, exit_code=completed.returncode)
-    if completed.returncode != 0:
-        return completed.returncode
 
     try:
         completion_values = _completion_values()
+        completion_path = None
         if completion_values is not None:
-            _write_completion_evidence(output_dir, result_path, completion_values)
+            completion_path = _write_completion_evidence(output_dir, result_path, completion_values)
+        _emit_file_marker(RESULT_LOG_MARKER, result_path)
+        if completion_path is not None:
+            _emit_file_marker(COMPLETION_LOG_MARKER, completion_path)
     except Exception as exc:
         print(f"completion evidence error: {exc}", file=sys.stderr)
         return 4
-    return 0
+
+    return completed.returncode
 
 
 if __name__ == "__main__":
