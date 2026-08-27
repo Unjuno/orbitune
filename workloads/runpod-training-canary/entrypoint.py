@@ -16,6 +16,7 @@ WORKLOAD_ID = "orbitune-runpod-training-canary-v1"
 RESULT_LOG_MARKER = "GPU_CONTROL_RESULT_JSON_V1:"
 COMPLETION_LOG_MARKER = "GPU_CONTROL_COMPLETION_JSON_V2:"
 _MAX_MARKER_BYTES = 128 * 1024
+_MISSING_RESULT_EXIT_CODE = 5
 _COMPLETION_ENV = {
     "key_b64": "GPU_CONTROL_COMPLETION_KEY_B64",
     "key_id": "GPU_CONTROL_COMPLETION_KEY_ID",
@@ -70,11 +71,11 @@ def _completion_values() -> dict[str, str] | None:
 
 
 def _emit_file_marker(prefix: str, path: Path) -> None:
-    raw = path.read_bytes()
-    if len(raw) > _MAX_MARKER_BYTES:
-        raise ValueError(f"{path.name} exceeds bounded log marker size")
-    encoded = base64.urlsafe_b64encode(raw).decode("ascii")
-    print(prefix + encoded, flush=True)
+    encoded = base64.urlsafe_b64encode(path.read_bytes())
+    marker = prefix.encode("ascii") + encoded
+    if len(marker) > _MAX_MARKER_BYTES:
+        raise ValueError(f"{path.name} encoded log marker exceeds bounded marker size")
+    print(marker.decode("ascii"), flush=True)
 
 
 def _write_completion_evidence(output_dir: Path, result_path: Path, values: dict[str, str]) -> Path:
@@ -128,7 +129,8 @@ def main() -> int:
     result_path = output_dir / "result.json"
     command = [sys.executable, "workloads/runpod-training-canary/run.py", *argv]
     completed = subprocess.run(command, check=False)
-    if not result_path.is_file():
+    result_missing = not result_path.is_file()
+    if result_missing:
         _write_failure_result(result_path, exit_code=completed.returncode)
 
     try:
@@ -143,6 +145,8 @@ def main() -> int:
         print(f"completion evidence error: {exc}", file=sys.stderr)
         return 4
 
+    if result_missing and completed.returncode == 0:
+        return _MISSING_RESULT_EXIT_CODE
     return completed.returncode
 
 
