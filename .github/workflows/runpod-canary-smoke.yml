@@ -76,7 +76,7 @@ jobs:
           assert artifact['bytes'] == checkpoint.stat().st_size
           assert artifact['bytes'] <= 64 * 1024 * 1024
           assert artifact['sha256'] == f'sha256:{digest}'
-          assert artifact['disposition'] == 'collected'
+          assert artifact['transport'] == 'container-local-only'
           assert not (root / 'completion.json').exists()
           lines = Path('/tmp/orbitune-runpod-canary.log').read_text(encoding='utf-8').splitlines()
           markers = [line for line in lines if line.startswith('GPU_CONTROL_RESULT_JSON_V1:')]
