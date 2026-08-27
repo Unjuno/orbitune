@@ -34,13 +34,16 @@
   },
   "outputs": {
     "directory": "/outputs",
+    "authenticated_directory_override_allowed": false,
     "required": ["result.json", "canary-base.pt"],
     "required_for_authenticated_paid_completion": ["completion.json"],
     "bounded_log_transport": {
       "result_marker": "GPU_CONTROL_RESULT_JSON_V1:",
       "completion_marker": "GPU_CONTROL_COMPLETION_JSON_V2:",
-      "max_marker_bytes": 16384
+      "max_marker_bytes": 16384,
+      "hash_and_emit_same_byte_snapshot": true
     },
+    "authenticated_outputs_sealed_read_only_after_signing": true,
     "checkpoint_transport": "container-local-only",
     "max_local_checkpoint_bytes": 67108864,
     "failure_result_required_if_runner_exits": true
@@ -71,6 +74,14 @@
     "completion_provider_job_id_binding": "control-plane-receipt-only",
     "completion_secret_persistence": "forbidden",
     "completion_environment_owner": "gpu-control-only",
+    "completion_signer_uid": 0,
+    "training_uid": 10001,
+    "training_gid": 10001,
+    "training_process_must_not_read_signer_environment": true,
+    "completion_secret_removed_from_python_environment_after_capture": true,
+    "completion_secret_training_process_access": "forbidden-by-uid-separation",
+    "training_supplementary_groups": [],
+    "training_umask": "0077",
     "completion_environment": [
       "GPU_CONTROL_COMPLETION_KEY_B64",
       "GPU_CONTROL_COMPLETION_KEY_ID",
