@@ -75,7 +75,55 @@ jobs:
           assert artifact['bytes'] <= 64 * 1024 * 1024
           assert artifact['sha256'] == f'sha256:{digest}'
           assert artifact['disposition'] == 'collected'
+          assert not (root / 'completion.json').exists()
           print('RunPod canary CPU success contract PASS')
+          PY
+      - name: Assert authenticated completion envelope contract
+        env:
+          PYTHONPATH: .
+          ORBITUNE_SOURCE_SHA: dddddddddddddddddddddddddddddddddddddddd
+          GPU_CONTROL_COMPLETION_KEY_B64: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+          GPU_CONTROL_COMPLETION_KEY_ID: paid-runpod-v1
+          GPU_CONTROL_COMPLETION_NONCE: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          GPU_CONTROL_PLAN_FINGERPRINT: sha256:1111111111111111111111111111111111111111111111111111111111111111
+          GPU_CONTROL_PROVIDER_JOB_ID: pod-123
+          GPU_CONTROL_IMAGE_DIGEST: sha256:2222222222222222222222222222222222222222222222222222222222222222
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/orbitune-runpod-canary-auth
+          python workloads/runpod-training-canary/entrypoint.py \
+            --output-dir /tmp/orbitune-runpod-canary-auth \
+            --device cpu \
+            --steps 1 \
+            --batch-size 1 \
+            --seq-len 16 \
+            --validation-interval 1
+          python - <<'PY'
+          import base64
+          import hashlib
+          import hmac
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/orbitune-runpod-canary-auth')
+          result_bytes = (root / 'result.json').read_bytes()
+          evidence = json.loads((root / 'completion.json').read_text(encoding='utf-8'))
+          assert evidence['schema_version'] == 1
+          assert evidence['source_sha'] == 'd' * 40
+          assert evidence['provider_job_id'] == 'pod-123'
+          assert evidence['result_sha256'] == 'sha256:' + hashlib.sha256(result_bytes).hexdigest()
+          signed = {
+              key: evidence[key]
+              for key in (
+                  'image_digest', 'key_id', 'nonce', 'plan_fingerprint',
+                  'provider_job_id', 'result_sha256', 'source_sha'
+              )
+          }
+          canonical = json.dumps(signed, ensure_ascii=True, sort_keys=True, separators=(',', ':')).encode()
+          secret = base64.b64decode('AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=')
+          expected = hmac.new(secret, canonical, hashlib.sha256).hexdigest()
+          assert hmac.compare_digest(evidence['mac_sha256'], expected)
+          print('RunPod authenticated completion envelope PASS')
           PY
       - name: Assert bounded failure evidence
         env:
