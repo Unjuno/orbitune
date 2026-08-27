@@ -142,6 +142,66 @@ jobs:
           assert base64.urlsafe_b64decode(completion_markers[0].split(':', 1)[1]) == completion_bytes
           print('RunPod authenticated completion/log envelope PASS')
           PY
+      - name: Assert marker byte bound and missing-result fail closed
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          import contextlib
+          import importlib.util
+          import io
+          import json
+          import os
+          import sys
+          import tempfile
+          from pathlib import Path
+          from types import SimpleNamespace
+
+          path = Path('workloads/runpod-training-canary/entrypoint.py')
+          spec = importlib.util.spec_from_file_location('orbitune_runpod_entrypoint', path)
+          module = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(module)
+
+          with tempfile.TemporaryDirectory() as directory:
+              payload = Path(directory) / 'payload.bin'
+              module._MAX_MARKER_BYTES = 64
+              payload.write_bytes(b'x' * 45)
+              output = io.StringIO()
+              with contextlib.redirect_stdout(output):
+                  module._emit_file_marker('P:', payload)
+              marker = output.getvalue().rstrip('\n').encode('ascii')
+              assert len(marker) <= 64
+
+              payload.write_bytes(b'x' * 46)
+              try:
+                  module._emit_file_marker('P:', payload)
+              except ValueError as exc:
+                  assert 'encoded log marker exceeds' in str(exc)
+              else:
+                  raise AssertionError('oversized encoded marker was accepted')
+
+          for env_name in module._COMPLETION_ENV.values():
+              os.environ.pop(env_name, None)
+          module._MAX_MARKER_BYTES = 128 * 1024
+          module.subprocess.run = lambda *args, **kwargs: SimpleNamespace(returncode=0)
+          with tempfile.TemporaryDirectory() as directory:
+              previous_argv = sys.argv
+              sys.argv = ['entrypoint.py', '--output-dir', directory]
+              try:
+                  output = io.StringIO()
+                  with contextlib.redirect_stdout(output):
+                      code = module.main()
+              finally:
+                  sys.argv = previous_argv
+              assert code == module._MISSING_RESULT_EXIT_CODE
+              result = json.loads((Path(directory) / 'result.json').read_text(encoding='utf-8'))
+              assert result['status'] == 'fail'
+              assert result['failure_kind'] == 'runner-exited-without-result'
+              assert result['runner_exit_code'] == 0
+              assert output.getvalue().startswith(module.RESULT_LOG_MARKER)
+          print('RunPod marker bound/missing-result fail-closed PASS')
+          PY
       - name: Assert bounded failure evidence
         env:
           PYTHONPATH: .
