@@ -170,7 +170,7 @@ def _reclaim_authenticated_output(output_dir: Path) -> None:
             continue
         if stat.S_ISREG(info.st_mode):
             os.chown(path, 0, 0, follow_symlinks=False)
-            os.chmod(path, 0o400, follow_symlinks=False)
+            os.chmod(path, 0o400)
 
 
 def _read_regular_file(path: Path) -> bytes:
@@ -297,7 +297,7 @@ def _seal_authenticated_outputs(output_dir: Path) -> None:
         if not stat.S_ISREG(info.st_mode):
             continue
         os.chown(path, 0, 0, follow_symlinks=False)
-        os.chmod(path, 0o444, follow_symlinks=False)
+        os.chmod(path, 0o444)
     os.chown(output_dir, 0, 0)
     os.chmod(output_dir, 0o555)
 
