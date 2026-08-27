@@ -50,6 +50,10 @@ def test_completion_capture_scrubs_parent_and_child_environment(monkeypatch: pyt
     assert child_environment["ORBITUNE_SOURCE_SHA"] == "d" * 40
     assert child_environment["KEEP_FOR_RUNNER"] == "visible"
     assert child_environment["HOME"] == str(module._TRAINING_HOME)
+    assert child_environment["USER"] == module._TRAINING_USER
+    assert child_environment["LOGNAME"] == module._TRAINING_USER
+    assert child_environment["XDG_CACHE_HOME"] == str(module._TRAINING_HOME / ".cache")
+    assert child_environment["TORCHINDUCTOR_CACHE_DIR"] == str(module._TRAINING_HOME / ".cache" / "torchinductor")
 
 
 def test_partial_completion_environment_fails_after_scrubbing(monkeypatch: pytest.MonkeyPatch) -> None:
