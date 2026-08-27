@@ -23,6 +23,7 @@ _MISSING_RESULT_EXIT_CODE = 5
 _COMPLETION_ERROR_EXIT_CODE = 4
 _TRAINING_UID = 10001
 _TRAINING_GID = 10001
+_TRAINING_USER = "orbitune-runner"
 _AUTHENTICATED_OUTPUT_DIR = Path("/outputs")
 _TRAINING_HOME = Path("/tmp/orbitune-runner")
 _COMPLETION_ENV = {
@@ -118,7 +119,10 @@ def _runner_environment() -> dict[str, str]:
     for env_name in _COMPLETION_ENV.values():
         child_environment.pop(env_name, None)
     child_environment["HOME"] = str(_TRAINING_HOME)
+    child_environment["USER"] = _TRAINING_USER
+    child_environment["LOGNAME"] = _TRAINING_USER
     child_environment["XDG_CACHE_HOME"] = str(_TRAINING_HOME / ".cache")
+    child_environment["TORCHINDUCTOR_CACHE_DIR"] = str(_TRAINING_HOME / ".cache" / "torchinductor")
     child_environment["TMPDIR"] = "/tmp"
     return child_environment
 
