@@ -36,6 +36,11 @@
     "directory": "/outputs",
     "required": ["result.json", "canary-base.pt"],
     "required_for_authenticated_paid_completion": ["completion.json"],
+    "bounded_log_transport": {
+      "result_marker": "GPU_CONTROL_RESULT_JSON_V1:",
+      "completion_marker": "GPU_CONTROL_COMPLETION_JSON_V2:",
+      "max_marker_bytes": 131072
+    },
     "failure_result_required_if_runner_exits": true,
     "max_collected_artifact_bytes": 67108864
   },
@@ -60,16 +65,17 @@
     "docker_socket_required": false,
     "runtime_network_required": false,
     "source_identity": "baked-into-image-at-build-time",
-    "completion_evidence_protocol": "gpu-control-hmac-sha256-v1",
+    "completion_evidence_protocol": "gpu-control-hmac-sha256-v2",
     "completion_evidence_file": "/outputs/completion.json",
+    "completion_provider_job_id_binding": "control-plane-receipt-only",
     "completion_secret_persistence": "forbidden",
     "completion_environment_owner": "gpu-control-only",
     "completion_environment": [
       "GPU_CONTROL_COMPLETION_KEY_B64",
       "GPU_CONTROL_COMPLETION_KEY_ID",
       "GPU_CONTROL_COMPLETION_NONCE",
+      "GPU_CONTROL_EXECUTION_NAME",
       "GPU_CONTROL_PLAN_FINGERPRINT",
-      "GPU_CONTROL_PROVIDER_JOB_ID",
       "GPU_CONTROL_IMAGE_DIGEST"
     ]
   }
