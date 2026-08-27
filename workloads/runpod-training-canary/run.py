@@ -170,7 +170,7 @@ def main() -> int:
         "bytes": checkpoint_bytes,
         "sha256": f"sha256:{checkpoint_sha256}",
         "media_type": "application/x-pytorch-checkpoint",
-        "disposition": "collected" if checkpoint_bytes <= 64 * 1024 * 1024 else "reference_only",
+        "transport": "container-local-only",
     }
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
