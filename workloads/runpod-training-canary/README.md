@@ -75,6 +75,20 @@ The image entrypoint is finite and non-interactive. At runtime it needs no netwo
 
 Image publication is manual through `.github/workflows/publish-runpod-canary.yml`. It checks out the requested exact SHA, builds only that source, passes the same SHA into the Docker build, and emits publication evidence containing the source SHA and immutable image digest.
 
+## Completion signer / training process boundary
+
+Authenticated completion uses privilege separation inside the container.
+
+The image entrypoint starts as UID 0 because it is the only process allowed to receive and use the ephemeral `GPU_CONTROL_COMPLETION_KEY_B64`. It captures the completion context, removes every `GPU_CONTROL_COMPLETION_*` value from its live Python environment, and launches the actual training program as numeric UID/GID `10001:10001` with no supplementary groups and umask `0077`.
+
+This separation is intentional. Merely omitting the secret from the child environment is insufficient when the wrapper and child run under the same UID, because a same-UID process may be able to inspect the parent process through `/proc`. The canary CI therefore includes a Linux-level regression test that the UID 10001 training process cannot read the root signer's `/proc/$PPID/environ`.
+
+Authenticated mode also fixes the writable result directory to exactly `/outputs`; arbitrary output-directory overrides are rejected. Before training, the wrapper grants UID/GID 10001 temporary ownership of `/outputs`. Immediately after the training process exits, the wrapper reclaims the directory as root before reading or signing any result. `result.json` is opened with a no-follow regular-file check, so a symlink cannot be substituted for signed result content.
+
+The wrapper snapshots the exact `result.json` bytes once, hashes those bytes into the completion envelope, and emits the same byte snapshot through the bounded stdout marker. This avoids a hash/read time-of-check-to-time-of-use mismatch. After signing and marker emission, `result.json`, `completion.json`, and the local checkpoint are root-owned read-only files and `/outputs` is sealed read-only for the remainder of the process lifetime.
+
+The HMAC key is still considered ephemeral secret material. The workload never persists it, logs it, forwards it to the training process, or includes it in result/completion JSON.
+
 ## gpu-control source gate
 
 `gpu-control` requires a public repository, exact 40-character commit SHA, exact Dockerfile path, bounded GPU profile/runtime/cost, and verifies the Dockerfile at that immutable SHA before later execution gates.
@@ -125,7 +139,7 @@ When authenticated completion is enabled it also writes:
 - checkpoint byte size and SHA-256;
 - an explicit `transport: container-local-only` marker for the checkpoint metadata.
 
-The bounded log protocol transports the exact bytes of `result.json` and, for an authenticated paid execution, `completion.json`. Each emitted marker is bounded after base64 encoding and prefixing. The checkpoint itself is **not** included in this log transport.
+The bounded log protocol transports the exact bytes of `result.json` and, for an authenticated paid execution, `completion.json`. Each complete encoded marker, including its prefix, is limited to 16 KiB. The checkpoint itself is **not** included in this log transport.
 
 Therefore `gpu-control` may use the authenticated result to verify that the trusted workload reports a checkpoint save, size and SHA-256, but it must not mark `canary-base.pt` as a collected artifact unless a separate byte-transfer path actually retrieves and verifies that file.
 
