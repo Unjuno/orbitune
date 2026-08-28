@@ -4,6 +4,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
 import torch
 
 
@@ -24,8 +25,9 @@ def test_multiscale_task_has_distinct_update_periods() -> None:
     ids, slow, medium, fast = module.make_batch(2, torch.device("cpu"), seed=1)
     assert ids.shape == slow.shape == medium.shape == fast.shape == (2, 256)
     assert torch.equal(slow[:, 0], ids[:, 0])
-    assert not torch.equal(medium[:, 95], medium[:, 96]) or not torch.equal(
-        medium[:, 191], medium[:, 192]
+    assert torch.all((ids[:, 24] >= module.FAST_BASE) & (ids[:, 24] < module.FILL_BASE))
+    assert torch.all(
+        (ids[:, 96] >= module.MEDIUM_BASE) & (ids[:, 96] < module.FAST_BASE)
     )
 
 
@@ -38,7 +40,10 @@ def test_all_memory_modes_forward_with_scalar_and_vector_decay() -> None:
         slow, medium, fast, reconstruction = model(ids)
         assert slow.shape == medium.shape == fast.shape == (2, 256, module.N_STATE), name
         assert reconstruction.shape == (2, 256, module.VOCAB), name
-        assert all(torch.isfinite(value).all() for value in (slow, medium, fast, reconstruction)), name
+        assert all(
+            torch.isfinite(value).all()
+            for value in (slow, medium, fast, reconstruction)
+        ), name
 
 
 def test_multibank_has_independent_write_read_paths_and_decay_bands() -> None:
@@ -48,10 +53,4 @@ def test_multibank_has_independent_write_read_paths_and_decay_bands() -> None:
     assert model.banks[0].q.weight.data_ptr() != model.banks[1].q.weight.data_ptr()
     assert model.banks[0].write.weight.data_ptr() != model.banks[2].write.weight.data_ptr()
     decays = [float(bank.decay()[0]) for bank in model.banks]
-    assert decays == [pytest_approx(0.90), pytest_approx(0.97), pytest_approx(0.995)]
-
-
-def pytest_approx(value: float):
-    import pytest
-
-    return pytest.approx(value, abs=1e-6)
+    assert decays == pytest.approx([0.90, 0.97, 0.995], abs=1e-6)
