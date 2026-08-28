@@ -87,12 +87,26 @@ class RoutedMemoryBank(nn.Module):
         decay = self.decay()
         steps = hidden.shape[1]
         index = torch.arange(steps, device=hidden.device, dtype=hidden.dtype)
-        inverse = decay[None, :].pow(-index[:, None])
-        forward = decay[None, :].pow(index[:, None])
         contribution = write[:, :, :, None] * torch.einsum("btk,btd->btkd", key, value)
         normalizer_contribution = write * key
-        state = torch.cumsum(contribution * inverse[None, :, :, None], dim=1) * forward[None, :, :, None]
-        normalizer = torch.cumsum(normalizer_contribution * inverse[None, :, :], dim=1) * forward[None, :, :]
+        if decay.ndim == 0:
+            inverse = decay.pow(-index)
+            forward = decay.pow(index)
+            state = torch.cumsum(
+                contribution * inverse[None, :, None, None], dim=1
+            ) * forward[None, :, None, None]
+            normalizer = torch.cumsum(
+                normalizer_contribution * inverse[None, :, None], dim=1
+            ) * forward[None, :, None]
+        else:
+            inverse = decay[None, :].pow(-index[:, None])
+            forward = decay[None, :].pow(index[:, None])
+            state = torch.cumsum(
+                contribution * inverse[None, :, :, None], dim=1
+            ) * forward[None, :, :, None]
+            normalizer = torch.cumsum(
+                normalizer_contribution * inverse[None, :, :], dim=1
+            ) * forward[None, :, :]
         return torch.einsum("btk,btkd->btd", query, state) / (
             torch.einsum("btk,btk->bt", query, normalizer)[:, :, None] + 1e-5
         )
@@ -126,7 +140,9 @@ class SingleMemory(MemoryProxyBase):
             self.memory.logit_decay = nn.Parameter(torch.tensor(4.0))
         elif mode == "fixed_multiband":
             self.memory.logit_decay = None
-            self.memory.fixed_decay = torch.tensor([0.90, 0.90, 0.97, 0.97, 0.995, 0.995])
+            self.memory.fixed_decay = torch.tensor(
+                [0.90, 0.90, 0.97, 0.97, 0.995, 0.995]
+            )
         elif mode != "per_slot_decay":
             raise ValueError(f"unsupported single-memory mode: {mode}")
         self.mix = nn.Linear(2 * D_MODEL, D_MODEL)
@@ -177,7 +193,11 @@ class Result:
 
 def _decays(model: nn.Module) -> list[float]:
     if isinstance(model, IndependentMultiBank):
-        return [float(value) for bank in model.banks for value in bank.decay().detach().cpu()]
+        return [
+            float(value)
+            for bank in model.banks
+            for value in bank.decay().detach().cpu()
+        ]
     assert isinstance(model, SingleMemory)
     value = model.memory.decay().detach().cpu()
     if value.ndim == 0:
@@ -196,9 +216,16 @@ def run(mode: str, seed: int, steps: int, batch: int, device: torch.device) -> R
         slow_logits, medium_logits, fast_logits, reconstruction = model(ids)
         active = torch.arange(SEQ_LEN, device=device) >= 16
         loss = (
-            F.cross_entropy(slow_logits[:, active].reshape(-1, N_STATE), slow[:, active].reshape(-1))
-            + F.cross_entropy(medium_logits[:, active].reshape(-1, N_STATE), medium[:, active].reshape(-1))
-            + F.cross_entropy(fast_logits[:, active].reshape(-1, N_STATE), fast[:, active].reshape(-1))
+            F.cross_entropy(
+                slow_logits[:, active].reshape(-1, N_STATE), slow[:, active].reshape(-1)
+            )
+            + F.cross_entropy(
+                medium_logits[:, active].reshape(-1, N_STATE),
+                medium[:, active].reshape(-1),
+            )
+            + F.cross_entropy(
+                fast_logits[:, active].reshape(-1, N_STATE), fast[:, active].reshape(-1)
+            )
             + 0.5 * F.cross_entropy(reconstruction.reshape(-1, VOCAB), ids.reshape(-1))
         )
         optimizer.zero_grad(set_to_none=True)
@@ -248,7 +275,9 @@ def main() -> None:
         },
         "result": asdict(result),
     }
-    Path(args.out).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    Path(args.out).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
