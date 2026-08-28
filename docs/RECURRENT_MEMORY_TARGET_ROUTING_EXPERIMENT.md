@@ -52,6 +52,20 @@ Parameter counts:
 
 The strongest evidence is for the fast bank. Medium improves modestly. Slow improves only slightly and remains an open design problem.
 
+## Slow-bank ablations
+
+Two follow-up tests were run on the same balanced target setup.
+
+### Additive accumulator
+
+The slow Q/K associative bank was replaced by a decay-free learned cumulative weighted average. Mean slow macro recall fell from **18.58% to 17.06%**. Fast and medium metrics also fell slightly. A simple prefix accumulator is therefore not a better slow-memory default in this proxy.
+
+### Learned decay
+
+The slow associative bank's decay was made learnable, initialized at 0.997. Across three seeds it converged only to approximately **0.99688–0.99696**, and the output metrics were effectively unchanged from the fixed-decay baseline. The weak slow result therefore is not explained by choosing 0.997 instead of a nearby decay.
+
+These negative results narrow the open question: the remaining slow-memory issue is more likely the target representation, routing/state structure, or optimization horizon than a trivial decay-value choice.
+
 ## Current architecture interpretation
 
 The result supports a staged architecture with an explicit memory subsystem rather than a generic Transformer with interleaved linear layers:
@@ -75,14 +89,14 @@ fixed-size state update
     ↺
 ```
 
-The fast / medium / slow bank count and fixed decay values are not frozen. In particular, the slow target may need a different representation than the same Q/K associative-memory mechanism used by the faster timescales.
+The fast / medium / slow bank count and fixed decay values are not frozen. Current evidence supports explicit routing most strongly for fast memory, modestly for medium memory, and only weakly for slow memory.
 
 ## Required next gates
 
 1. replace balanced synthetic records with provenance-approved real MIDI converted to Compound records;
 2. profile real target distributions and choose class balancing from those distributions;
 3. compare shared vs routed memory on the same immutable real-data split;
-4. ablate the slow bank: associative memory, additive statistics, learned decay, and larger state;
+4. redesign slow objectives/representation only if real-data results reproduce the weak slow signal;
 5. run the VLab16 RTX 3080 benchmark harness and compare recurrent-state memory / throughput with PyTorch SDPA;
 6. only after real-data and GPU gates, choose Base parameter scale.
 
