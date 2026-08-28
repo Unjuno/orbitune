@@ -1,0 +1,72 @@
+{
+  "experiment": "bounded-local-composer-after-consolidated-recurrent-memory",
+  "schema_version": 1,
+  "seed1_conditioning_summary": {
+    "film": {
+      "local_accuracy_mean_32_256": 0.708984375,
+      "memory_state_accuracy_all_32_256": true,
+      "query_accuracy_all_32_256": true,
+      "trainable_parameters": 4832
+    },
+    "gated": {
+      "local_accuracy_mean_32_256": 0.703125,
+      "memory_state_accuracy_all_32_256": true,
+      "query_accuracy_all_32_256": true,
+      "trainable_parameters": 4816
+    },
+    "prefix": {
+      "local_accuracy_mean_32_256": 0.7578125,
+      "memory_state_accuracy_all_32_256": true,
+      "query_accuracy_all_32_256": true,
+      "trainable_parameters": 5376
+    },
+    "residual": {
+      "local_accuracy_mean_32_256": 0.2890625,
+      "memory_state_accuracy_all_32_256": true,
+      "query_accuracy_all_32_256": true,
+      "trainable_parameters": 4288
+    },
+    "slots": {
+      "local_accuracy_mean_32_256": 0.830078125,
+      "memory_state_accuracy_all_32_256": true,
+      "query_accuracy_all_32_256": true,
+      "trainable_parameters": 6976
+    }
+  },
+  "slots_no_absolute_position_seed1_32_1024": {
+    "1024": {"local": 0.734375, "memory": 1.0, "query": 1.0},
+    "128": {"local": 0.6640625, "memory": 1.0, "query": 1.0},
+    "256": {"local": 0.640625, "memory": 1.0, "query": 1.0},
+    "32": {"local": 0.6953125, "memory": 1.0, "query": 1.0},
+    "512": {"local": 0.65625, "memory": 1.0, "query": 1.0},
+    "64": {"local": 0.6796875, "memory": 1.0, "query": 1.0}
+  },
+  "slots_three_seed_32_256": {
+    "1": {
+      "128": {"local": 0.7578125, "memory": 1.0, "query": 1.0},
+      "256": {"local": 0.8203125, "memory": 1.0, "query": 1.0},
+      "32": {"local": 0.84375, "memory": 1.0, "query": 1.0},
+      "64": {"local": 0.8984375, "memory": 1.0, "query": 1.0}
+    },
+    "2": {
+      "128": {"local": 0.6484375, "memory": 1.0, "query": 1.0},
+      "256": {"local": 0.734375, "memory": 1.0, "query": 1.0},
+      "32": {"local": 0.8125, "memory": 1.0, "query": 1.0},
+      "64": {"local": 0.7890625, "memory": 1.0, "query": 1.0}
+    },
+    "3": {
+      "128": {"local": 0.7421875, "memory": 1.0, "query": 1.0},
+      "256": {"local": 0.796875, "memory": 1.0, "query": 1.0},
+      "32": {"local": 0.8984375, "memory": 1.0, "query": 1.0},
+      "64": {"local": 0.8203125, "memory": 1.0, "query": 1.0}
+    }
+  },
+  "status": "architecture proxy only; slots/prefix remain candidates until real Compound targets and VLab16 CUDA benchmark",
+  "streaming_equivalence_1024": {
+    "chunk_sizes": [16, 64, 256, 1024],
+    "max_abs_diff": 1.0728836059570312e-05,
+    "memory_state_accuracy_all": 1.0,
+    "query_accuracy_all": 1.0,
+    "state_shape": "[batch,4,16] + normalizer [batch,4]"
+  }
+}
