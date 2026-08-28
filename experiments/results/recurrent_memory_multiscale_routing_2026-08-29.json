@@ -1,0 +1,22 @@
+{
+  "experiment": "recurrent-memory-multiscale-routing",
+  "independent_multibank": {
+    "1": {"fast_late": 0.9951171875, "medium_late": 0.9861653447151184, "params": 9963, "recon": 0.998565673828125, "slow_late": 0.64453125},
+    "2": {"fast_late": 0.995361328125, "medium_late": 0.7921549677848816, "params": 9963, "recon": 0.999969482421875, "slow_late": 0.7942708134651184},
+    "3": {"fast_late": 1.0, "medium_late": 0.9097493290901184, "params": 9963, "recon": 0.999664306640625, "slow_late": 0.9404296875}
+  },
+  "interpretation": {
+    "decision": "carry independent multibank memory forward as the multiscale reference; learned shared-slot timescales remain an ablation",
+    "fixed_multiband": "forcing decay bands without independent routing did not materially improve slow retention",
+    "independent_multibank": "separate write/read paths for fast-medium-slow banks materially improved long-state retention across three seeds",
+    "per_slot_decay": "learned slot decays clustered near 0.968-0.976 and did not recover slow state",
+    "shared_decay": "single shared decay favored fast state and largely forgot slow state"
+  },
+  "schema_version": 1,
+  "single_memory_seed1": {
+    "fixed_multiband": [{"decays": [0.9, 0.9, 0.97, 0.97, 0.995, 0.995], "fast_late": 0.9580891728401184, "medium_late": 0.5367838740348816, "recon": 0.999481201171875, "slow_late": 0.274169921875}],
+    "per_slot_decay": [{"decays": [0.9678059220314026, 0.970825731754303, 0.9732944965362549, 0.9759422540664673, 0.9716994166374207, 0.9710927605628967], "fast_late": 0.9036458134651184, "medium_late": 0.6083170771598816, "recon": 1.0, "slow_late": 0.260498046875}],
+    "shared_decay": [{"decays": [0.9673366546630859], "fast_late": 0.927978515625, "medium_late": 0.5936686396598816, "recon": 1.0, "slow_late": 0.2654622495174408}]
+  },
+  "task": {"fast_update_period": 24, "late_eval_start": 160, "medium_update_period": 96, "sequence_length": 256, "slow_update": "position 0 only", "steps": 120}
+}
