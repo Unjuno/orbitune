@@ -26,7 +26,7 @@ def test_local_launcher_requires_cuda_and_bounded_container_isolation() -> None:
     assert "--security-opt no-new-privileges" in launcher
     assert "--device cuda" in launcher
     assert "--require-cuda" in launcher
-    assert "git status --porcelain --untracked-files=no" in launcher
+    assert "git status --porcelain --untracked-files=all" in launcher
     assert "RUNPOD_API_KEY" not in launcher
 
 
