@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import torch
@@ -10,9 +11,11 @@ SCRIPT = Path(__file__).parents[1] / "experiments" / "recurrent_memory_arch_prox
 
 
 def _load_module():  # type: ignore[no-untyped-def]
-    spec = importlib.util.spec_from_file_location("orbitune_recurrent_memory_proxy", SCRIPT)
+    module_name = "orbitune_recurrent_memory_proxy"
+    spec = importlib.util.spec_from_file_location(module_name, SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
