@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "date": "2026-08-29",
+  "scope": "balanced synthetic Compound records using orbitune-compound-memory-targets-v0-experimental; not real MIDI",
+  "training": {
+    "sequence_length": 128,
+    "steps": 60,
+    "batch": 4,
+    "seeds": [1, 2, 3],
+    "loss": "class-balanced per-head cross entropy",
+    "metric": "mean macro recall per memory tier"
+  },
+  "runs": [
+    {"mode":"shared_matched","seed":1,"parameters":43984,"fast_macro_recall":0.2586924986,"medium_macro_recall":0.3005832073,"slow_macro_recall":0.1610680336,"next_event_type_accuracy":0.8941929340},
+    {"mode":"shared_matched","seed":2,"parameters":43984,"fast_macro_recall":0.2603869962,"medium_macro_recall":0.3021336964,"slow_macro_recall":0.1615401498,"next_event_type_accuracy":0.8873031735},
+    {"mode":"shared_matched","seed":3,"parameters":43984,"fast_macro_recall":0.2855451567,"medium_macro_recall":0.2586657091,"slow_macro_recall":0.1912518425,"next_event_type_accuracy":0.8869750500},
+    {"mode":"multibank_routed","seed":1,"parameters":43986,"fast_macro_recall":0.4574660861,"medium_macro_recall":0.3366680718,"slow_macro_recall":0.1550657735,"next_event_type_accuracy":0.8941929340},
+    {"mode":"multibank_routed","seed":2,"parameters":43986,"fast_macro_recall":0.4315717927,"medium_macro_recall":0.3225343129,"slow_macro_recall":0.2002078071,"next_event_type_accuracy":0.8861548305},
+    {"mode":"multibank_routed","seed":3,"parameters":43986,"fast_macro_recall":0.5328166397,"medium_macro_recall":0.2685959503,"slow_macro_recall":0.2020872030,"next_event_type_accuracy":0.8886154890}
+  ],
+  "means": {
+    "shared_matched": {"fast_macro_recall":0.2682082172,"medium_macro_recall":0.2871275376,"slow_macro_recall":0.1712866753,"next_event_type_accuracy":0.8894903859},
+    "multibank_routed": {"fast_macro_recall":0.4739515061,"medium_macro_recall":0.3092661117,"slow_macro_recall":0.1857869279,"next_event_type_accuracy":0.8896544178}
+  },
+  "delta_multibank_minus_shared": {
+    "fast_macro_recall": 0.2057432889,
+    "medium_macro_recall": 0.0221385741,
+    "slow_macro_recall": 0.0145002526,
+    "next_event_type_accuracy": 0.0001640320
+  },
+  "interpretation": "With parameters matched within two parameters and target heads restricted to memory-only readouts, routed fast/medium/slow banks materially improve fast target retention and modestly improve medium/slow macro recall without changing the next-event auxiliary. Slow-memory gains remain small and require real-MIDI validation before the slow-bank design is frozen."
+}
