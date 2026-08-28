@@ -20,8 +20,8 @@ if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "could not resolve exact source SHA" >&2
   exit 13
 fi
-if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
-  echo "tracked working tree must be clean before the local GPU canary" >&2
+if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+  echo "working tree must be clean before the local GPU canary" >&2
   exit 14
 fi
 
