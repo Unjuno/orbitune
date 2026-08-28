@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "date": "2026-08-29",
+  "scope": "synthetic Compound-field proxy; 12-field records, not real MIDI",
+  "training": {
+    "sequence_length": 128,
+    "steps": 70,
+    "batch": 4,
+    "seeds": [1, 2, 3]
+  },
+  "runs": [
+    {"mode":"shared_matched","seed":1,"parameters":30327,"slow_late":0.4965277910,"medium_late":0.46484375,"fast_late":0.9353298545,"next_event_type":0.9342191815},
+    {"mode":"shared_matched","seed":2,"parameters":30327,"slow_late":0.2942708433,"medium_late":0.4796006978,"fast_late":0.9379340410,"next_event_type":0.9365157485},
+    {"mode":"shared_matched","seed":3,"parameters":30327,"slow_late":0.4535590410,"medium_late":0.4921875,"fast_late":0.9370659590,"next_event_type":0.9312664270},
+    {"mode":"multibank_routed","seed":1,"parameters":30329,"slow_late":0.7725694180,"medium_late":0.4904513955,"fast_late":0.9357638955,"next_event_type":0.9304462075},
+    {"mode":"multibank_routed","seed":2,"parameters":30329,"slow_late":0.5759548545,"medium_late":0.5017361045,"fast_late":0.9361979365,"next_event_type":0.9330708385},
+    {"mode":"multibank_routed","seed":3,"parameters":30329,"slow_late":0.6540798545,"medium_late":0.5251736045,"fast_late":0.9366319179,"next_event_type":0.9325787425}
+  ],
+  "means": {
+    "shared_matched": {"slow_late":0.4147858918,"medium_late":0.4788773159,"fast_late":0.9367766182,"next_event_type":0.9340004524},
+    "multibank_routed": {"slow_late":0.6675347090,"medium_late":0.5057870348,"fast_late":0.9361979167,"next_event_type":0.9320319295}
+  },
+  "interpretation": "With parameter counts matched within two parameters, target-specific fast/medium/slow banks improve slow-state retention substantially while preserving fast-state and next-event-type accuracy. This supports routing separation, but real Compound/MIDI targets remain the required gate."
+}
