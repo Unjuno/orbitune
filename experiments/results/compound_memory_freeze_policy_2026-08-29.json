@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "date": "2026-08-29",
+  "scope": "balanced synthetic Compound memory-target gradient-interference proxy; final local Transformer not modeled",
+  "training": {"stage1_steps":60,"stage2_steps":80,"batch":4,"seeds":[1,2,3]},
+  "stage1_mean": {
+    "fast_macro_recall": 0.4746953144,
+    "medium_macro_recall": 0.3126037120,
+    "slow_macro_recall": 0.1890647991
+  },
+  "policies": {
+    "frozen": {
+      "after_mean": {"fast_macro_recall":0.4746953144,"medium_macro_recall":0.3126037120,"slow_macro_recall":0.1890647991,"next_event_type_accuracy":0.8904746175},
+      "memory_delta": {"fast":0.0,"medium":0.0,"slow":0.0}
+    },
+    "low_lr": {
+      "after_mean": {"fast_macro_recall":0.4783878736,"medium_macro_recall":0.3134822119,"slow_macro_recall":0.1710062645,"next_event_type_accuracy":0.8905292948},
+      "memory_delta": {"fast":0.0036925591,"medium":0.0008784999,"slow":-0.0180585346}
+    },
+    "joint": {
+      "after_mean": {"fast_macro_recall":0.4293683101,"medium_macro_recall":0.2823925777,"slow_macro_recall":0.1710116348,"next_event_type_accuracy":0.8939195077},
+      "memory_delta": {"fast":-0.0453270044,"medium":-0.0302111342,"slow":-0.0180531643}
+    }
+  },
+  "interpretation": "Full joint stage-2 optimization gains only ~0.34 percentage point in the next-event auxiliary over frozen memory while reducing fast and medium memory macro recall materially. Freezing memory preserves all memory metrics. Low-LR memory is a plausible compromise for later real-data tests but still degrades the weak slow target."
+}
