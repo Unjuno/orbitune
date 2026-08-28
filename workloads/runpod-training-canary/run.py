@@ -89,9 +89,13 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--require-cuda", action="store_true")
+    parser.add_argument("--workload-id", default=WORKLOAD_ID)
     args = parser.parse_args()
     if args.steps <= 0 or args.batch_size <= 0 or args.seq_len <= 1 or args.validation_interval <= 0:
         raise SystemExit("steps/batch-size/validation-interval must be positive and seq-len must exceed 1")
+    allowed_workload_id = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+    if not args.workload_id or len(args.workload_id) > 128 or any(ch not in allowed_workload_id for ch in args.workload_id):
+        raise SystemExit("workload-id must be 1-128 characters using letters, digits, dash, underscore, or dot")
 
     source_sha = os.environ.get("ORBITUNE_SOURCE_SHA", "unbaked-local").strip()
     if source_sha != "unbaked-local" and (len(source_sha) != 40 or any(ch not in "0123456789abcdef" for ch in source_sha)):
@@ -174,7 +178,7 @@ def main() -> int:
     }
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
-        "workload_id": WORKLOAD_ID,
+        "workload_id": args.workload_id,
         "source_sha": source_sha,
         "status": "pass" if passed else "fail",
         "purpose": "GPU/container/training/checkpoint infrastructure canary; not a musical-quality benchmark",
