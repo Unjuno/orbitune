@@ -13,6 +13,7 @@ D_MODEL="${D_MODEL:-256}"
 HEADS="${HEADS:-4}"
 SLOTS="${SLOTS:-16}"
 CHUNK_SIZE="${CHUNK_SIZE:-128}"
+HOT_WINDOW="${HOT_WINDOW:-256}"
 WARMUP="${WARMUP:-3}"
 ITERATIONS="${ITERATIONS:-10}"
 
@@ -49,6 +50,7 @@ echo "host=$HOST_LABEL"
 echo "source_sha=$SOURCE_SHA"
 echo "gpu=$GPU_INFO"
 echo "lengths=$LENGTHS"
+echo "hot_window=$HOT_WINDOW"
 
 docker build \
   --file workloads/recurrent-memory-cuda-benchmark/Dockerfile \
@@ -74,11 +76,12 @@ docker run --rm \
   --heads "$HEADS" \
   --slots "$SLOTS" \
   --chunk-size "$CHUNK_SIZE" \
+  --hot-window "$HOT_WINDOW" \
   --warmup "$WARMUP" \
   --iterations "$ITERATIONS" \
   --out /outputs/result.json
 
-python - "$OUTPUT_DIR/result.json" "$EXPECTED_GPU_SUBSTRING" "$LENGTHS" <<'PY'
+python - "$OUTPUT_DIR/result.json" "$EXPECTED_GPU_SUBSTRING" "$LENGTHS" "$HOT_WINDOW" <<'PY'
 import json
 import pathlib
 import sys
@@ -86,18 +89,22 @@ import sys
 path = pathlib.Path(sys.argv[1])
 expected_gpu = sys.argv[2]
 lengths = [int(v) for v in sys.argv[3].split(",")]
+hot_window = int(sys.argv[4])
 result = json.loads(path.read_text(encoding="utf-8"))
 
 assert result["schema_version"] == 1
 assert result["device"] == "cuda"
 assert expected_gpu in result["gpu_name"]
+assert result["hot_window"] == hot_window
 assert result["results"]
 
 parallel = [r for r in result["results"] if r["kernel"] in {"linear_parallel_scan", "sdpa_full_causal"}]
 stream = [r for r in result["results"] if r["kernel"] in {"linear_recurrent_stream", "sdpa_kv_stream"}]
+hot_cold = [r for r in result["results"] if r["kernel"] == "hot_cold_memory_first_stream"]
 assert sorted({r["length"] for r in parallel}) == sorted(lengths)
 assert len(parallel) == 2 * len(lengths)
 assert len(stream) == 2
+assert sorted(r["length"] for r in hot_cold) == sorted(lengths)
 for row in result["results"]:
     assert row["status"] in {"ok", "oom"}
     if row["status"] == "ok":
@@ -110,13 +117,27 @@ linear_stream = next(r for r in stream if r["kernel"] == "linear_recurrent_strea
 sdpa_stream = next(r for r in stream if r["kernel"] == "sdpa_kv_stream")
 assert linear_stream["state_or_cache_bytes"] < sdpa_stream["state_or_cache_bytes"]
 
+steady = [r for r in hot_cold if r["length"] >= hot_window]
+assert steady
+assert len({r["state_or_cache_bytes"] for r in steady}) == 1
+full_kv_by_length = {
+    r["length"]: r["state_or_cache_bytes"]
+    for r in parallel
+    if r["kernel"] == "sdpa_full_causal"
+}
+for row in steady:
+    if row["length"] > hot_window:
+        assert row["state_or_cache_bytes"] < full_kv_by_length[row["length"]]
+
 print(json.dumps({
     "status": "pass",
     "gpu_name": result["gpu_name"],
     "dtype": result["dtype"],
     "lengths": lengths,
+    "hot_window": hot_window,
     "linear_stream_state_bytes": linear_stream["state_or_cache_bytes"],
     "sdpa_stream_cache_bytes": sdpa_stream["state_or_cache_bytes"],
+    "hot_cold_steady_state_bytes": steady[-1]["state_or_cache_bytes"],
     "result": str(path),
 }, indent=2, sort_keys=True))
 PY
