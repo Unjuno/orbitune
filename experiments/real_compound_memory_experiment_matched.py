@@ -18,27 +18,25 @@ class SharedMatchedExact(base.SharedMatched):
     """Shared-memory control with exactly the routed model's parameter count.
 
     The original real-data harness was 194 parameters smaller than the routed
-    multibank model (157,456 vs 157,650).  This adds a 48->4 bias-free
-    calibration probe (192 parameters) plus two learned gates.  The probe is
-    applied as per-tier logit temperature modulation, so all 194 parameters are
-    on the loss path rather than being inert bookkeeping parameters.
+    multibank model (157,456 vs 157,650). This adds a 48->4 bias-free memory
+    calibration probe (192 parameters) plus two learned memory gates. All 194
+    parameters are on the loss path and are classified as memory parameters by
+    the staged optimizer policy.
     """
 
     def __init__(self) -> None:
         super().__init__()
-        self.capacity_probe = nn.Linear(base.D_MODEL, 4, bias=False)
-        self.capacity_gates = nn.Parameter(torch.tensor([0.1, 0.1]))
+        self.memory_capacity_probe = nn.Linear(base.D_MODEL, 4, bias=False)
+        self.memory_capacity_gates = nn.Parameter(torch.tensor([0.1, 0.1]))
 
     def forward_chunk(self, records: torch.Tensor, state):  # type: ignore[no-untyped-def]
         fast, medium, slow, event, next_state = super().forward_chunk(records, state)
         hidden = self.embedding(records)
-        probe = torch.tanh(self.capacity_probe(hidden))
-        gain = self.capacity_gates[0]
-        offset = self.capacity_gates[1]
+        probe = torch.tanh(self.memory_capacity_probe(hidden))
+        gain = self.memory_capacity_gates[0]
+        offset = self.memory_capacity_gates[1]
 
         def scale(logits: torch.Tensor, channel: int) -> torch.Tensor:
-            # Multiplicative temperature and class-index-sensitive slope both
-            # affect cross-entropy, avoiding an inert same-offset correction.
             temperature = 1.0 + gain * probe[:, :, channel : channel + 1]
             classes = torch.linspace(
                 -1.0,
@@ -57,8 +55,6 @@ class SharedMatchedExact(base.SharedMatched):
         return fast, medium, slow, event, next_state
 
 
-# Patch the base module's globals because base.run/base.parse_args resolve MODELS
-# in their own module namespace.
 base.SharedMatched = SharedMatchedExact
 base.MODELS = {
     "shared_matched": SharedMatchedExact,
@@ -68,8 +64,6 @@ base.MODELS = {
 SharedMatched = SharedMatchedExact
 RoutedMultiBank = base.RoutedMultiBank
 MODELS = base.MODELS
-
-# Re-export the public experiment helpers used by tests and callers.
 load_splits = base.load_splits
 target_profile = base.target_profile
 train_memory_stage = base.train_memory_stage
