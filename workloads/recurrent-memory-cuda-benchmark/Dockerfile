@@ -7,5 +7,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 COPY experiments/recurrent_memory_chunkwise_scan.py ./experiments/recurrent_memory_chunkwise_scan.py
 COPY experiments/recurrent_memory_cuda_benchmark.py ./experiments/recurrent_memory_cuda_benchmark.py
+COPY experiments/recurrent_memory_hot_cold_cuda_benchmark.py ./experiments/recurrent_memory_hot_cold_cuda_benchmark.py
 
-ENTRYPOINT ["python", "experiments/recurrent_memory_cuda_benchmark.py"]
+ENTRYPOINT ["python", "experiments/recurrent_memory_hot_cold_cuda_benchmark.py"]
