@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 
-import real_compound_memory_experiment_matched as memory
+
+EXPERIMENT_DIR = Path(__file__).resolve().parent
+if str(EXPERIMENT_DIR) not in sys.path:
+    sys.path.insert(0, str(EXPERIMENT_DIR))
+
+import real_compound_memory_experiment_matched as memory  # noqa: E402
 
 
 @dataclass
