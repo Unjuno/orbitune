@@ -9,5 +9,6 @@ ENV PYTHONPATH=/workspace/orbitune \
 COPY orbitune/ ./orbitune/
 COPY experiments/recurrent_memory_chunkwise_scan.py ./experiments/recurrent_memory_chunkwise_scan.py
 COPY experiments/real_compound_memory_experiment.py ./experiments/real_compound_memory_experiment.py
+COPY experiments/real_compound_memory_experiment_matched.py ./experiments/real_compound_memory_experiment_matched.py
 
-ENTRYPOINT ["python", "experiments/real_compound_memory_experiment.py"]
+ENTRYPOINT ["python", "experiments/real_compound_memory_experiment_matched.py"]
