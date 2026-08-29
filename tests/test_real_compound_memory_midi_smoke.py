@@ -9,11 +9,11 @@ from types import SimpleNamespace
 from orbitune.compound_dataset import prepare_compound_split_corpus
 
 
-SCRIPT = Path(__file__).parents[1] / "experiments" / "real_compound_memory_experiment.py"
+SCRIPT = Path(__file__).parents[1] / "experiments" / "real_compound_memory_experiment_matched.py"
 
 
 def _load_module():  # type: ignore[no-untyped-def]
-    name = "orbitune_real_compound_memory_midi_smoke"
+    name = "orbitune_real_compound_memory_midi_smoke_matched"
     spec = importlib.util.spec_from_file_location(name, SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -34,8 +34,6 @@ def _vlq(value: int) -> bytes:
 
 
 def _midi_bytes(seed: int, notes: int = 40) -> bytes:
-    # Type-0 SMF, 96 PPQ. Includes tempo, program changes, notes and CC64 so
-    # the raw-MIDI -> Compound -> memory-target path exercises several fields.
     track = bytearray()
     track += b"\x00\xff\x51\x03" + int(500_000 + seed * 1_000).to_bytes(3, "big")
     track += b"\x00" + bytes([0xC0, seed % 32])
@@ -58,7 +56,6 @@ def test_raw_midi_to_real_memory_harness_smoke(tmp_path: Path) -> None:
     module = _load_module()
     source = tmp_path / "midi"
     source.mkdir()
-    # Four distinct files guarantee non-empty deterministic train/validation.
     for seed in range(1, 5):
         (source / f"fixture-{seed}.mid").write_bytes(_midi_bytes(seed))
 
@@ -87,8 +84,6 @@ def test_raw_midi_to_real_memory_harness_smoke(tmp_path: Path) -> None:
     assert profile["medium"]["events"] > 0
     assert profile["slow"]["events"] > 0
 
-    # Exercise the actual state-carry training/evaluation path on raw-MIDI-derived
-    # Compound data. Keep it tiny so this remains CI-safe rather than a benchmark.
     args = SimpleNamespace(
         device="cpu",
         train_jsonl=str(train_jsonl),
@@ -112,7 +107,6 @@ def test_raw_midi_to_real_memory_harness_smoke(tmp_path: Path) -> None:
     assert result["split"]["validation"]["songs"] == 1
     assert result["training"]["state_carry"].startswith("composition-local")
     assert result["validation_after_composer"]["events_evaluated"] > 0
-    # Frozen composer training must not alter consolidated memory metrics.
     assert result["memory_delta"]["fast_macro_recall"] == 0.0
     assert result["memory_delta"]["medium_macro_recall"] == 0.0
     assert result["memory_delta"]["slow_macro_recall"] == 0.0
