@@ -35,20 +35,17 @@ FIELD_NAMES = {
     10: "continuous_coarse",
     11: "continuous_residual",
 }
-# Compound event type -> active output fields. a4 (field 7) is intentionally
-# absent because the current experimental tokenizer does not assign semantics
-# to it for any supported event type.
 ACTIVE_FIELDS = {
-    0: {0, 1, 2, 3, 4, 6, 8, 9},  # NOTE
-    1: {0, 1, 2, 3, 4, 10, 11},  # CC
-    2: {0, 1, 2, 3, 4},  # PROGRAM
-    3: {0, 1, 2, 3, 4, 5},  # BANK
-    4: {0, 2, 3, 4},  # TEMPO
-    5: {0, 1, 2, 3, 4},  # PEDAL
-    6: {0, 1, 2, 3, 10, 11},  # PITCH_BEND
-    7: {0, 1, 2, 3, 10, 11},  # CHANNEL_PRESSURE
-    8: {0, 1, 2, 3, 4, 10, 11},  # POLY_PRESSURE
-    9: {0, 2, 3, 4, 5},  # TIME_SIGNATURE
+    0: {0, 1, 2, 3, 4, 6, 8, 9},
+    1: {0, 1, 2, 3, 4, 10, 11},
+    2: {0, 1, 2, 3, 4},
+    3: {0, 1, 2, 3, 4, 5},
+    4: {0, 2, 3, 4},
+    5: {0, 1, 2, 3, 4},
+    6: {0, 1, 2, 3, 10, 11},
+    7: {0, 1, 2, 3, 10, 11},
+    8: {0, 1, 2, 3, 4, 10, 11},
+    9: {0, 2, 3, 4, 5},
 }
 
 
@@ -105,7 +102,31 @@ class _MemoryConditionedBase(nn.Module):
 
 
 class NoLocalAttentionComposer(_MemoryConditionedBase):
-    """Same factorized inputs/memory interface without local self-attention."""
+    def forward_chunk(
+        self,
+        records: torch.Tensor,
+        memory_tokens: torch.Tensor,
+        history_records: torch.Tensor | None = None,
+        *,
+        start_index: int = 0,
+    ) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
+        del history_records, start_index
+        hidden = self.condition_memory(self.embedding(records), memory_tokens)
+        return self.factorized_heads(self.output_norm(hidden)), records[:, :0]
+
+
+class CapacityMatchedNoLocalComposer(NoLocalAttentionComposer):
+    """No-local baseline with the same parameter count as window-16 Transformer."""
+
+    def __init__(self, *, heads: int = 4) -> None:
+        super().__init__(heads=heads)
+        self.capacity_norm = nn.LayerNorm(D_MODEL)
+        self.capacity_ff = nn.Sequential(
+            nn.Linear(D_MODEL, 249),
+            nn.GELU(),
+            nn.Linear(249, D_MODEL),
+        )
+        self.capacity_calibration = nn.Parameter(torch.zeros(87))
 
     def forward_chunk(
         self,
@@ -117,6 +138,8 @@ class NoLocalAttentionComposer(_MemoryConditionedBase):
     ) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
         del history_records, start_index
         hidden = self.condition_memory(self.embedding(records), memory_tokens)
+        hidden = hidden + self.capacity_ff(self.capacity_norm(hidden))
+        hidden = hidden + self.capacity_calibration.mean() * torch.tanh(hidden)
         return self.factorized_heads(self.output_norm(hidden)), records[:, :0]
 
 
@@ -222,8 +245,16 @@ def _accumulate_metrics(
         if not mask.any():
             continue
         values = targets[..., index]
+        card = FIELD_CARDS[index]
+        active_values = values[mask]
+        if int(active_values.max()) >= card:
+            raise ValueError(
+                f"active target field {index} exceeds experimental cardinality {card}"
+            )
         log_probs = F.log_softmax(logits[index], dim=-1)
-        chosen = log_probs.gather(-1, values.clamp_max(FIELD_CARDS[index] - 1).unsqueeze(-1)).squeeze(-1)
+        chosen = log_probs.gather(
+            -1, values.clamp_max(card - 1).unsqueeze(-1)
+        ).squeeze(-1)
         accumulator["nll_sum"] += float((-chosen[mask]).sum())
         accumulator["field_correct"] += int((predictions[index][mask] == values[mask]).sum())
         accumulator["field_total"] += int(mask.sum())
@@ -235,10 +266,17 @@ def _accumulate_metrics(
 
     note = targets[..., 0].eq(0)
     if note.any():
-        accumulator["note_pitch_correct"] += int(predictions[4][note].eq(targets[..., 4][note]).sum())
-        accumulator["note_velocity_correct"] += int(predictions[6][note].eq(targets[..., 6][note]).sum())
+        accumulator["note_pitch_correct"] += int(
+            predictions[4][note].eq(targets[..., 4][note]).sum()
+        )
+        accumulator["note_velocity_correct"] += int(
+            predictions[6][note].eq(targets[..., 6][note]).sum()
+        )
         accumulator["note_duration_correct"] += int(
-            (predictions[8][note].eq(targets[..., 8][note]) & predictions[9][note].eq(targets[..., 9][note])).sum()
+            (
+                predictions[8][note].eq(targets[..., 8][note])
+                & predictions[9][note].eq(targets[..., 9][note])
+            ).sum()
         )
         accumulator["notes"] += int(note.sum())
     accumulator["delta_correct"] += int(
