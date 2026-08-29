@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -115,3 +116,15 @@ def test_raw_midi_to_real_memory_harness_smoke(tmp_path: Path) -> None:
     assert result["memory_delta"]["fast_macro_recall"] == 0.0
     assert result["memory_delta"]["medium_macro_recall"] == 0.0
     assert result["memory_delta"]["slow_macro_recall"] == 0.0
+    print(
+        "REAL_MIDI_SMOKE_RESULT="
+        + json.dumps(
+            {
+                "split": result["split"],
+                "before": result["validation_before_composer"],
+                "after": result["validation_after_composer"],
+                "memory_delta": result["memory_delta"],
+            },
+            sort_keys=True,
+        )
+    )
