@@ -11,11 +11,11 @@ from orbitune.compound import COMPOUND_TOKENIZER_ABI
 from orbitune.tokenizer.compound_event import COMPOUND_RECORD_WIDTH
 
 
-SCRIPT = Path(__file__).parents[1] / "experiments" / "real_compound_memory_experiment.py"
+SCRIPT = Path(__file__).parents[1] / "experiments" / "real_compound_memory_experiment_matched.py"
 
 
 def _load_module():  # type: ignore[no-untyped-def]
-    name = "orbitune_real_compound_memory_experiment"
+    name = "orbitune_real_compound_memory_experiment_matched"
     spec = importlib.util.spec_from_file_location(name, SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -28,10 +28,8 @@ def _records(offset: int, count: int = 24) -> list[list[int]]:
     rows: list[list[int]] = []
     for index in range(count):
         if index % 8 == 0:
-            # PROGRAM; varies medium/slow program-family state.
             row = [2, index % 2, 1, 0, (offset + index * 7) % 128, 0, 0, 0, 0, 0, 0, 0]
         elif index % 11 == 0:
-            # TEMPO; a1 intentionally above 127 to verify the real proxy keeps tempo information.
             row = [4, 0, 1, 0, 180 + offset + index, 0, 0, 0, 0, 0, 0, 0]
         elif index % 13 == 0:
             row = [5, index % 2, 1, 0, (index // 13) % 2, 0, 0, 0, 0, 0, 0, 0]
@@ -78,7 +76,7 @@ def test_real_harness_models_are_parameter_matched_and_state_is_fixed_size() -> 
     routed = module.RoutedMultiBank()
     shared_parameters = sum(parameter.numel() for parameter in shared.parameters())
     routed_parameters = sum(parameter.numel() for parameter in routed.parameters())
-    assert abs(shared_parameters - routed_parameters) <= 2
+    assert shared_parameters == routed_parameters
 
     records = torch.tensor([_records(3, count=12)], dtype=torch.long)
     *_, shared_state = shared.forward_chunk(records, None)
