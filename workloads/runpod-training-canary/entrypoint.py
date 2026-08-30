@@ -15,9 +15,11 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 COMPLETION_SCHEMA_VERSION = 2
+COMPLETION_V3_SCHEMA_VERSION = 3
 WORKLOAD_ID = "orbitune-runpod-training-canary-v1"
 RESULT_LOG_MARKER = "GPU_CONTROL_RESULT_JSON_V1:"
 COMPLETION_LOG_MARKER = "GPU_CONTROL_COMPLETION_JSON_V2:"
+COMPLETION_V3_LOG_MARKER = "GPU_CONTROL_COMPLETION_JSON_V3:"
 _MAX_MARKER_BYTES = 16 * 1024
 _MISSING_RESULT_EXIT_CODE = 5
 _COMPLETION_ERROR_EXIT_CODE = 4
@@ -242,7 +244,7 @@ def _emit_bytes_marker(prefix: str, label: str, raw: bytes) -> None:
     print(marker.decode("ascii"), flush=True)
 
 
-def _write_completion_evidence(output_dir: Path, result_bytes: bytes, values: dict[str, str]) -> tuple[Path, bytes]:
+def _validated_completion_inputs(result_bytes: bytes, values: dict[str, str]) -> tuple[str, bytearray, dict[str, object]]:
     source_sha = os.environ.get("ORBITUNE_SOURCE_SHA", "").strip()
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
         raise ValueError("authenticated completion requires a baked 40-character ORBITUNE_SOURCE_SHA")
@@ -263,13 +265,12 @@ def _write_completion_evidence(output_dir: Path, result_bytes: bytes, values: di
         secret = bytearray(base64.b64decode(values["key_b64"], validate=True))
     except Exception as exc:
         raise ValueError("GPU_CONTROL_COMPLETION_KEY_B64 must be valid base64") from exc
-    values["key_b64"] = ""
     if len(secret) < 32:
         for index in range(len(secret)):
             secret[index] = 0
         raise ValueError("GPU_CONTROL_COMPLETION_KEY_B64 must decode to at least 32 bytes")
     result_digest = "sha256:" + hashlib.sha256(result_bytes).hexdigest()
-    signed = {
+    signed: dict[str, object] = {
         "execution_name": values["execution_name"],
         "image_digest": values["image_digest"],
         "key_id": values["key_id"],
@@ -278,6 +279,11 @@ def _write_completion_evidence(output_dir: Path, result_bytes: bytes, values: di
         "result_sha256": result_digest,
         "source_sha": source_sha,
     }
+    return source_sha, secret, signed
+
+
+def _write_completion_evidence(output_dir: Path, result_bytes: bytes, values: dict[str, str]) -> tuple[Path, bytes]:
+    _, secret, signed = _validated_completion_inputs(result_bytes, values)
     canonical = json.dumps(signed, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
     try:
         mac = hmac.new(secret, canonical, hashlib.sha256).hexdigest()
@@ -291,8 +297,36 @@ def _write_completion_evidence(output_dir: Path, result_bytes: bytes, values: di
     return path, completion_bytes
 
 
+def _write_completion_v3_evidence(
+    output_dir: Path,
+    result_bytes: bytes,
+    values: dict[str, str],
+    *,
+    process_exit_code: int,
+) -> tuple[Path, bytes]:
+    if isinstance(process_exit_code, bool) or not isinstance(process_exit_code, int) or not 0 <= process_exit_code <= 255:
+        raise ValueError("process_exit_code must be an integer between 0 and 255")
+    _, secret, signed = _validated_completion_inputs(result_bytes, values)
+    signed_v3: dict[str, object] = {**signed, "process_exit_code": process_exit_code}
+    canonical = json.dumps(signed_v3, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    try:
+        mac = hmac.new(secret, canonical, hashlib.sha256).hexdigest()
+    finally:
+        for index in range(len(secret)):
+            secret[index] = 0
+    evidence: dict[str, object] = {
+        **signed_v3,
+        "mac_sha256": mac,
+        "schema_version": COMPLETION_V3_SCHEMA_VERSION,
+    }
+    completion_bytes = _json_bytes(evidence)
+    path = output_dir / "completion-v3.json"
+    _atomic_bytes(path, completion_bytes)
+    return path, completion_bytes
+
+
 def _seal_authenticated_outputs(output_dir: Path) -> None:
-    for name in ("result.json", "completion.json", "canary-base.pt"):
+    for name in ("result.json", "completion.json", "completion-v3.json", "canary-base.pt"):
         path = output_dir / name
         try:
             info = os.lstat(path)
@@ -340,11 +374,24 @@ def main() -> int:
             result_bytes = _read_regular_file(result_path)
         _validate_result_status(result_bytes, effective_exit_code=effective_exit_code)
         completion_bytes = None
+        completion_v3_bytes = None
         if completion_values is not None:
-            _, completion_bytes = _write_completion_evidence(output_dir, result_bytes, completion_values)
+            # v2 is emitted temporarily for compatibility with the existing log-smoke path.
+            # v3 is the forward contract for durable provider-independent result collection.
+            v2_values = dict(completion_values)
+            _, completion_bytes = _write_completion_evidence(output_dir, result_bytes, v2_values)
+            _, completion_v3_bytes = _write_completion_v3_evidence(
+                output_dir,
+                result_bytes,
+                completion_values,
+                process_exit_code=effective_exit_code,
+            )
+            completion_values["key_b64"] = ""
         _emit_bytes_marker(RESULT_LOG_MARKER, "result.json", result_bytes)
         if completion_bytes is not None:
             _emit_bytes_marker(COMPLETION_LOG_MARKER, "completion.json", completion_bytes)
+        if completion_v3_bytes is not None:
+            _emit_bytes_marker(COMPLETION_V3_LOG_MARKER, "completion-v3.json", completion_v3_bytes)
         if authenticated:
             _seal_authenticated_outputs(output_dir)
     except Exception as exc:
