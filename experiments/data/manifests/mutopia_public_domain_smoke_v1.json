@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "name": "mutopia-public-domain-smoke-v1",
+  "intended_use": "small provenance-auditable real-MIDI architecture smoke only; not a production corpus",
+  "license_policy": "include only pieces whose Mutopia piece page explicitly lists Copyright: Public Domain",
+  "items": [
+    {
+      "id": "mutopia-528-ode-to-joy",
+      "title": "Ode to Joy",
+      "composer": "L. V. Beethoven",
+      "instrumentation": "Voice (SATB)",
+      "piece_page": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=528",
+      "midi_url": "https://www.mutopiaproject.org/ftp/BeethovenLv/ode/ode.mid",
+      "license": "Public Domain",
+      "mutopia_music_id": "Mutopia-2009/08/05-528"
+    },
+    {
+      "id": "mutopia-275-search-light-rag",
+      "title": "Search-Light Rag",
+      "composer": "S. Joplin",
+      "instrumentation": "Piano",
+      "piece_page": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=275",
+      "midi_url": "https://www.mutopiaproject.org/ftp/JoplinS/search/search.mid",
+      "license": "Public Domain",
+      "mutopia_music_id": "Mutopia-2014/02/25-275"
+    },
+    {
+      "id": "mutopia-941-beethoven-symphony5-m1",
+      "title": "Symphony No. 5 - Opus 67 (1st Movement)",
+      "composer": "L. V. Beethoven",
+      "instrumentation": "Orchestra",
+      "piece_page": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=941",
+      "midi_url": "https://www.mutopiaproject.org/ftp/BeethovenLv/O67/Symphony5_1/Symphony5_1.mid",
+      "license": "Public Domain",
+      "mutopia_music_id": "Mutopia-2017/11/05-941"
+    },
+    {
+      "id": "mutopia-335-peacherine-rag",
+      "title": "Peacherine Rag",
+      "composer": "S. Joplin",
+      "instrumentation": "Piano",
+      "piece_page": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=335",
+      "midi_url": "https://www.mutopiaproject.org/ftp/JoplinS/peacherine/peacherine.mid",
+      "license": "Public Domain",
+      "mutopia_music_id": "Mutopia-2007/10/29-335"
+    },
+    {
+      "id": "mutopia-1888-mountain-king",
+      "title": "In the Hall of the Mountain King",
+      "composer": "E. Grieg",
+      "instrumentation": "Piano",
+      "piece_page": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=1888",
+      "midi_url": "https://www.mutopiaproject.org/ftp/GriegE/O46/Dans_l_antre_du_roi_de_la_montagne/Dans_l_antre_du_roi_de_la_montagne.mid",
+      "license": "Public Domain",
+      "mutopia_music_id": "Mutopia-2013/12/07-1888"
+    }
+  ]
+}

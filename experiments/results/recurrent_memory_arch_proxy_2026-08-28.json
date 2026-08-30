@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "experiment": "recurrent-memory-before-local-transformer-proxy",
+  "seeds": [1, 2, 3],
+  "task": {
+    "sequence_length": 48,
+    "local_attention_window": 16,
+    "long_state_query_position": 32,
+    "query_chance_accuracy": 0.125,
+    "training_steps": 300,
+    "batch_size": 12,
+    "query_loss_weight": 32.0
+  },
+  "results": {
+    "A_local": {
+      "parameters": 28576,
+      "query_accuracy": [0.171875, 0.1171875, 0.1328125],
+      "query_accuracy_mean": 0.140625,
+      "local_accuracy": [0.9461616848, 0.9561820652, 0.9556725543],
+      "local_accuracy_mean": 0.9526721014,
+      "val_loss": [0.3770029545, 0.4220843390, 0.2887177765],
+      "val_loss_mean": 0.3626016900
+    },
+    "B_linear": {
+      "parameters": 6882,
+      "query_accuracy": [1.0, 1.0, 1.0],
+      "query_accuracy_mean": 1.0,
+      "local_accuracy": [0.9624660326, 0.9699388587, 0.9665421196],
+      "local_accuracy_mean": 0.9663156703,
+      "val_loss": [0.1616461761, 0.1373315454, 0.1620343290],
+      "val_loss_mean": 0.1536706835
+    },
+    "C_naive_hybrid": {
+      "parameters": 32354,
+      "query_accuracy": [0.1328125, 0.125, 0.1640625],
+      "query_accuracy_mean": 0.140625,
+      "local_accuracy": [0.9738451087, 0.9588994565, 0.9628057065],
+      "local_accuracy_mean": 0.9651834239,
+      "val_loss": [0.2818161845, 0.4098316506, 0.2853145078],
+      "val_loss_mean": 0.3256541143
+    },
+    "D_consolidated": {
+      "parameters": 32354,
+      "query_accuracy": [0.828125, 0.984375, 0.6484375],
+      "query_accuracy_mean": 0.8203125,
+      "memory_aux_query_accuracy": [1.0, 1.0, 1.0],
+      "memory_aux_query_accuracy_mean": 1.0,
+      "local_accuracy": [0.9561820652, 0.9463315217, 0.9393682065],
+      "local_accuracy_mean": 0.9472939312,
+      "val_loss": [0.1598051675, 0.1967519410, 0.2459040433],
+      "val_loss_mean": 0.2008203839
+    }
+  },
+  "interpretation": [
+    "A models local structure but cannot retain the state beyond its bounded attention window.",
+    "B proves the fixed-size recurrent linear memory can retain the long state on this proxy.",
+    "C shows that naive serial stacking lets the downstream local Transformer ignore or erase the long-memory signal.",
+    "D shows that an explicit memory objective plus a non-optional memory conditioning path preserves substantially more long-state information while keeping strong local prediction.",
+    "CPU step-time is intentionally excluded from architectural conclusions because the recurrent state update is a transparent Python loop rather than a fused CUDA kernel."
+  ]
+}
