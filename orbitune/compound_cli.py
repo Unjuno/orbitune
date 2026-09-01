@@ -21,12 +21,13 @@ def _prepare_command(args: argparse.Namespace) -> None:
     print(json.dumps(report, indent=2, sort_keys=True))
 
 
-def _add_training_args(parser: argparse.ArgumentParser, *, resume: bool) -> None:
+def _add_training_args(parser: argparse.ArgumentParser, *, resume_command: bool) -> None:
     parser.add_argument("--train-jsonl", default="data/compound/train.jsonl")
     parser.add_argument("--validation-jsonl", default="data/compound/validation.jsonl")
     parser.add_argument("--checkpoint", default="models/compound-base.pt")
-    if not resume:
+    if not resume_command:
         parser.add_argument("--config", default="configs/compound_hierarchical_9m.json")
+        parser.add_argument("--resume", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--steps", type=int, default=10_000)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--seq-len", type=int, default=256)
@@ -66,11 +67,11 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.set_defaults(func=_prepare_command)
 
     train = sub.add_parser("train", help="start Compound Base training")
-    _add_training_args(train, resume=False)
-    train.set_defaults(func=train_command, resume=None)
+    _add_training_args(train, resume_command=False)
+    train.set_defaults(func=train_command)
 
     resume = sub.add_parser("resume", help="continue exactly from a saved Compound Base checkpoint")
-    _add_training_args(resume, resume=True)
+    _add_training_args(resume, resume_command=True)
     resume.set_defaults(func=train_command, resume_from_checkpoint=True, config=None)
 
     _add_info_parser(sub, "info", "inspect a config or checkpoint")
