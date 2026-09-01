@@ -1,6 +1,6 @@
 # Compound Transformer Base
 
-`orbitune-compound` is the local-first training and generation path for Orbitune's Transformer-first Compound MIDI Base. It coexists with the legacy Theory-REMI `orbitune` path; existing checkpoints and adapter tooling are not replaced by this branch.
+`orbitune-compound` is the local-first training and generation path for Orbitune's Transformer-first Compound MIDI Base. It coexists with the legacy Theory-REMI `orbitune` path; existing checkpoints and adapter tooling are not replaced.
 
 ## Architecture
 
@@ -20,7 +20,6 @@ The checked-in `configs/compound_hierarchical_9m.json` is approximately the same
 ```bash
 git clone https://github.com/Unjuno/orbitune.git
 cd orbitune
-git switch midi-gpt-base-complete
 
 python -m venv .venv
 source .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
