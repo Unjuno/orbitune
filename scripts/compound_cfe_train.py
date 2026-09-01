@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import math
+import os
 import random
 import time
 from dataclasses import replace
@@ -14,7 +16,17 @@ import torch.nn.functional as F
 
 import orbitune.compound_base as compound_base
 from orbitune.compound_base import CompoundBaseConfig, CompoundHierarchicalGPT
-from orbitune.compound_training import load_compound_jsonl
+from orbitune.compound_training import (
+    COMPOUND_CHECKPOINT_SCHEMA_VERSION,
+    assert_runtime_compatible,
+    atomic_torch_save,
+    build_compound_checkpoint,
+    capture_validation_window_plan,
+    execute_validation_window_plan,
+    load_compound_jsonl,
+    parse_compound_checkpoint,
+    restore_cuda_rng_state,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 _BASE_PATH = ROOT / "scripts" / "compound_cuda_train.py"
@@ -291,25 +303,45 @@ def cfe(args: argparse.Namespace) -> None:
 @torch.inference_mode()
 def validation_loss(
     model: CompoundHierarchicalGPT,
-    sampler,
+    validation_songs,
     *,
-    batch_size: int,
-    seq_len: int,
+    plan_payload: dict[str, object],
     precision: str,
-    batches: int,
-    seed: int,
-) -> float:
-    device = base.require_cuda()
-    rng = random.Random(seed)
-    values: list[float] = []
+    device: torch.device,
+) -> tuple[float, dict[str, Any]]:
+    """Run the captured validation plan against the model in eval mode.
+
+    Returns ``(mean_loss, telemetry)`` where telemetry carries the plan
+    metadata so callers can record which windows were used. Each validation
+    call uses the exact same windows for the lifetime of the run (and across
+    resumes that share the plan), which removes the per-step window noise
+    that contaminated the legacy ``seed = args.seed + step`` strategy.
+    """
     model.eval()
-    for _ in range(batches):
-        x, y = sampler.sample(batch_size, seq_len, rng, device)
+    batches = execute_validation_window_plan(validation_songs, plan_payload, device=device)
+    losses: list[float] = []
+    events_total = 0
+    for x, y in batches:
         with base.autocast_for(precision):
             loss, _ = base.fast_loss(model, x, y)
-        values.append(float(loss))
+        losses.append(float(loss))
+        events_total += int(y.numel())
     model.train()
-    return sum(values) / len(values)
+    mean_loss = sum(losses) / max(1, len(losses))
+    telemetry = {
+        "validation_seed": int(plan_payload["validation_seed"]),
+        "validation_batches": int(plan_payload["batches"]),
+        "validation_events": int(events_total),
+        "validation_window_hash": str(plan_payload["window_hash"]),
+        "validation_batch_size": int(plan_payload["batch_size"]),
+        "validation_seq_len": int(plan_payload["seq_len"]),
+    }
+    return mean_loss, telemetry
+
+
+def _looks_like_synthetic(path: str | Path) -> bool:
+    text = str(path).replace("\\", "/").lower()
+    return any(token in text for token in ("synthetic", "fixture", "cfe/"))
 
 
 def train(args: argparse.Namespace) -> None:
@@ -321,21 +353,53 @@ def train(args: argparse.Namespace) -> None:
     rng = random.Random(args.seed + 7919)
     install_causal_fastpath() if args.causal_fastpath else uninstall_causal_fastpath()
 
-    train_sampler = base.TensorSampler(load_compound_jsonl(args.train_jsonl))
-    validation_sampler = (
-        base.TensorSampler(load_compound_jsonl(args.validation_jsonl))
-        if args.validation_jsonl
-        else None
-    )
+    train_path = Path(args.train_jsonl)
+    validation_path = Path(args.validation_jsonl)
+    for label, path in (("train", train_path), ("validation", validation_path)):
+        if _looks_like_synthetic(path) and not args.allow_synthetic:
+            raise SystemExit(
+                f"synthetic data detected in {label} JSONL path ({path}). "
+                "Use --allow-synthetic explicitly for benchmark / smoke runs only."
+            )
+
+    train_songs = load_compound_jsonl(train_path)
+    validation_songs = load_compound_jsonl(validation_path)
+    train_sampler = base.TensorSampler(train_songs)
+
+    checkpoint_path = Path(args.checkpoint)
+    healthy_path = checkpoint_path.with_name(checkpoint_path.stem + ".healthy.pt")
+    best_path = checkpoint_path.with_name(checkpoint_path.stem + ".best.pt")
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+
     payload: dict[str, Any] = {}
+    start_step = 0
+    validation_history: list[dict[str, Any]] = []
+    loss_history: list[float] = []
+    grad_history: list[float] = []
+    non_finite_loss_count = 0
+    non_finite_grad_count = 0
+    spike_events: list[dict[str, Any]] = []
+    best_validation_loss: float | None = None
+    best_step: int | None = None
+    last_healthy_step: int | None = None
+    last_healthy_events_seen: int | None = None
+    validation_plan: dict[str, Any] | None = None
+
     if args.resume:
-        model, payload = CompoundHierarchicalGPT.load_checkpoint(args.resume, map_location=device)
+        # Load to CPU so the saved cuda_rng_state_all arrives as CPU uint8
+        # tensors (PyTorch 2.5+ rejects CUDA uint8 tensors in
+        # torch.cuda.set_rng_state_all with "RNG state must be a
+        # torch.ByteTensor"). We move the model explicitly afterwards.
+        model, raw_payload = CompoundHierarchicalGPT.load_checkpoint(
+            args.resume, map_location="cpu"
+        )
+        payload = parse_compound_checkpoint(raw_payload)
         model.to(device)
         if args.n_head is not None and model.config.n_head != args.n_head:
             raise SystemExit(
                 f"resume checkpoint n_head={model.config.n_head}, requested {args.n_head}"
             )
-        stored = (payload.get("cuda_runtime") or {}).get("precision")
+        stored = (payload.get("runtime") or {}).get("precision")
         if args.precision == "auto" and stored in {"bf16", "fp16", "fp32"}:
             precision = base.precision_from(stored)
     else:
@@ -350,6 +414,7 @@ def train(args: argparse.Namespace) -> None:
         scaler.load_state_dict(payload["amp_scaler_state_dict"])
 
     start_step = int(payload.get("step", 0))
+    start_events = int(payload.get("events_seen", 0))
     if payload.get("torch_rng_state") is not None:
         torch.set_rng_state(payload["torch_rng_state"].cpu())
     if payload.get("python_rng_state") is not None:
@@ -357,7 +422,26 @@ def train(args: argparse.Namespace) -> None:
     if payload.get("sampler_rng_state") is not None:
         rng.setstate(payload["sampler_rng_state"])
     if payload.get("cuda_rng_state_all") is not None:
-        torch.cuda.set_rng_state_all(payload["cuda_rng_state_all"])
+        # No workaround: validate dtype/device and let errors propagate.
+        restore_cuda_rng_state(payload["cuda_rng_state_all"])
+
+    health = payload.get("health") or {}
+    if isinstance(health, dict):
+        loss_history = [
+            float(x) for x in health.get("loss_history", []) if math.isfinite(float(x))
+        ]
+        grad_history = [
+            float(x) for x in health.get("grad_norm_history", []) if math.isfinite(float(x))
+        ]
+        non_finite_loss_count = int(health.get("non_finite_loss_count", 0))
+        non_finite_grad_count = int(health.get("non_finite_grad_count", 0))
+        spike_events = list(health.get("spike_events", []))
+        best_validation_loss = health.get("best_validation_loss")
+        best_step = health.get("best_step")
+        last_healthy_step = health.get("last_healthy_step")
+        last_healthy_events_seen = health.get("last_healthy_events_seen")
+    validation_history = list(payload.get("validation_history") or [])
+    validation_plan = payload.get("validation_plan")
 
     if args.compile:
         model.compile(mode=args.compile_mode)
@@ -373,18 +457,113 @@ def train(args: argparse.Namespace) -> None:
         "head_dim": model.config.d_model // model.config.n_head,
         "causal_fastpath": args.causal_fastpath,
         "cfe": True,
+        "training_jsonl": str(args.train_jsonl),
+        "validation_jsonl": str(args.validation_jsonl),
     }
-    checkpoint = Path(args.checkpoint)
+
+    drift = assert_runtime_compatible(
+        payload.get("runtime"),
+        cli_runtime=runtime,
+        allow_runtime_change=args.allow_runtime_change,
+    )
+    if drift:
+        print(
+            json.dumps({"event": "runtime_drift_acknowledged", "drift": drift}, sort_keys=True),
+            flush=True,
+        )
+
+    if validation_plan is None:
+        validation_plan = capture_validation_window_plan(
+            validation_songs,
+            validation_seed=args.validation_seed,
+            batches=args.validation_batches,
+            batch_size=min(args.batch_size, args.validation_batch_size),
+            seq_len=args.seq_len,
+        )
+
     model.train()
     interval_start = time.perf_counter()
     interval_step = start_step
     torch.cuda.reset_peak_memory_stats()
+
+    def _save_atomic(
+        *,
+        step: int,
+        events_seen: int,
+        validation_history_local: list[dict[str, Any]],
+        plan_payload: dict[str, Any],
+        best_val: float | None,
+        best_step_local: int | None,
+        last_healthy_local: int | None,
+        last_healthy_events_local: int | None,
+        target: Path,
+    ) -> None:
+        ckpt_payload = build_compound_checkpoint(
+            model=model,
+            optimizer=optimizer,
+            scaler=scaler,
+            step=step,
+            events_seen=events_seen,
+            runtime=runtime,
+            rng=rng,
+            loss_history=loss_history,
+            grad_norm_history=grad_history,
+            non_finite_loss_count=non_finite_loss_count,
+            non_finite_grad_count=non_finite_grad_count,
+            spike_events=spike_events,
+            best_validation_loss=best_val,
+            best_step=best_step_local,
+            last_healthy_step=last_healthy_local,
+            last_healthy_events_seen=last_healthy_events_local,
+            validation_history=validation_history_local,
+            validation_plan=plan_payload,
+            source_commit=os.environ.get("ORBITUNE_SOURCE_COMMIT") or os.environ.get("GITHUB_SHA"),
+        )
+        atomic_torch_save(ckpt_payload, target)
 
     for step in range(start_step + 1, args.steps + 1):
         x, y = train_sampler.sample(args.batch_size, args.seq_len, rng, device)
         loss, parts = base.train_step(
             model, optimizer, scaler, x, y, precision, args.grad_clip
         )
+        loss_value = float(loss.detach())
+        grad_norm_tensor = torch.nn.utils.clip_grad_norm_(
+            [p for p in model.parameters() if p.requires_grad],
+            args.grad_clip,
+        )
+        grad_norm_value = float(grad_norm_tensor.detach())
+
+        if not math.isfinite(loss_value):
+            non_finite_loss_count += 1
+        if not math.isfinite(grad_norm_value):
+            non_finite_grad_count += 1
+        loss_history.append(loss_value)
+        grad_history.append(grad_norm_value)
+        if len(loss_history) > args.health_history_len:
+            loss_history = loss_history[-args.health_history_len:]
+        if len(grad_history) > args.health_history_len:
+            grad_history = grad_history[-args.health_history_len:]
+
+        if (
+            len(loss_history) >= args.spike_min_samples
+            and math.isfinite(loss_value)
+        ):
+            mean = sum(loss_history) / len(loss_history)
+            var = sum((v - mean) ** 2 for v in loss_history) / len(loss_history)
+            std = math.sqrt(var)
+            if std > 1e-12:
+                zscore = (loss_value - mean) / std
+                if zscore > args.spike_z_threshold:
+                    spike_events.append(
+                        {
+                            "step": step,
+                            "kind": "loss",
+                            "loss": loss_value,
+                            "zscore": float(zscore),
+                            "gradient_norm": grad_norm_value,
+                        }
+                    )
+
         should_log = step == start_step + 1 or step % args.log_every == 0 or step == args.steps
         if should_log:
             torch.cuda.synchronize()
@@ -394,11 +573,17 @@ def train(args: argparse.Namespace) -> None:
             stats = base.cuda_stats()
             message: dict[str, Any] = {
                 "step": step,
-                "loss": float(loss),
+                "loss": loss_value,
                 "components": {k: float(v) for k, v in parts.items()},
                 "events_per_sec": n * args.batch_size * args.seq_len / elapsed,
                 "runtime": runtime,
                 "cuda": stats,
+                "health": {
+                    "non_finite_loss_count": non_finite_loss_count,
+                    "non_finite_grad_count": non_finite_grad_count,
+                    "loss_history_len": len(loss_history),
+                    "spike_count": len(spike_events),
+                },
             }
             print(json.dumps(message, sort_keys=True), flush=True)
             interval_start = time.perf_counter()
@@ -406,27 +591,65 @@ def train(args: argparse.Namespace) -> None:
             torch.cuda.reset_peak_memory_stats()
 
         if (
-            validation_sampler is not None
+            validation_songs is not None
             and args.eval_every > 0
             and (step % args.eval_every == 0 or step == args.steps)
         ):
             torch.cuda.synchronize()
-            value = validation_loss(
+            value, telemetry = validation_loss(
                 model,
-                validation_sampler,
-                batch_size=min(args.batch_size, args.validation_batch_size),
-                seq_len=args.seq_len,
+                validation_songs,
+                plan_payload=validation_plan,
                 precision=precision,
-                batches=args.validation_batches,
-                seed=args.seed + step,
+                device=device,
             )
-            print(json.dumps({"step": step, "validation_loss": value}, sort_keys=True), flush=True)
+            telemetry_full = {"step": step, "validation_loss": value, **telemetry}
+            print(json.dumps(telemetry_full, sort_keys=True), flush=True)
+            validation_history.append(telemetry_full)
+            if best_validation_loss is None or value < best_validation_loss:
+                best_validation_loss = value
+                best_step = step
+                _save_atomic(
+                    step=step,
+                    events_seen=start_events + (step - start_step) * args.batch_size * args.seq_len,
+                    validation_history_local=validation_history,
+                    plan_payload=validation_plan,
+                    best_val=best_validation_loss,
+                    best_step_local=best_step,
+                    last_healthy_local=last_healthy_step,
+                    last_healthy_events_local=last_healthy_events_seen,
+                    target=best_path,
+                )
             interval_start = time.perf_counter()
             interval_step = step
             torch.cuda.reset_peak_memory_stats()
 
         if step % args.checkpoint_every == 0 or step == args.steps:
-            base.save_checkpoint(model, optimizer, scaler, checkpoint, step, rng, runtime)
+            events_seen = start_events + (step - start_step) * args.batch_size * args.seq_len
+            last_healthy_step = step
+            last_healthy_events_seen = events_seen
+            _save_atomic(
+                step=step,
+                events_seen=events_seen,
+                validation_history_local=validation_history,
+                plan_payload=validation_plan,
+                best_val=best_validation_loss,
+                best_step_local=best_step,
+                last_healthy_local=last_healthy_step,
+                last_healthy_events_local=last_healthy_events_seen,
+                target=healthy_path,
+            )
+            _save_atomic(
+                step=step,
+                events_seen=events_seen,
+                validation_history_local=validation_history,
+                plan_payload=validation_plan,
+                best_val=best_validation_loss,
+                best_step_local=best_step,
+                last_healthy_local=last_healthy_step,
+                last_healthy_events_local=last_healthy_events_seen,
+                target=checkpoint_path,
+            )
             interval_start = time.perf_counter()
             interval_step = step
 
@@ -479,7 +702,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("train")
     p.add_argument("--train-jsonl", required=True)
-    p.add_argument("--validation-jsonl")
+    p.add_argument("--validation-jsonl", required=True)
     p.add_argument("--config", default="configs/compound_hierarchical_9m.json")
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--resume")
@@ -497,8 +720,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--eval-every", type=int, default=250)
     p.add_argument("--validation-batches", type=int, default=4)
     p.add_argument("--validation-batch-size", type=int, default=4)
+    p.add_argument("--validation-seed", type=int, default=10001,
+                   help="Fixed seed used to precompute the validation window plan.")
     p.add_argument("--compile", action="store_true")
     p.add_argument("--compile-mode", choices=("default", "reduce-overhead", "max-autotune"), default="default")
+    p.add_argument("--allow-runtime-change", action="store_true",
+                   help="Allow resuming from a checkpoint whose runtime "
+                        "(n_head, seq_len, batch_size, precision, causal_fastpath) "
+                        "differs from the current CLI. Without this flag such "
+                        "drift aborts resume to keep results reproducible.")
+    p.add_argument("--allow-synthetic", action="store_true",
+                   help="Permit training against paths that contain 'synthetic', "
+                        "'fixture' or 'cfe/' tokens. Intended for benchmark / "
+                        "smoke runs only; production training must point at a "
+                        "real corpus.")
+    p.add_argument("--health-history-len", type=int, default=200,
+                   help="Maximum entries kept in the rolling loss / grad history.")
+    p.add_argument("--spike-min-samples", type=int, default=30)
+    p.add_argument("--spike-z-threshold", type=float, default=5.0)
     p.add_argument("--seed", type=int, default=1)
     p.set_defaults(func=train)
     return parser

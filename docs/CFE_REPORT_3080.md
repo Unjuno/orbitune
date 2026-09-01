@@ -25,9 +25,9 @@ Notes:
 * The system Python had CPU-only PyTorch 2.13.0+cpu. A venv
   (`venv_cuda/`) was created and CUDA-enabled `torch==2.5.1+cu124` was
   installed from `https://download.pytorch.org/whl/cu124`.
-* No CUDA Python wheels ship **FlashAttention** with `cu124`, so flash SDPA
-  is unavailable on this build regardless of head geometry. Mem-eff and
-  cuDNN SDPA paths are available.
+* The installed PyTorch 2.5.1+cu124 environment did not expose a usable
+  FLASH_ATTENTION backend for the tested shapes; mem-eff and cuDNN SDPA
+  paths were available.
 
 ## 2. SDPA backend probe (per head geometry)
 
@@ -136,13 +136,15 @@ eval every 40 steps, 4 val microbatches.
 | 60  | 1.5876 | 1.6565 | — | — |
 | 80  | 1.4662 | 1.3863 | 4.676 | 6.845 |
 
-Training-loss trajectories are essentially identical (within seed noise
-on random synthetic data). Validation loss diverges upward for both —
-expected on random synthetic data with this LR. Real MIDI corpus
-should be evaluated by the user with the chosen config, but the
-parameter count is identical (8,857,250) and only the rotary rope
-frequency count changes (28 vs 32); representational capacity is
-comparable at this model size.
+Training-loss trajectories are within seed noise on random synthetic
+data. Validation loss diverges upward for both — expected on random
+synthetic data with this LR. Real MIDI corpus should be evaluated by
+the user with the chosen config. The two candidates share the same
+parameter count and the same `d_model`; only the attention head geometry
+differs (`head_dim=28` vs `head_dim=32`, `n_head=8` vs `n_head=7`).
+Representational capacity is **not** mathematically identical: the
+attention head count changes the rotary rope frequency count, the
+softmax temperature scaling, and which cuDNN SDPA backend is reached.
 
 ## 6. torch.compile comparison (final candidate A)
 
@@ -234,27 +236,33 @@ python tools/smoke_train_runner.py train ... --resume runs/ckpt_final_smoke.pt
 2. **head_dim=28 SDPA backend**: **none** — falls back to math/cuDNN-MHA
    because PyTorch's MemEff and cuDNN SDPA both require head_dim % 8 == 0.
 3. **head_dim=32 / 16 SDPA backend**: **cuDNN-attn fused kernel**
-   (and MemEff available). FlashAttention is not compiled in the
-   `torch==2.5.1+cu124` wheel regardless.
+   (and MemEff available). The `torch==2.5.1+cu124` wheel used here did
+   not expose a usable FLASH_ATTENTION backend for the tested shapes.
 4. **CFE top candidates** (see §4 table). Selected: **A: n_head=7,
    head_dim=32, fastpath=True, bs=128, seq=256** at 24 420 events/sec,
-   77.5% VRAM.
+   77.5% VRAM (after the extended microbatch sweep, **bs=144** reaches
+   25 717 events/sec at 87.3% peak reserved memory — a +5.2% throughput
+   win for ~10 additional percent of VRAM; the production launcher
+   defaults to `bs=144`).
 5. **Adopted config**:
-   `configs/compound_hierarchical_9m_nhead7.json` (identical to
-   `compound_hierarchical_9m.json` except `n_head=7`).
+   `configs/compound_hierarchical_9m_nhead7.json`. The geometry matches
+   `compound_hierarchical_9m.json` except `n_head=7` (`head_dim=32`).
    Launch: `run_cfe_train.ps1` (or the equivalent `compound_cfe_train.py
    train` command in §8).
 6. **Speedup vs old config**: **+16.4% events/sec** (24 420 vs 21 032
    for the prior `n_head=8, bs=128, seq=256` baseline at the same
-   microbatch and parameter count).
-7. **Peak VRAM**: 12.4 GiB / 16 GiB (77.5% reserved). Healthy headroom.
+   microbatch and parameter count). The extended sweep adds another
+   +5.2% by going from bs=128 to bs=144.
+7. **Peak VRAM**: 13.9 GiB / 16 GiB (87.3% reserved at bs=144).
+   Headroom of ~12.7% before cuDNN/optimizer state overflows.
 8. **Validation impact**: training-loss trajectories are statistically
-   indistinguishable over 80 steps; both configs are mathematically
-   equivalent at the parameter level (same `d_model=224`, same
-   `q/k/v/out_proj` weights of shape `(224,224)`); only the rotary
-   frequency count differs. Real-corpus validation should be run by
-   the user, but no signal of quality regression in the short
-   smoke run.
+   indistinguishable over 80 steps on synthetic data between the
+   `n_head=7` and `n_head=8` candidates (see `runs/ab_quality.json`).
+   The two configs share `d_model=224` and the same per-projection
+   shapes `(224,224)`; only the attention head geometry and the rotary
+   frequency count differ. Real-corpus validation should be run by the
+   user before claiming quality parity, but no signal of regression
+   on synthetic data.
 9. **`torch.compile`**: **not recommended** — only ~1.5% speedup at
    the cost of compile time and potential graph breaks from the GRU
    recurrent memory.
