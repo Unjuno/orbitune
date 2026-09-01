@@ -38,7 +38,6 @@ Persistent generation state is bounded: recent local events, bounded medium/glob
 ```bash
 git clone https://github.com/Unjuno/orbitune.git
 cd orbitune
-git switch midi-gpt-base-complete
 
 python -m venv .venv
 source .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
@@ -165,6 +164,7 @@ data/                   local prepared data (generated artifacts are not Bases)
 models/                 local candidate checkpoints
 bases/                  immutable accepted Base artifacts/manifests
 adapters/               official/community LoRA adapters
+registry/               generated Base/Adapter dependency registries
 experiments/            architecture research and reproducible proxies
 workloads/              bounded external-compute workloads
 scripts/                maintenance and legacy helper entrypoints
