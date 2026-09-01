@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 orbitune = "orbitune.cli:main"
+orbitune-compound = "orbitune.compound_base:main"
 
 [project.optional-dependencies]
 dev = [
