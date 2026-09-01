@@ -89,4 +89,5 @@ def test_benchmark_container_is_pinned_and_contains_scan_dependency() -> None:
     assert "pytorch/pytorch@sha256:" in text
     assert "recurrent_memory_chunkwise_scan.py" in text
     assert "recurrent_memory_cuda_benchmark.py" in text
-    assert 'ENTRYPOINT ["python", "experiments/recurrent_memory_cuda_benchmark.py"]' in text
+    assert "recurrent_memory_hot_cold_cuda_benchmark.py" in text
+    assert 'ENTRYPOINT ["python", "experiments/recurrent_memory_hot_cold_cuda_benchmark.py"]' in text
