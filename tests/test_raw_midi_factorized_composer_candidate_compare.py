@@ -103,7 +103,8 @@ def test_raw_midi_factorized_candidate_composers_three_seed(tmp_path: Path) -> N
             start_index: int,
         ) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
             del start_index
-            hidden, next_state = self.gru(self.embedding(records), history_records)
+            initial_state = history_records
+            hidden, next_state = self.gru(self.embedding(records), initial_state)
             hidden = self.local_norm(hidden)
             hidden = hidden + self.local_ff(hidden)
             hidden = hidden + self.local_calibration.mean() * torch.tanh(hidden)
@@ -129,7 +130,14 @@ def test_raw_midi_factorized_candidate_composers_three_seed(tmp_path: Path) -> N
     )
     train, validation = memory.load_splits(train_jsonl, validation_jsonl)
 
+    def bounded_transformer_w4():  # type: ignore[no-untyped-def]
+        model = composer.BoundedFactorizedTransformerComposer(local_window=16)
+        model.local_window = 4
+        return model
+
     model_types = {
+        "no_local": composer.CapacityMatchedNoLocalComposer,
+        "bounded_transformer_w4": bounded_transformer_w4,
         "windowed_gated_mlp_w4": WindowedGatedMLPComposer,
         "gru_fixed_state": GRUComposer,
     }
@@ -213,7 +221,7 @@ def test_raw_midi_factorized_candidate_composers_three_seed(tmp_path: Path) -> N
                 "composer_epochs": 12,
                 "composer_learning_rate": 1e-3,
                 "trainable_params_each": baseline_params,
-                "mlp_local_window": 4,
+                "local_window": 4,
                 "gru_state": "fixed-size hidden state carried across chunks",
                 "summary": {name: summarize(rows[name]) for name in model_types},
             },
