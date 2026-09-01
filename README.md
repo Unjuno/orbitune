@@ -1,169 +1,200 @@
 # Orbitune
 
-Orbitune is a local-first symbolic MIDI generation framework. The repository currently contains two runnable model paths:
+Orbitune is a local-first symbolic MIDI generation framework. The repository currently keeps two compatible model paths:
 
-- **Compound Hierarchical Base** — the current Transformer-first path for new training and local MIDI generation.
-- **Theory-REMI reference Base** — the older ~10M compatibility/reference path used by the existing Base/Adapter ecosystem.
+- **Compound Transformer Base** — the current Transformer-first architecture for new training and generation work.
+- **Theory-REMI reference Base** — the existing ~10M operational path kept intact for checkpoint, LoRA and deployment compatibility.
 
-The two paths intentionally coexist. Existing Theory-REMI checkpoints and adapter tooling are not replaced by the Compound implementation.
+The new Base does not rely on the short-lived Windowed-MLP proxy as its production composer.
 
-## Local Compound Base quick start
+## Current Compound Transformer Base
+
+One Compound MIDI event is one temporal model step. The Base combines multiple temporal scales instead of forcing all history into one flat context window:
+
+```text
+Compound MIDI Event
+        ↓
+Factorized Event Embedding
+        ↓
+Local Causal Transformer ───────────────┐
+        ↓                               │
+Medium Summary Transformer ────────────┤
+        ↓                               ├─ Fusion
+Global Summary Transformer ────────────┤
+        ↓                               │
+Fast / Medium / Slow Recurrent Memory ─┘
+        ↓
+Intra-event Transformer
+        ↓
+Discrete + Continuous Attribute Heads
+        ↓
+Next Compound MIDI Event
+```
+
+Persistent generation state is bounded: recent local events, bounded medium/global summary histories and fixed-size recurrent memory. The checked-in config is approximately the same size class as the previous ~10M reference Base; the 280k models under `experiments/` are research proxies only.
+
+## Local quick start
 
 ```bash
 git clone https://github.com/Unjuno/orbitune.git
 cd orbitune
+git switch midi-gpt-base-complete
+
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install -U pip
 python -m pip install -e '.[dev]'
-orbitune-compound inspect --config configs/compound_hierarchical_9m.json
 ```
 
-The default Compound model is an old-Base-scale model, not the small proxy models used during architecture experiments.
-
-### 1. Prepare MIDI
-
-Place MIDI files under `data/raw`, then create song-preserving Compound JSONL splits:
+Prepare a directory of Standard MIDI files:
 
 ```bash
-python scripts/prepare_compound_split.py \
-  --source data/raw \
-  --train-out data/compound/train.jsonl \
-  --validation-out data/compound/validation.jsonl \
-  --report-out data/compound/split-report.json \
-  --validation-fraction 0.1 \
-  --min-events 32
+orbitune-compound prepare midi/
 ```
 
-Exact MIDI byte duplicates are grouped by SHA-256 so they cannot cross train/validation.
+This creates the default training inputs:
 
-### 2. Train
+```text
+data/compound/train.jsonl
+data/compound/validation.jsonl
+data/compound/report.json
+```
+
+Inspect and train on CPU:
 
 ```bash
-orbitune-compound train \
-  --train-jsonl data/compound/train.jsonl \
-  --validation-jsonl data/compound/validation.jsonl \
-  --config configs/compound_hierarchical_9m.json \
-  --checkpoint checkpoints/compound-base.pt \
-  --device cpu \
-  --steps 10000
+orbitune-compound info --config configs/compound_hierarchical_9m.json
+orbitune-compound train --device cpu
 ```
 
-`--device cuda` can be selected deliberately on a local CUDA machine. Remote GPU infrastructure is not required for the Compound path.
-
-### 3. Resume
+Training writes `models/compound-base.pt` by default. Resume exactly from it with optimizer and RNG state restored:
 
 ```bash
-orbitune-compound train \
-  --train-jsonl data/compound/train.jsonl \
-  --validation-jsonl data/compound/validation.jsonl \
-  --checkpoint checkpoints/compound-base.pt \
-  --resume checkpoints/compound-base.pt \
-  --device cpu \
-  --steps 20000
+orbitune-compound resume \
+  --checkpoint models/compound-base.pt \
+  --steps 20000 \
+  --device cpu
 ```
 
-`--steps` is the final global step. Checkpoints contain model and optimizer state, RNG state, sampler state, global step, config, tokenizer ABI, and source metadata.
-
-### 4. Generate MIDI
+Generate a Standard MIDI file locally:
 
 ```bash
 orbitune-compound generate \
-  --checkpoint checkpoints/compound-base.pt \
+  --checkpoint models/compound-base.pt \
   --out generated.mid \
   --events 512 \
   --device cpu
 ```
 
-Continue an existing MIDI file with `--primer-midi prompt.mid`.
+Continue an existing MIDI file:
 
-For architecture details and the full local workflow, see [`docs/COMPOUND_BASE.md`](docs/COMPOUND_BASE.md).
+```bash
+orbitune-compound generate \
+  --checkpoint models/compound-base.pt \
+  --primer-midi prompt.mid \
+  --out continuation.mid \
+  --events 512 \
+  --device cpu
+```
 
-## Compound architecture
+For the complete runtime contract and explicit command options, see [`docs/COMPOUND_BASE.md`](docs/COMPOUND_BASE.md).
 
-One Compound MIDI event is one temporal model step.
+## Compound representation
+
+The current semantic MIDI schema covers:
 
 ```text
-Compound Event
-      |
-      +--> Local Transformer
-      +--> Medium summary Transformer
-      +--> Global summary Transformer
-      +--> routed fast/medium/slow recurrent memory
-      |
-      v
-context fusion
-      |
-      v
-Intra-event Transformer
-      |
-      +--> categorical: event type / channel / pitch-state attributes
-      +--> continuous: delta / duration / velocity / MIDI controls
-      |
-      v
-next Compound Event
+NOTE
+CC
+PROGRAM
+BANK
+TEMPO
+PEDAL
+PITCH_BEND
+CHANNEL_PRESSURE
+POLY_PRESSURE
+TIME_SIGNATURE
 ```
 
-The local/summary histories are bounded and the recurrent state is fixed-size, so persistent generation state does not grow with total song length.
+MIDI is canonicalized deterministically. Same-onset/channel/pitch duplicate notes are merged, overlapping retriggers are truncated, unused fields are zeroed, and same-step state/control events precede NOTE events.
 
-The Compound MIDI schema currently covers NOTE, CC, PROGRAM, BANK, TEMPO, PEDAL, PITCH_BEND, CHANNEL_PRESSURE, POLY_PRESSURE, and TIME_SIGNATURE. MIDI ingestion canonicalizes duplicates/retriggers and emits state/control events before same-step NOTE events.
+The serialized Compound record remains 12 fields so existing prepared corpora stay readable. The model uses categorical heads where the value is intrinsically discrete and continuous auxiliary/generative heads for ordered numeric attributes such as delta time, note duration, velocity and continuous controls.
 
-## Verify before a long local run
+Known corpus/representation gates before publishing a final immutable Base include composition-aware near-deduplication, broader real-MIDI validation and final handling of rare/meta MIDI semantics.
+
+## CPU smoke before GPU training
+
+Repository validation should not spend GPU time:
 
 ```bash
-python -m pytest -q tests/test_compound_base.py
-python -m pytest -q
+python -m pytest -q tests/test_compound_base.py tests/test_compound_cli.py
 ```
 
-The Compound tests cover forward/backward, exact checkpoint resume, bounded streaming state, MIDI roundtrip, and default model-size constraints.
+The Compound tests cover forward/backward, exact checkpoint restoration, bounded streaming state, MIDI write/read and the actual local command chain:
 
-## Legacy Theory-REMI reference path
+```text
+prepare → train → resume → info → generate
+```
 
-The existing `orbitune` CLI remains available for compatibility:
+Use GPU only for an actual corpus-scale training run after the CPU path is green.
+
+## Legacy Theory-REMI path
+
+The original `orbitune` CLI remains available and is intentionally separate:
 
 ```bash
-orbitune model-info
+orbitune prepare-split-corpus data/raw \
+  --train-out data/tokens/train.tokens \
+  --validation-out data/tokens/validation.tokens \
+  --report data/tokens/split-report.json
+
 orbitune train-base \
   --tokens data/tokens/train.tokens \
   --validation-tokens data/tokens/validation.tokens \
-  --out models/my-base.pt \
-  --steps 1000 \
-  --batch-size 8 \
-  --seq-len 256
+  --out models/legacy-base.pt
 ```
 
-Legacy LoRA/Base registry, web export, and adapter commands continue to target the Theory-REMI compatibility ABI unless explicitly documented otherwise.
+Existing LoRA adapters, Base registry, ONNX/Web export and legacy checkpoints continue to use this path. Do not discard the legacy Base merely because short proxy experiments favored another operator; final model selection requires converged real-corpus training and generated-MIDI comparison.
 
 ## Repository layout
 
 ```text
-orbitune/             runtime, model, tokenizer and training code
-configs/              model configurations
-scripts/              corpus preparation and repository utilities
-tests/                CPU unit/integration tests
-docs/                 architecture and operational documentation
-experiments/          research history and reproducible architecture experiments
-workloads/            optional external-compute/infrastructure workloads
-bases/                immutable accepted Base artifacts/manifests
-adapters/             official/community adapters
-registry/             generated Base/Adapter dependency registries
-web/                  browser runtime / GitHub Pages app
+orbitune/              runtime/model/tokenizer package
+configs/               checked-in model configurations
+data/                   local prepared data (generated artifacts are not Bases)
+models/                 local candidate checkpoints
+bases/                  immutable accepted Base artifacts/manifests
+adapters/               official/community LoRA adapters
+experiments/            architecture research and reproducible proxies
+workloads/              bounded external-compute workloads
+scripts/                maintenance and legacy helper entrypoints
+docs/                   architecture, audit, handoff and runtime documentation
+tests/                  CPU unit/integration contracts
+web/                    legacy local browser runtime
 ```
 
-Production code should live under `orbitune/`; research-only architecture probes stay under `experiments/` and are not required to train or generate with the local Compound Base.
+The distinction is intentional: code required to run the Compound Base lives under `orbitune/`; architecture experiments remain under `experiments/` and are not imported by the local Base runtime.
 
-## Current model-status boundary
+## LoRA and adapters
 
-The Compound path is runnable and production-shaped, but this repository does not claim that its final generated music already beats the legacy ~10M reference model. That comparison requires converged training and generated-MIDI evaluation, not short proxy runs.
+The existing Adapter ABI is tied to the legacy Theory-REMI architecture. The Compound Transformer Base keeps standard `nn.Linear` attention/decoder projections so a Compound-specific LoRA contract can be added without changing the Base architecture, but adapters should not be silently mixed across the two checkpoint ABIs.
 
-Known corpus/model gates before publishing a final immutable Base include composition-aware near-duplicate handling, broader real-MIDI validation, and final long-run quality evaluation.
+## Remote/GPU infrastructure
 
-## Adapter and Base compatibility
+`workloads/` contains bounded RunPod/GPU-control canaries and benchmarks. They are infrastructure tools, not a prerequisite for local training or generation. CPU CI should validate source, checkpoint and CLI contracts first; GPU compute is reserved for training workloads where measured CPU throughput is insufficient.
 
-A published Base is identified by a stable Base id plus exact checkpoint SHA-256. An Adapter targets exactly one compatible Base checkpoint. Changed checkpoint bytes require a new compatibility lineage rather than silently replacing a published Base.
+## CI
 
-See [`CONTRIBUTING_BASES.md`](CONTRIBUTING_BASES.md), [`CONTRIBUTING_ADAPTERS.md`](CONTRIBUTING_ADAPTERS.md), and [`docs/COMPOUND_BASE.md`](docs/COMPOUND_BASE.md).
+Primary checks include:
+
+- `test.yml` — Python unit/integration tests, including Compound model contracts.
+- `ml-smoke.yml` — legacy reference training/LoRA smoke.
+- `runpod-canary-smoke.yml` — CPU contract for remote-GPU workload packaging.
+- `continuous-smoke.yml` / `continuous-train.yml` — legacy resumable training path.
+- `export-smoke.yml` — legacy ONNX/export staging.
+- `validate-adapters.yml` — Base/Adapter manifest and compatibility checks.
+- `web-test.yml` / `pages.yml` — legacy browser runtime and published assets.
 
 ## License
 
-Orbitune source code is licensed under Apache-2.0. Each contributed Base and Adapter declares its own compatible license and training-data rights status.
+Orbitune source code is licensed under Apache-2.0. Each contributed Base and Adapter must declare its own compatible license and training-data rights status.

@@ -1,119 +1,148 @@
-# Compound Hierarchical Base
+# Compound Transformer Base
 
-`orbitune.compound_base` is the runnable Transformer-first Compound MIDI Base. It intentionally coexists with the legacy Theory-REMI `OrbituneGPT` rather than replacing it.
+`orbitune-compound` is the local-first training and generation path for Orbitune's Transformer-first Compound MIDI Base. It coexists with the legacy Theory-REMI `orbitune` path; existing checkpoints and adapter tooling are not replaced by this branch.
 
 ## Architecture
 
-One Compound MIDI event is one temporal step. The model uses four Transformer paths plus fixed-size recurrent memory:
+One Compound MIDI event is one temporal step. The current Base combines:
 
-1. **Local Transformer** — causal attention over the recent event window.
-2. **Medium summary Transformer** — pooled causal summaries every 8 events.
-3. **Global summary Transformer** — pooled summaries of medium-scale states.
-4. **Intra-event Transformer** — autoregressively decodes attributes of the next Compound event instead of predicting them all independently.
-5. **Routed recurrent memory** — fast, medium and slow decayed GRU states. Persistent recurrent-state size does not grow with song length.
+1. **Local causal Transformer** for exact recent-event context.
+2. **Medium summary Transformer** over pooled local states.
+3. **Global summary Transformer** over pooled medium states.
+4. **Routed recurrent memory** with fast, medium and slow decayed states whose persistent size does not grow with song length.
+5. **Intra-event Transformer** that autoregressively decodes the attributes of the next Compound event.
+6. **Mixed output heads**: categorical heads for discrete MIDI state and bounded continuous heads for delta time, duration, velocity and continuous controls.
 
-The decoder is mixed-type: event type, channel, pitch/state attributes are categorical; delta time, note duration, velocity, and continuous MIDI controls use bounded Gaussian heads and are quantized only when converted back into a Compound record/MIDI event.
+The checked-in `configs/compound_hierarchical_9m.json` is approximately the same model-size class as the previous ~10M reference Base. The 280k models under `experiments/` are research proxies and are not the runnable Base.
 
-The default config is approximately the scale of the previous ~10M reference Base, not the 280k proxy models used during architecture experiments.
-
-## Local setup
+## Clone and install
 
 ```bash
 git clone https://github.com/Unjuno/orbitune.git
 cd orbitune
+git switch midi-gpt-base-complete
+
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install -U pip
 python -m pip install -e '.[dev]'
-orbitune-compound inspect --config configs/compound_hierarchical_9m.json
 ```
 
-The `inspect` command should work without MIDI data and is the quickest installation check.
+Everything below works on CPU. A GPU is optional and is not required for repository validation.
 
-## Prepare data
+## 1. Prepare MIDI
 
-Put MIDI files under a directory such as `data/raw`, then run:
+Put training MIDI files under a directory such as `midi/`, then run:
 
 ```bash
-python scripts/prepare_compound_split.py \
-  --source data/raw \
-  --train-out data/compound/train.jsonl \
-  --validation-out data/compound/validation.jsonl \
-  --report-out data/compound/split-report.json \
-  --validation-fraction 0.1 \
-  --min-events 32
+orbitune-compound prepare midi/
 ```
 
-The split is song-preserving and exact MIDI byte duplicates are grouped by SHA-256 so they cannot cross train/validation. Composition-aware near-deduplication is still a corpus-quality gate before final production training.
+Default outputs are deliberately aligned with the training command:
 
-## Train locally
+```text
+data/compound/train.jsonl
+data/compound/validation.jsonl
+data/compound/report.json
+```
 
-CPU:
+The split is song-preserving and groups exact duplicate MIDI bytes by SHA-256 so identical files cannot cross train/validation. Composition-family near-deduplication is still a corpus-quality gate for a production training set.
+
+Custom paths remain available:
+
+```bash
+orbitune-compound prepare /path/to/midi \
+  --train-out data/compound/train.jsonl \
+  --validation-out data/compound/validation.jsonl \
+  --report data/compound/report.json \
+  --validation-fraction 0.1 \
+  --min-events 8
+```
+
+## 2. Inspect the model before training
+
+```bash
+orbitune-compound info --config configs/compound_hierarchical_9m.json
+```
+
+This prints the architecture ABI, parameter count and complete model configuration.
+
+## 3. Train
+
+The defaults line up with the files created by `prepare`:
+
+```bash
+orbitune-compound train --device cpu
+```
+
+Equivalent explicit form:
 
 ```bash
 orbitune-compound train \
   --train-jsonl data/compound/train.jsonl \
   --validation-jsonl data/compound/validation.jsonl \
   --config configs/compound_hierarchical_9m.json \
-  --checkpoint checkpoints/compound-base.pt \
-  --device cpu \
-  --steps 10000
+  --checkpoint models/compound-base.pt \
+  --steps 10000 \
+  --batch-size 8 \
+  --seq-len 256 \
+  --device cpu
 ```
 
-If a local CUDA GPU is deliberately selected, change only `--device cuda`. The repository does not require RunPod or any remote GPU service for this path.
+The checkpoint stores model weights, optimizer state, global step, model/tokenizer ABI, configuration, Python RNG, Torch RNG, CUDA RNG when applicable, sampler RNG and the source commit when `GITHUB_SHA` or `ORBITUNE_SOURCE_COMMIT` is present.
 
-The checkpoint stores model/optimizer state, CPU and CUDA RNG state, Python RNG, sampler RNG, global step, configuration, tokenizer ABI, and source commit when `GITHUB_SHA` or `ORBITUNE_SOURCE_COMMIT` is set.
+## 4. Resume
 
-## Resume
+Resume is a first-class command; there is no need to reconstruct optimizer or RNG state manually:
 
 ```bash
-orbitune-compound train \
-  --train-jsonl data/compound/train.jsonl \
-  --validation-jsonl data/compound/validation.jsonl \
-  --checkpoint checkpoints/compound-base.pt \
-  --resume checkpoints/compound-base.pt \
-  --device cpu \
-  --steps 20000
+orbitune-compound resume \
+  --checkpoint models/compound-base.pt \
+  --steps 20000 \
+  --device cpu
 ```
 
-`--steps` is the final global step, so this continues from the saved step to step 20000 rather than training 20000 additional steps.
+`--steps` is the final target global step. If the checkpoint is at step 10000, the command above continues from 10001 through 20000.
 
-## Generate MIDI locally
+Inspect the saved state with:
 
-Unconditional generation:
+```bash
+orbitune-compound info --checkpoint models/compound-base.pt
+```
+
+## 5. Generate MIDI
 
 ```bash
 orbitune-compound generate \
-  --checkpoint checkpoints/compound-base.pt \
+  --checkpoint models/compound-base.pt \
   --out generated.mid \
   --events 512 \
   --device cpu
 ```
 
-Continue an existing MIDI file:
+Continue an existing MIDI file with:
 
 ```bash
 orbitune-compound generate \
-  --checkpoint checkpoints/compound-base.pt \
+  --checkpoint models/compound-base.pt \
   --primer-midi prompt.mid \
   --out continuation.mid \
   --events 512 \
   --device cpu
 ```
 
-Generation uses bounded local/summary histories plus fixed-size recurrent memory, so persistent runtime state does not grow with the total generated song length.
+Generation keeps bounded local/medium/global histories plus fixed-size recurrent memory, so persistent runtime state does not grow with total song length.
 
-## Verification
+## CPU repository smoke
 
-Run the CPU test suite before a long training run:
+Before spending GPU time:
 
 ```bash
-python -m pytest -q tests/test_compound_base.py
-python -m pytest -q
+python -m pytest -q tests/test_compound_base.py tests/test_compound_cli.py
 ```
 
-The Compound tests cover forward/backward, exact checkpoint resume, bounded streaming state, MIDI writer/parser roundtrip, and the default model-size contract.
+The tests cover forward/backward, exact checkpoint restoration, bounded stream state, Standard MIDI roundtrip and the actual `prepare -> train -> resume -> info -> generate` CLI path using a tiny CPU model.
 
-## Scope
+## Legacy Base
 
-This is a production-shaped runnable Base path, not a claim that its final music quality already beats the legacy ~10M Transformer. The earlier short-budget proxy ranking is not used to select an MLP architecture here. Final model selection should use converged training and generated-MIDI listening/evaluation.
+The previous Theory-REMI Base remains available through the `orbitune` command, including `orbitune train-base` and the existing LoRA/adapter tooling. Do not delete old checkpoints when evaluating this Base; final musical-quality comparison requires converged real-corpus training and generated-MIDI evaluation, not the short architecture-proxy runs.
