@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 from orbitune.compound_base import generate_command, inspect_command, train_command
@@ -17,8 +18,6 @@ def _prepare_command(args: argparse.Namespace) -> None:
         split_seed=args.split_seed,
         min_events=args.min_events,
     )
-    import json
-
     print(json.dumps(report, indent=2, sort_keys=True))
 
 
@@ -39,6 +38,14 @@ def _add_training_args(parser: argparse.ArgumentParser, *, resume: bool) -> None
     parser.add_argument("--eval-every", type=int, default=250)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu")
+
+
+def _add_info_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser], name: str, help_text: str) -> None:
+    info = sub.add_parser(name, help=help_text)
+    group = info.add_mutually_exclusive_group()
+    group.add_argument("--config", default=None)
+    group.add_argument("--checkpoint", default=None)
+    info.set_defaults(func=inspect_command)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -66,11 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_training_args(resume, resume=True)
     resume.set_defaults(func=train_command, resume_from_checkpoint=True, config=None)
 
-    info = sub.add_parser("info", help="inspect a config or checkpoint")
-    info_group = info.add_mutually_exclusive_group()
-    info_group.add_argument("--config", default=None)
-    info_group.add_argument("--checkpoint", default=None)
-    info.set_defaults(func=inspect_command)
+    _add_info_parser(sub, "info", "inspect a config or checkpoint")
+    _add_info_parser(sub, "inspect", "compatibility alias for info")
 
     generate = sub.add_parser("generate", help="generate Standard MIDI from a trained checkpoint")
     generate.add_argument("--checkpoint", default="models/compound-base.pt")
