@@ -1,0 +1,18 @@
+{
+  "d_model": 224,
+  "n_head": 7,
+  "local_layers": 4,
+  "medium_layers": 2,
+  "global_layers": 2,
+  "intra_layers": 2,
+  "ff_mult": 4,
+  "dropout": 0.1,
+  "local_window": 64,
+  "medium_stride": 8,
+  "medium_window": 64,
+  "global_stride": 4,
+  "global_window": 64,
+  "fast_decay": 0.9,
+  "medium_decay": 0.97,
+  "slow_decay": 0.997
+}
