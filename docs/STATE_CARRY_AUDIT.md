@@ -2,87 +2,105 @@
 
 ## TL;DR
 
-`CompoundHierarchicalGPT.encode()` (training) and
-`CompoundHierarchicalGPT.advance_stream()` (generation) are **not**
-mathematically equivalent paths through the model. They share the same
-submodules but differ in one important way:
+The current production-compatible training mode samples random fixed-length
+windows from inside each song. Generation, by contrast, starts from a primer
+and carries history forward continuously.
 
-| Sub-path | Training `encode()` | Generation `advance_stream()` |
-|----------|----------------------|--------------------------------|
-| Local attention (window=64) | identical | identical |
-| Medium pooling + attention | identical | identical |
-| Global pooling + attention | identical | identical |
-| **Recurrent memory** | **reset per 256-event window** | **carried event-by-event** |
-| Fusion + decoder | identical (teacher-forced) | identical (autoregressive) |
+Therefore **all pre-window history is absent during fixed-window training**,
+not only the recurrent-memory state.
 
-Because the recurrent memory is **reset** at the start of every training
-window, the recurrent context the model sees during training is an
-**approximation** of what it will see during generation. The local /
-medium / global attention paths are causal and properly bounded, so they
-are unaffected. The recurrent path is the only divergence.
+| Context path | Random fixed-window training | Streaming generation |
+|---|---|---|
+| Local attention | history before sampled window is absent | prior local records carried |
+| Medium summaries | summaries before sampled window are absent | prior summaries carried |
+| Global summaries | summaries before sampled window are absent | prior summaries carried |
+| Recurrent memory | reset at sampled window start | fast/medium/slow state carried |
+| Decoder | teacher-forced inside window | autoregressive |
 
-## What this means in practice
+The model remains causal inside each sampled window, but a window beginning at
+song event 1000 does **not** receive the context produced by events 0..999.
 
-- For windows 1 and 2 (positions 0..511 of any song), training memory
-  runs once over the 256 events of each window independently. The model
-  never learns to integrate memory across windows.
-- At generation time, memory has been integrated since the start of the
-  primer. After 256+ events, the model's recurrent context is more
-  informative than anything it saw during training.
-- This is **not** necessarily a quality bug — most of the model's signal
-  comes from local / medium / global attention, which is properly
-  causal in both paths. But it does mean that very long generation
-  traces enter a region of the recurrent state space the model was never
-  trained on.
+## Recovery inside a fixed window
 
-## Why we did not "fix" this in the long-run audit
+The four paths have different recovery horizons.
 
-Implementing full state-carry training (TBPTT across song boundaries)
-would require:
+- Local attention can recover its full bounded local context after roughly
+  `local_window` events have elapsed inside the sampled window.
+- Medium summaries are constructed only from local states observed inside the
+  sampled window. No completed medium groups from before the boundary exist.
+- Global summaries likewise start from an empty hierarchy at the boundary.
+- Recurrent memory starts from zero/None and cannot reproduce the carried
+  fast/medium/slow state that streaming generation would have at that offset.
 
-1. Refactoring `TensorSampler` to emit variable-length sequences with
-   boundary tags instead of fixed-length windows.
-2. Refactoring `encode()` to accept an initial state and `detach()`
-   state gradients at chunk boundaries.
-3. Refactoring `advance_stream` to be testable in both training and
-   inference modes.
-4. Re-deriving the equivalence of the model's loss formulation when the
-   recurrent memory is detached at chunk boundaries.
-5. Re-running the full CFE bench to verify the new training loop does
-   not regress on the same head geometry / batch envelope.
+Consequently the previous statement that "only recurrent memory diverges" was
+incorrect and has been withdrawn.
 
-Per the user's instructions ("do not start a new architecture study"),
-this is **out of scope** for the production-readiness audit. It is
-explicitly listed below as the **LONG-RUN BLOCKER FOR STATE-CARRY
-TRAINING** that must be resolved before claiming "training equivalent
-to generation" semantics.
+## What the equivalence test actually proves
 
-## Equivalence test (window 1 only)
+`encode()` and `advance_stream()` can be compared when both start from an empty
+state at the **beginning of a song/prefix**. The existing first-window test is
+useful for guarding that common-start behavior.
 
-The training-vs-generation equivalence holds **exactly** for window 1
-(positions 0..255) of any song, because both paths start with
-`memory.state = None`. See `tests/test_compound_state_semantics.py` for
-the test that pins down the matching context vector and per-position
-logit within numerical tolerance for a 256-event prefix.
+It does **not** prove that a random training window cut from the middle of a
+song is equivalent to streaming generation at the same absolute song offset.
+That stronger claim would require carrying the complete hierarchical state
+across chunk boundaries.
 
-This test guards against accidentally breaking window-1 equivalence
-during future refactors.
+## State required for strict chunk carry
 
-## Decision
+A future state-carry TBPTT path must preserve, per batch lane:
 
-For the **first** multi-hour production training run we will keep the
-existing window-based training. This is a deliberate choice, not an
-oversight:
+1. local record/history needed by the local attention window;
+2. the partial medium buffer plus completed medium summaries;
+3. the partial global buffer plus completed global summaries;
+4. recurrent fast / medium / slow memory tensors;
+5. song identity and chunk position so only lanes that cross a song boundary
+   are reset.
 
-- The CFE bench and the n_head=7 quality gate both showed the model
-  trains and generalises sensibly with window-based training.
-- Implementing state-carry TBPTT in the same change window risks
-  confounding the CFE measurement, the validation comparison and the
-  long-run telemetry. The user explicitly requested this be deferred.
-- The equivalence test on window 1 ensures the next refactor that does
-  tackle state-carry training can detect regressions.
+At a TBPTT boundary the carried tensors must be detached from the previous
+chunk's graph while retaining their values.
 
-**LONG-RUN BLOCKER**: implement and verify state-carry TBPTT training
-**before** claiming "production model semantically matches generation
-for arbitrary song prefixes". Filed as a follow-up; not blocking the
-current fixed-window production training run.
+## Why state-carry TBPTT is not silently enabled here
+
+Adding correct batched state carry changes the training execution semantics and
+may change the measured RTX 3080 Context Fit Envelope. It should not be mixed
+into the operational resume/health fixes without its own equivalence and
+throughput validation.
+
+The measured CFE result therefore remains valid for the mode it actually
+benchmarked:
+
+- `n_head=7`, `head_dim=32`;
+- BF16 on the measured RTX 3080 environment;
+- `seq_len=256`;
+- microbatch 144;
+- random fixed-window training.
+
+## Production safety decision
+
+`scripts/compound_longrun_train.py` and `run_cfe_train.ps1` require an explicit
+fixed-window acknowledgement before they will train. This prevents a multi-hour
+run from being mistaken for strict train/generation state equivalence.
+
+For the current mode:
+
+- checkpoint/resume, RNG state, validation windows, health checks and MIDI
+  output can be made production-safe;
+- long-range state equivalence is **not claimed**;
+- real-MIDI quality validation is still required before treating a trained
+  checkpoint as the final Base.
+
+## Follow-up acceptance gate for state-carry TBPTT
+
+Before claiming strict streaming-equivalent training, require all of:
+
+1. song boundary reset and same-song chunk carry;
+2. per-lane local/medium/global/recurrent state preservation;
+3. detach at TBPTT boundaries;
+4. one-shot vs arbitrary-chunk context/logit equivalence in eval mode;
+5. checkpoint/resume of sampler position and carried state;
+6. RTX 3080 throughput/VRAM remeasurement;
+7. real-MIDI validation A/B against the fixed-window baseline.
+
+Until then, fixed-window training is an explicit, documented approximation —
+not an equivalent streaming training path.
