@@ -22,6 +22,7 @@ data/raw_midi/
 data/processed/
 data/tokens/
 data/real_midi/
+data/corpora/
 runs/
 checkpoints/
 outputs/batches/
