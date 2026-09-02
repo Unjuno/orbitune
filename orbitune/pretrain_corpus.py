@@ -153,8 +153,14 @@ def iter_pdmx_midi(root: str | Path) -> Iterator[tuple[Path, dict[str, object]]]
 
 def _mutopia_license_from_text(text: str) -> str | None:
     lower = text.lower()
-    if "public domain" in lower or "public domain mark" in lower:
+    if "public-domain" in lower or "public domain" in lower or "public domain mark" in lower:
         return "public-domain"
+    if "cc0-1.0" in lower or "creative commons zero" in lower or "cc zero" in lower:
+        return "cc0-1.0"
+    if "cc-by-4.0" in lower:
+        return "cc-by-4.0"
+    if "cc-by-3.0" in lower:
+        return "cc-by-3.0"
     if re.search(r"creative commons attribution(?![- ]sharealike)(?![- ]noncommercial)", lower):
         if "4.0" in lower:
             return "cc-by-4.0"
