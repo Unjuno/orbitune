@@ -143,16 +143,25 @@ def train(args: argparse.Namespace) -> None:
     validation_songs = load_compound_jsonl(args.validation_jsonl)
 
     payload: dict[str, Any] = {}
+    source_training_mode = "fresh"
     if args.resume:
         model, raw = CompoundHierarchicalGPT.load_checkpoint(args.resume, map_location="cpu")
         payload = parse_compound_checkpoint(raw)
         model.to(device)
+        source_training_mode = str((payload.get("runtime") or {}).get("training_mode") or "legacy_fixed_window")
         stored_precision = (payload.get("runtime") or {}).get("precision")
         if args.precision == "auto" and stored_precision in {"bf16", "fp16", "fp32"}:
             precision = base.precision_from(stored_precision)
     else:
         config = cfe.config_with_heads(args.config, args.n_head)
         model = CompoundHierarchicalGPT(config).to(device)
+
+    transitioning_from_fixed = bool(payload) and source_training_mode != "state_carry_tbptt"
+    if transitioning_from_fixed and args.override_resume_lr is None:
+        raise SystemExit(
+            "transitioning a fixed-window checkpoint into state-carry TBPTT requires "
+            "--override-resume-lr so the schedule change is explicit and auditable"
+        )
 
     optimizer, fused = base.optimizer_for(model, args.learning_rate, args.weight_decay)
     if payload.get("optimizer_state_dict"):
@@ -175,17 +184,21 @@ def train(args: argparse.Namespace) -> None:
         seq_len=args.seq_len,
         rng=sampler_rng,
     )
-    if isinstance(payload.get("tbptt_sampler_state"), dict):
+    if not transitioning_from_fixed and isinstance(payload.get("tbptt_sampler_state"), dict):
         sampler.load_state_dict(payload["tbptt_sampler_state"])
 
-    if isinstance(payload.get("tbptt_stream_states"), list):
+    if not transitioning_from_fixed and isinstance(payload.get("tbptt_stream_states"), list):
         stream_states = batch_stream_states_from_cpu(payload["tbptt_stream_states"], device)
         if len(stream_states) != args.batch_size:
             raise SystemExit("TBPTT checkpoint stream-state batch size does not match CLI")
     else:
         stream_states = initial_batch_stream_states(model, args.batch_size)
         if payload:
-            print(json.dumps({"event": "tbptt_state_initialized_from_song_boundaries", "source_step": int(payload.get("step", 0))}), flush=True)
+            print(json.dumps({
+                "event": "tbptt_state_initialized_from_song_boundaries",
+                "source_step": int(payload.get("step", 0)),
+                "source_training_mode": source_training_mode,
+            }), flush=True)
 
     start_step = int(payload.get("step", 0))
     start_events = int(payload.get("events_seen", 0))
@@ -195,6 +208,14 @@ def train(args: argparse.Namespace) -> None:
     validation_history = list(payload.get("validation_history") or [])
     best_validation_loss = health.get("best_validation_loss")
     best_step = health.get("best_step")
+    if transitioning_from_fixed:
+        # Fixed-window validation and TBPTT streaming validation are different
+        # metrics. Do not let the old best value suppress TBPTT best checkpoints.
+        loss_history = []
+        grad_history = []
+        validation_history = []
+        best_validation_loss = None
+        best_step = None
 
     checkpoint = Path(args.checkpoint)
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
@@ -212,6 +233,8 @@ def train(args: argparse.Namespace) -> None:
         "causal_fastpath": args.causal_fastpath,
         "learning_rate": float(optimizer.param_groups[0]["lr"]),
         "tbptt_state_semantics": "generation_equivalent_advance_stream",
+        "tbptt_source_training_mode": source_training_mode,
+        "tbptt_source_step": start_step,
     }
 
     model.train()
