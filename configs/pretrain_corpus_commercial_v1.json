@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "name": "orbitune-commercial-safe-v1",
+  "purpose": "Broad 10M-class MIDI Base pretraining; style specialization is delegated to LoRA.",
+  "license_policy": {
+    "allow": ["public-domain", "cc0-1.0", "cc-by-4.0", "cc-by-3.0"],
+    "deny_markers": ["-nc", "noncommercial", "unknown", "unclear"],
+    "note": "Dataset inclusion is conservative and is not legal advice. Per-item provenance remains in the generated manifest."
+  },
+  "sources": [
+    {
+      "id": "pdmx",
+      "tier": "primary",
+      "kind": "zenodo_pdmx",
+      "license": "cc-by-4.0/public-domain-compositions",
+      "commercial_safe": true,
+      "record_id": 15571083,
+      "landing_url": "https://zenodo.org/records/15571083",
+      "required_files": ["PDMX.csv", "mid.tar.gz", "subset_paths.tar.gz"],
+      "filters": ["no_license_conflict", "deduplicated", "midi_available"],
+      "quality_weight": 1.0
+    },
+    {
+      "id": "openscore_lieder",
+      "tier": "quality-anchor",
+      "kind": "git_scores",
+      "license": "cc0-1.0",
+      "commercial_safe": true,
+      "git_url": "https://github.com/OpenScore/Lieder.git",
+      "score_globs": ["**/*.mscz", "**/*.mscx", "**/*.musicxml", "**/*.mxl", "**/*.mid", "**/*.midi"],
+      "quality_weight": 2.0
+    },
+    {
+      "id": "openscore_string_quartets",
+      "tier": "quality-anchor",
+      "kind": "git_scores",
+      "license": "cc0-1.0",
+      "commercial_safe": true,
+      "git_url": "https://github.com/OpenScore/StringQuartets.git",
+      "score_globs": ["**/*.mscz", "**/*.mscx", "**/*.musicxml", "**/*.mxl", "**/*.mid", "**/*.midi"],
+      "quality_weight": 2.0
+    },
+    {
+      "id": "openscore_orchestra",
+      "tier": "quality-anchor",
+      "kind": "git_scores",
+      "license": "cc0-1.0-scores",
+      "commercial_safe": true,
+      "git_url": "https://github.com/MarkGotham/Hauptstimme.git",
+      "include_scores_only": true,
+      "exclude_annotations": true,
+      "score_globs": ["**/*.mscz", "**/*.mscx", "**/*.musicxml", "**/*.mxl", "**/*.mid", "**/*.midi"],
+      "quality_weight": 2.0
+    },
+    {
+      "id": "mutopia",
+      "tier": "supplement",
+      "kind": "git_scores",
+      "license": "per-item",
+      "commercial_safe": true,
+      "git_url": "https://github.com/MutopiaProject/MutopiaProject.git",
+      "allowed_item_licenses": ["public-domain", "cc0-1.0", "cc-by-4.0", "cc-by-3.0"],
+      "score_globs": ["ftp/**/*.mid", "ftp/**/*.midi", "ftp/**/*.ly"],
+      "quality_weight": 1.0
+    },
+    {
+      "id": "imslp_midi_cc0",
+      "tier": "direct-midi-supplement",
+      "kind": "huggingface_midi_bytes",
+      "license": "public-domain/cc0-1.0",
+      "commercial_safe": true,
+      "repo_id": "TiMauzi/imslp-midi-cc0-1.0",
+      "midi_column": "midi",
+      "quality_weight": 1.0
+    }
+  ],
+  "sampling": {
+    "track_buckets": {
+      "solo": 0.40,
+      "small_ensemble_2_5": 0.50,
+      "large_ensemble_6_plus": 0.10
+    },
+    "quality_multipliers": {
+      "ordinary": 1.0,
+      "rated": 1.5,
+      "high_rated": 2.0,
+      "openscore_verified": 2.0
+    }
+  },
+  "split": {
+    "unit": "composition_fingerprint_v1",
+    "validation_fraction": 0.05,
+    "test_fraction": 0.01,
+    "seed": "orbitune-commercial-safe-v1"
+  }
+}
