@@ -18,6 +18,16 @@ from orbitune.pretrain_corpus import (
 
 
 _MUSESCORE_SUFFIXES = {".mscz", ".mscx", ".musicxml", ".mxl"}
+_MUTOPIA_DENY_MARKERS = (
+    "noncommercial",
+    "non-commercial",
+    "sharealike",
+    "share-alike",
+    "cc-by-sa",
+    "cc by-sa",
+    "by-nc",
+    "-nc",
+)
 
 
 def _find_binary(explicit: str | None, candidates: tuple[str, ...]) -> str | None:
@@ -92,6 +102,13 @@ def convert_scores_to_midi(
 
 
 def _mutopia_primary_scores(source_root: Path) -> list[tuple[Path, str]]:
+    """Select only primary LilyPond scores with an allowlisted local license.
+
+    License inference intentionally does not borrow metadata from sibling score
+    files. A directory may contain several works or support files with different
+    terms; using a neighboring Public Domain marker to license this score would
+    be unsafe. Ambiguous or mixed NC/SA text fails closed.
+    """
     result: list[tuple[Path, str]] = []
     for path in source_root.glob("ftp/**/*.ly"):
         if not path.is_file():
@@ -100,19 +117,14 @@ def _mutopia_primary_scores(source_root: Path) -> list[tuple[Path, str]]:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
+        lower = text.lower()
         # Support/include files are numerous. Mutopia's primary score sources
         # carry title metadata and a MIDI score block.
-        if "mutopiatitle" not in text.lower() or "\\midi" not in text:
+        if "mutopiatitle" not in lower or "\\midi" not in text:
             continue
-        neighborhood = [text]
-        for sibling in path.parent.glob("*.ly"):
-            if sibling == path:
-                continue
-            try:
-                neighborhood.append(sibling.read_text(encoding="utf-8", errors="ignore"))
-            except OSError:
-                pass
-        license_id = _mutopia_license_from_text("\n".join(neighborhood))
+        if any(marker in lower for marker in _MUTOPIA_DENY_MARKERS):
+            continue
+        license_id = _mutopia_license_from_text(text)
         if license_id is not None:
             result.append((path, license_id))
     return result
@@ -233,7 +245,16 @@ def main() -> None:
                         source.raw,
                         musescore_bin=musescore,
                     )
-        entries, rejected = collect_entries(source, source_root, converted_root=converted_root)
+
+        if source.id == "mutopia":
+            # Train only on files produced by the fail-closed converter above.
+            # Source-tree MIDI files without an exact validated sidecar are not
+            # admitted merely because a neighboring LilyPond file is permissive.
+            if converted_root is None:
+                raise AssertionError("Mutopia converted root was not initialized")
+            entries, rejected = collect_entries(source, converted_root, converted_root=converted_root)
+        else:
+            entries, rejected = collect_entries(source, source_root, converted_root=converted_root)
         if not entries:
             blocked = conversion.get("blocked")
             detail = f" ({blocked})" if blocked else ""
