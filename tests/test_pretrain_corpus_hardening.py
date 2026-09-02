@@ -38,6 +38,21 @@ def _write_tiny_midi(path: Path) -> Path:
     return path
 
 
+def _manifest_row(midi: Path) -> dict[str, object]:
+    return {
+        "path": str(midi),
+        "split": "train",
+        "raw_sha256": "song",
+        "composition_fingerprint": "composition-song",
+        "source_id": "test",
+        "license": "cc0-1.0",
+        "quality_weight": 1.0,
+        "sampling_weight": 1.0,
+        "tracks": 1,
+        "track_bucket": "solo",
+    }
+
+
 def test_huggingface_source_is_pinned_to_full_revision() -> None:
     registry = load_registry()
     source = next(item for item in registry["sources"] if item["id"] == "imslp_midi_cc0")
@@ -148,24 +163,7 @@ def test_indexed_tbptt_compensates_song_start_weight_for_chunk_count() -> None:
 def test_indexed_rebuild_failure_removes_old_commit_marker(tmp_path, monkeypatch) -> None:
     midi = _write_tiny_midi(tmp_path / "song.mid")
     manifest = tmp_path / "manifest.jsonl"
-    manifest.write_text(
-        json.dumps(
-            {
-                "path": str(midi),
-                "split": "train",
-                "raw_sha256": "song",
-                "composition_fingerprint": "composition-song",
-                "source_id": "test",
-                "license": "cc0-1.0",
-                "quality_weight": 1.0,
-                "sampling_weight": 1.0,
-                "tracks": 1,
-                "track_bucket": "solo",
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    manifest.write_text(json.dumps(_manifest_row(midi)) + "\n", encoding="utf-8")
     out_dir = tmp_path / "indexed"
     build_indexed_compound_dataset(manifest, out_dir, split="train")
     assert (out_dir / "index.json").exists()
@@ -181,3 +179,17 @@ def test_indexed_rebuild_failure_removes_old_commit_marker(tmp_path, monkeypatch
     with pytest.raises(OSError, match="simulated publish failure"):
         build_indexed_compound_dataset(manifest, out_dir, split="train")
     assert not (out_dir / "index.json").exists()
+
+
+def test_indexed_corpus_refuses_different_manifest_in_same_directory(tmp_path) -> None:
+    midi = _write_tiny_midi(tmp_path / "song.mid")
+    manifest = tmp_path / "manifest.jsonl"
+    row = _manifest_row(midi)
+    manifest.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    out_dir = tmp_path / "indexed"
+    build_indexed_compound_dataset(manifest, out_dir, split="train")
+
+    row["sampling_weight"] = 2.0
+    manifest.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="different manifest identity"):
+        build_indexed_compound_dataset(manifest, out_dir, split="train")
