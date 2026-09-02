@@ -26,6 +26,9 @@ dev = [
   "pytest>=8",
   "jsonschema>=4"
 ]
+corpus = [
+  "datasets>=3,<5"
+]
 export = [
   "onnx",
   "onnxscript"
