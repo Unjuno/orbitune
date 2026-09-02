@@ -28,7 +28,7 @@
       "commercial_safe": true,
       "git_url": "https://github.com/OpenScore/Lieder.git",
       "ref": "6b2dc542ce2e8aa4b78c8ee62103b210efc07015",
-      "score_globs": ["**/*.mscz", "**/*.mscx", "**/*.musicxml", "**/*.mxl", "**/*.mid", "**/*.midi"],
+      "score_globs": ["scores/**/*.mscz", "scores/**/*.mscx"],
       "quality_weight": 2.0
     },
     {
@@ -39,7 +39,7 @@
       "commercial_safe": true,
       "git_url": "https://github.com/OpenScore/StringQuartets.git",
       "ref": "8fd2169855a1b27586454b183739573962f9d8ca",
-      "score_globs": ["**/*.mscz", "**/*.mscx", "**/*.musicxml", "**/*.mxl", "**/*.mid", "**/*.midi"],
+      "score_globs": ["scores/**/*.mscz", "scores/**/*.mscx"],
       "quality_weight": 2.0
     },
     {
@@ -52,7 +52,7 @@
       "ref": "8f677853c45b74ca0afcd79677e5379c06c82354",
       "include_scores_only": true,
       "exclude_annotations": true,
-      "score_globs": ["**/*.mscz", "**/*.mscx", "**/*.musicxml", "**/*.mxl", "**/*.mid", "**/*.midi"],
+      "score_globs": ["data/**/*.mscz"],
       "quality_weight": 2.0
     },
     {
