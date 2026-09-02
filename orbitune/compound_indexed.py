@@ -94,6 +94,11 @@ def build_indexed_compound_dataset(
     This format keeps hundreds of millions of Compound records out of Python
     object memory. Training processes memory-map the one flat array and only
     copy the sampled song windows needed for the current optimizer step.
+
+    Rebuild publication is fail-closed: all replacement files are prepared as
+    temporaries, any old ``index.json`` is removed before data files change,
+    and the new index is published last. A crash can therefore leave a corpus
+    unavailable, but never advertises a mixed old-index/new-data generation.
     """
 
     if split not in {"train", "validation", "test"}:
@@ -114,6 +119,7 @@ def build_indexed_compound_dataset(
     bucket_counts: dict[str, int] = {}
     tmp_records = records_path.with_suffix(records_path.suffix + ".tmp")
     tmp_songs = songs_path.with_suffix(songs_path.suffix + ".tmp")
+    tmp_index = index_path.with_suffix(".json.tmp")
 
     try:
         with tmp_records.open("wb") as record_handle, tmp_songs.open("w", encoding="utf-8") as song_handle:
@@ -153,34 +159,38 @@ def build_indexed_compound_dataset(
                 bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
         if song_count == 0:
             raise ValueError(f"manifest contains no {split} songs")
+
+        metadata: dict[str, object] = {
+            "schema_version": INDEX_SCHEMA_VERSION,
+            "format": INDEX_FORMAT,
+            "tokenizer_abi": tokenizer.abi,
+            "record_width": COMPOUND_RECORD_WIDTH,
+            "dtype": "int32-le",
+            "split": split,
+            "manifest": str(manifest_path),
+            "manifest_sha256": manifest_sha256,
+            "records_file": records_path.name,
+            "songs_file": songs_path.name,
+            "songs": song_count,
+            "events": event_count,
+            "source_counts": source_counts,
+            "license_counts": license_counts,
+            "track_bucket_counts": bucket_counts,
+        }
+        tmp_index.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+
+        # Do not leave an old index advertising newly replaced data. The new
+        # index is the commit marker and is always published last.
+        index_path.unlink(missing_ok=True)
         tmp_records.replace(records_path)
         tmp_songs.replace(songs_path)
+        tmp_index.replace(index_path)
+        return metadata
     except Exception:
         tmp_records.unlink(missing_ok=True)
         tmp_songs.unlink(missing_ok=True)
+        tmp_index.unlink(missing_ok=True)
         raise
-
-    metadata: dict[str, object] = {
-        "schema_version": INDEX_SCHEMA_VERSION,
-        "format": INDEX_FORMAT,
-        "tokenizer_abi": tokenizer.abi,
-        "record_width": COMPOUND_RECORD_WIDTH,
-        "dtype": "int32-le",
-        "split": split,
-        "manifest": str(manifest_path),
-        "manifest_sha256": manifest_sha256,
-        "records_file": records_path.name,
-        "songs_file": songs_path.name,
-        "songs": song_count,
-        "events": event_count,
-        "source_counts": source_counts,
-        "license_counts": license_counts,
-        "track_bucket_counts": bucket_counts,
-    }
-    tmp_index = index_path.with_suffix(".json.tmp")
-    tmp_index.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-    tmp_index.replace(index_path)
-    return metadata
 
 
 def load_indexed_compound_corpus(index_path: str | Path) -> IndexedCompoundCorpus:
