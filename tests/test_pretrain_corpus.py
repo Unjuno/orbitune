@@ -95,12 +95,18 @@ def test_pdmx_requires_no_license_conflict_and_upstream_dedup(tmp_path: Path) ->
     rows = list(iter_pdmx_midi(tmp_path))
     assert [path.name for path, _ in rows] == ["good.mid"]
     assert rows[0][1]["rating"] == 4.9
+    assert rows[0][1]["n_tracks"] == 4
 
 
 def test_mutopia_allowlist_rejects_sharealike_and_noncommercial() -> None:
     assert _mutopia_license_from_text("This work is Public Domain") == "public-domain"
+    assert _mutopia_license_from_text('license = "public-domain"') == "public-domain"
+    assert _mutopia_license_from_text("Creative Commons Zero 1.0") == "cc0-1.0"
+    assert _mutopia_license_from_text('license = "cc0-1.0"') == "cc0-1.0"
     assert _mutopia_license_from_text("Creative Commons Attribution 4.0") == "cc-by-4.0"
+    assert _mutopia_license_from_text('license = "cc-by-4.0"') == "cc-by-4.0"
     assert _mutopia_license_from_text("Creative Commons Attribution 3.0") == "cc-by-3.0"
+    assert _mutopia_license_from_text('license = "cc-by-3.0"') == "cc-by-3.0"
     assert _mutopia_license_from_text("Creative Commons Attribution-ShareAlike 4.0") is None
     assert _mutopia_license_from_text("Creative Commons Attribution-NonCommercial 4.0") is None
 
@@ -167,17 +173,22 @@ def test_indexed_corpus_build_load_and_fixed_sampler(tmp_path: Path) -> None:
     manifest.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
     metadata = build_indexed_compound_dataset(manifest, tmp_path / "indexed", split="train")
     assert metadata["songs"] == 2
+    assert len(str(metadata["manifest_sha256"])) == 64
     corpus = load_indexed_compound_corpus(tmp_path / "indexed" / "index.json")
+    assert corpus.metadata["manifest_sha256"] == metadata["manifest_sha256"]
     assert len(corpus.songs) == 2
     assert len(corpus.songs[0].records) > 8
     sampler = IndexedTensorSampler(corpus.songs, weighted=True)
     x, y = sampler.sample(4, 8, random.Random(7), torch.device("cpu"))
     assert x.shape == y.shape == (4, 8, 12)
-    # Weighted mode must never select the zero-weight first song. Compare the
-    # sampled first record against legal windows from the second song only.
     second = torch.tensor(corpus.songs[1].records[:], dtype=torch.long)
     for sample in x:
         assert any(torch.equal(sample, second[start : start + 8]) for start in range(len(second) - 8))
+
+    original_digest = str(metadata["manifest_sha256"])
+    manifest.write_text(manifest.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    changed = build_indexed_compound_dataset(manifest, tmp_path / "indexed_changed", split="train")
+    assert changed["manifest_sha256"] != original_digest
 
 
 def test_indexed_tbptt_sampler_state_restores_lane_positions(tmp_path: Path) -> None:
