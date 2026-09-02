@@ -1,35 +1,30 @@
 """Full-validation evaluator for Compound Base.
 
-The production trainer's `--validation-batches 4 --validation-batch-size 4`
-configuration evaluates only 4,096 events per checkpoint. With 372,369
-validation events that is ~1.1% of the corpus, which is too narrow to
-distinguish checkpoints that differ by <0.04 validation-loss units.
+The production trainer's narrow validation plan is useful for frequent checks
+but too small to rank nearby checkpoints. This tool deterministically tiles the
+validation corpus into non-overlapping full windows and performs a forward-only
+comparison.
 
-This tool evaluates a Compound checkpoint on **every** validation window
-in a deterministic, forward-only pass:
+Two different accounting concepts are reported explicitly:
 
-  * For each song, tile the record sequence in non-overlapping
-    ``seq_len``-event windows (with a final partial window dropped).
-  * Group windows into fixed-size batches (default 32) and accumulate
-    per-component loss exactly the way the trainer does.
-  * Report per-component mean loss, total mean loss, total events seen,
-    window count, and a deterministic plan hash so two evaluators can
-    prove they evaluated the same windows.
+* ``total_events`` / ``total_scalar_fields`` describe corpus coverage only.
+* ``mean_trainer_loss_event_weighted`` is the historical checkpoint-ranking
+  metric: each batch's model loss is weighted by the number of Compound events
+  in that batch. ``mean_loss_per_event`` is retained as a deprecated alias so
+  existing JSON consumers keep working.
+* Per-head losses are means over the events on which that head is *active*.
+  NOTE duration/velocity, control and a1/a2 do not share the same denominator,
+  so they must not be described as all-event or scalar-field means.
 
-The evaluator is forward-only; it never updates the model, optimizer,
-or RNG state. It is intended for the read-only "do these checkpoints
-actually differ?" question that arises between staged training runs.
+The evaluator never updates model weights, optimizer state or RNG state.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
-import math
-import os
 import sys
 import time
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -39,39 +34,20 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from orbitune.compound import CompoundEventType
 from orbitune.compound_base import CompoundBaseConfig, CompoundHierarchicalGPT
-from orbitune.compound_training import (
-    load_compound_jsonl,
-    parse_compound_checkpoint,
-)
+from orbitune.compound_training import load_compound_jsonl, parse_compound_checkpoint
 
 
 def _tile_song_windows(song, seq_len: int) -> list[tuple[int, int]]:
-    """Return ``(start, length)`` tuples for non-overlapping seq_len windows.
-
-    Drops a final partial window so every window covers exactly seq_len
-    events. With seq_len=256 and the MAESTRO 2004 validation songs (min
-    3,752 events) this produces >= 14 windows per song.
-    """
+    """Return full non-overlapping ``(start, length)`` validation windows."""
     n = len(song.records)
     if n < seq_len + 1:
         return []
-    windows: list[tuple[int, int]] = []
-    for start in range(0, n - seq_len, seq_len):
-        windows.append((start, seq_len))
-    return windows
+    return [(start, seq_len) for start in range(0, n - seq_len, seq_len)]
 
 
 def _plan_payload(songs, *, seq_len: int) -> dict[str, Any]:
-    """Build a deterministic full-validation plan.
-
-    The plan hash is the SHA-256 of a sorted (song_sha, start, length)
-    sequence, so two evaluators can prove they evaluated the same windows.
-    Each window also carries the song's record count so the evaluator
-    can resolve the song by length when the sha256 is empty (which is
-    the case for the on-the-fly test fixtures; production JSONL always
-    carries a sha256).
-    """
     plan_rows: list[tuple[str, int, int, int]] = []
     for song in songs:
         sha = getattr(song, "sha256", "") or f"records={len(song.records)}"
@@ -91,6 +67,37 @@ def _plan_payload(songs, *, seq_len: int) -> dict[str, Any]:
     }
 
 
+def _active_head_counts(target_records: torch.Tensor) -> dict[str, int]:
+    """Return the exact number of target events used by each decoder head."""
+    event_type = target_records[..., 0]
+    nevents = int(event_type.numel())
+
+    a1_active = torch.zeros_like(event_type, dtype=torch.bool)
+    for kind in (0, 1, 2, 3, 4, 5, 8, 9):
+        a1_active |= event_type.eq(kind)
+
+    a2_active = event_type.eq(int(CompoundEventType.BANK)) | event_type.eq(
+        int(CompoundEventType.TIME_SIGNATURE)
+    )
+    note = event_type.eq(int(CompoundEventType.NOTE))
+    control = (
+        event_type.eq(int(CompoundEventType.CC))
+        | event_type.eq(int(CompoundEventType.PITCH_BEND))
+        | event_type.eq(int(CompoundEventType.CHANNEL_PRESSURE))
+        | event_type.eq(int(CompoundEventType.POLY_PRESSURE))
+    )
+    return {
+        "event_type": nevents,
+        "channel": nevents,
+        "delta": nevents,
+        "a1": int(a1_active.sum().item()),
+        "a2": int(a2_active.sum().item()),
+        "velocity": int(note.sum().item()),
+        "duration": int(note.sum().item()),
+        "control": int(control.sum().item()),
+    }
+
+
 def evaluate_full_validation(
     checkpoint_path: str | Path,
     validation_jsonl: str | Path,
@@ -100,34 +107,28 @@ def evaluate_full_validation(
     device: str | torch.device = "cuda",
     precision: str | None = None,
 ) -> dict[str, Any]:
-    """Evaluate one checkpoint on the entire validation corpus.
-
-    Returns a dictionary with per-component mean loss, total mean loss,
-    total events, window count, plan hash, and the per-step mean loss
-    distribution. Never modifies the model or its optimizer.
-    """
     if not torch.cuda.is_available() and str(device).startswith("cuda"):
         device = "cpu"
     device = torch.device(device)
 
     raw = torch.load(Path(checkpoint_path), map_location="cpu", weights_only=False)
     parsed = parse_compound_checkpoint(raw)
-    cfg = parsed["config"]
-    model = CompoundHierarchicalGPT(CompoundBaseConfig(**cfg))
+    model = CompoundHierarchicalGPT(CompoundBaseConfig(**parsed["config"]))
     model.load_state_dict(parsed["model_state_dict"])
     model.to(device).eval()
 
     songs = load_compound_jsonl(validation_jsonl)
     plan = _plan_payload(songs, seq_len=seq_len)
-    by_sha: dict[str, Any] = {getattr(s, "sha256", ""): s for s in songs}
+    by_sha: dict[str, Any] = {getattr(song, "sha256", ""): song for song in songs}
     by_records: dict[int, Any] = {}
-    for s in songs:
-        by_records.setdefault(len(s.records), s)
+    for song in songs:
+        by_records.setdefault(len(song.records), song)
 
     if precision is None:
-        if "bf16" in str(parsed.get("runtime", {}).get("precision", "")).lower():
+        stored = str(parsed.get("runtime", {}).get("precision", "")).lower()
+        if "bf16" in stored:
             precision = "bf16"
-        elif "fp16" in str(parsed.get("runtime", {}).get("precision", "")).lower():
+        elif "fp16" in stored:
             precision = "fp16"
         else:
             precision = "bf16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "fp32"
@@ -139,45 +140,41 @@ def evaluate_full_validation(
     else:
         amp_dtype = None
 
-    # Walk windows in plan order, batch them up, compute per-event loss.
-    # We accumulate per-component sums and event counts, then divide at
-    # the end so the per-component mean is exactly the mean over events.
-    #
-    # Terminology:
-    #   - "events"     = Compound MIDI events (one record per (delta, event_type, ...) tuple)
-    #   - "scalar fields" = events * COMPOUND_RECORD_WIDTH (12 for the Compound ABI)
-    # The Compound record tensor y has shape (B, T, 12), so y.numel() = B*T*12 = scalar
-    # fields, NOT events. The per-event mean (sum/events) and the per-scalar-field mean
-    # (sum/fields) are the same number because every head attends every field.
     component_sums: dict[str, float] = {}
-    component_events: dict[str, int] = {}
-    total_loss_sum = 0.0
+    component_active_events: dict[str, int] = {}
+    trainer_loss_event_sum = 0.0
     total_events = 0
     total_scalar_fields = 0
     batch_bufs_x: list[torch.Tensor] = []
     batch_bufs_y: list[torch.Tensor] = []
-    batch_event_count = 0
 
     def _flush() -> None:
-        nonlocal total_loss_sum, total_events, total_scalar_fields
+        nonlocal trainer_loss_event_sum, total_events, total_scalar_fields
         if not batch_bufs_x:
             return
         x = torch.stack(batch_bufs_x).to(device)
         y = torch.stack(batch_bufs_y).to(device)
-        with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_dtype is not None):
+        with torch.no_grad(), torch.autocast(
+            device_type=device.type,
+            dtype=amp_dtype,
+            enabled=amp_dtype is not None,
+        ):
             loss, parts = model(x, y)
-        # The trainer loss is a uniform mean over the present components.
-        # We accumulate the *same* total loss per event the trainer reports
-        # so the numbers are directly comparable to the trainer log.
+
         b, t, width = int(y.shape[0]), int(y.shape[1]), int(y.shape[2])
         nevents = b * t
-        nfields = nevents * width
-        total_loss_sum += float(loss.detach()) * nevents
+        trainer_loss_event_sum += float(loss.detach().float().cpu()) * nevents
         total_events += nevents
-        total_scalar_fields += nfields
+        total_scalar_fields += nevents * width
+
+        active_counts = _active_head_counts(y)
         for name, value in parts.items():
-            component_sums[name] = component_sums.get(name, 0.0) + float(value) * nevents
-            component_events[name] = component_events.get(name, 0) + nevents
+            count = int(active_counts.get(name, 0))
+            if count <= 0:
+                continue
+            component_sums[name] = component_sums.get(name, 0.0) + float(value) * count
+            component_active_events[name] = component_active_events.get(name, 0) + count
+
         batch_bufs_x.clear()
         batch_bufs_y.clear()
 
@@ -187,41 +184,35 @@ def evaluate_full_validation(
         if song is None:
             raise ValueError(f"validation window song not found (sha={win['song_sha']!r})")
         start = int(win["start"])
-        recs = song.records[start : start + seq_len + 1]
-        if len(recs) < seq_len + 1:
+        records = song.records[start : start + seq_len + 1]
+        if len(records) < seq_len + 1:
             continue
-        x = torch.tensor(recs[:-1], dtype=torch.long)
-        y = torch.tensor(recs[1:], dtype=torch.long)
-        batch_bufs_x.append(x)
-        batch_bufs_y.append(y)
-        batch_event_count += int(y.shape[0]) * int(y.shape[1])
+        tensor = torch.tensor(records, dtype=torch.long)
+        batch_bufs_x.append(tensor[:-1])
+        batch_bufs_y.append(tensor[1:])
         if len(batch_bufs_x) >= batch_size:
             _flush()
     _flush()
     elapsed = time.time() - started
 
-    # Per-component mean = sum / events_seen_by_that_component.
-    # This matches how the trainer aggregates per-component loss
-    # (one mean per batch, then averaged across batches) only if every
-    # batch had every component. In our full-validation pass, every
-    # batch does, so the trainer-style "uniform mean over present
-    # components" reduces to per-event mean over the *same* denominator.
-    # We report both the per-event mean and the trainer-style mean for
-    # transparency.
-    per_component = {}
-    for name in sorted(component_sums.keys()):
+    per_component: dict[str, dict[str, float | int]] = {}
+    for name in sorted(component_sums):
+        active = component_active_events[name]
+        mean = component_sums[name] / max(1, active)
         per_component[name] = {
+            "sum_over_active_events": component_sums[name],
+            "active_events": active,
+            "mean_on_active_events": mean,
+            # Backward-compatible aliases. These names were historically
+            # misleading; new consumers should use the fields above.
             "sum": component_sums[name],
-            "events": component_events[name],
-            "mean_per_event": component_sums[name] / max(1, component_events[name]),
+            "events": active,
+            "mean_per_event": mean,
         }
-    total_mean_per_event = total_loss_sum / max(1, total_events)
 
-    # Trainer-style mean: sum of per-component means divided by the
-    # number of present components. Identical to the trainer's
-    # ``torch.stack(tuple(losses.values())).mean()`` aggregation.
-    component_means = [v["mean_per_event"] for v in per_component.values()]
-    trainer_style_mean = sum(component_means) / max(1, len(component_means))
+    mean_trainer_loss_event_weighted = trainer_loss_event_sum / max(1, total_events)
+    global_head_means = [float(value["mean_on_active_events"]) for value in per_component.values()]
+    uniform_mean_of_global_head_means = sum(global_head_means) / max(1, len(global_head_means))
 
     return {
         "checkpoint": str(checkpoint_path),
@@ -232,16 +223,15 @@ def evaluate_full_validation(
         "precision": precision,
         "window_count": int(plan["window_count"]),
         "window_hash": plan["window_hash"],
-        # events and scalar fields are reported separately; the per-event and
-        # per-scalar-field mean losses are numerically equal (every head
-        # attends every field), but downstream consumers (telemetry, reports)
-        # should pick the one that matches their own denominator.
         "total_events": int(total_events),
         "total_scalar_fields": int(total_scalar_fields),
         "record_width": int(total_scalar_fields // max(1, total_events)),
         "elapsed_seconds": float(elapsed),
-        "mean_loss_per_event": float(total_mean_per_event),
-        "mean_loss_trainer_style": float(trainer_style_mean),
+        "mean_trainer_loss_event_weighted": float(mean_trainer_loss_event_weighted),
+        "uniform_mean_of_global_head_means": float(uniform_mean_of_global_head_means),
+        # Deprecated compatibility aliases for historical result files.
+        "mean_loss_per_event": float(mean_trainer_loss_event_weighted),
+        "mean_loss_trainer_style": float(mean_trainer_loss_event_weighted),
         "per_component": per_component,
     }
 
@@ -250,15 +240,21 @@ def _print_report(result: dict[str, Any]) -> None:
     print(f"checkpoint: {result['checkpoint']}  step={result['checkpoint_step']}")
     print(f"validation: {result['validation_jsonl']}")
     print(f"seq_len={result['seq_len']}  batch={result['batch_size']}  precision={result['precision']}")
-    print(f"window_count={result['window_count']}  total_events={result['total_events']:,}  total_scalar_fields={result['total_scalar_fields']:,}  (record_width={result['record_width']})")
+    print(
+        f"window_count={result['window_count']}  total_events={result['total_events']:,}  "
+        f"total_scalar_fields={result['total_scalar_fields']:,}  (record_width={result['record_width']})"
+    )
     print(f"window_hash: {result['window_hash']}")
     print(f"elapsed: {result['elapsed_seconds']:.1f} s")
-    print(f"mean_loss_per_event:     {result['mean_loss_per_event']:.6f}")
-    print(f"mean_loss_trainer_style: {result['mean_loss_trainer_style']:.6f}")
-    print("per-component mean (per_event):")
+    print(f"mean_trainer_loss_event_weighted: {result['mean_trainer_loss_event_weighted']:.6f}")
+    print(f"uniform_mean_of_global_head_means: {result['uniform_mean_of_global_head_means']:.6f}")
+    print("per-component mean on active events:")
     for name in sorted(result["per_component"]):
-        v = result["per_component"][name]
-        print(f"  {name:14s}  mean={v['mean_per_event']:+.4f}  events={v['events']:,}")
+        value = result["per_component"][name]
+        print(
+            f"  {name:14s}  mean={value['mean_on_active_events']:+.4f}  "
+            f"active_events={value['active_events']:,}"
+        )
 
 
 def main() -> None:
