@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,14 @@ from orbitune.tokenizer.compound_event import COMPOUND_RECORD_WIDTH, CompoundEve
 
 INDEX_FORMAT = "orbitune-compound-indexed-v1"
 INDEX_SCHEMA_VERSION = 1
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 class IndexedRecords(Sequence[Sequence[int]]):
@@ -96,6 +105,7 @@ def build_indexed_compound_dataset(
     songs_path = out_dir / "songs.jsonl"
     index_path = out_dir / "index.json"
     tokenizer = CompoundEventTokenizer()
+    manifest_sha256 = _sha256_file(manifest_path)
 
     song_count = 0
     event_count = 0
@@ -158,6 +168,7 @@ def build_indexed_compound_dataset(
         "dtype": "int32-le",
         "split": split,
         "manifest": str(manifest_path),
+        "manifest_sha256": manifest_sha256,
         "records_file": records_path.name,
         "songs_file": songs_path.name,
         "songs": song_count,
@@ -181,6 +192,9 @@ def load_indexed_compound_corpus(index_path: str | Path) -> IndexedCompoundCorpu
         raise ValueError("indexed corpus record width does not match current Compound ABI")
     if str(metadata.get("tokenizer_abi", "")) != CompoundEventTokenizer.abi:
         raise ValueError("indexed corpus tokenizer ABI does not match current Compound tokenizer")
+    manifest_sha256 = str(metadata.get("manifest_sha256", ""))
+    if len(manifest_sha256) != 64:
+        raise ValueError("indexed corpus is missing a valid manifest_sha256 identity")
     event_count = int(metadata["events"])
     records_path = index_path.parent / str(metadata["records_file"])
     songs_path = index_path.parent / str(metadata["songs_file"])
