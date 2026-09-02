@@ -71,7 +71,15 @@ class IndexedTensorSampler:
 
 
 class IndexedSequentialSongChunkSampler:
-    """Song-sequential TBPTT sampler over memory-mapped indexed songs."""
+    """Song-sequential TBPTT sampler over memory-mapped indexed songs.
+
+    ``sampling_weight`` is defined for the fixed-window/song-draw distribution.
+    A TBPTT lane keeps a selected song for every complete sequential chunk, so
+    selecting songs directly by that weight would multiply their effective
+    training mass by song length. Weighted TBPTT therefore divides the song
+    start probability by the number of complete chunks. In expectation, the
+    emitted chunk/window mass then follows the same manifest distribution.
+    """
 
     def __init__(
         self,
@@ -96,9 +104,16 @@ class IndexedSequentialSongChunkSampler:
         self.song_indices = [-1] * self.batch_size
         self.offsets = [0] * self.batch_size
 
+    def _complete_chunks(self, index: int) -> int:
+        return max(1, (len(self.songs[index].records) - 1) // self.seq_len)
+
+    def _song_start_weight(self, index: int) -> float:
+        weight = max(0.0, float(self.songs[index].sampling_weight))
+        return weight / self._complete_chunks(index)
+
     def _start_lane(self, lane: int) -> None:
         if self.weighted:
-            weights = [max(0.0, float(self.songs[index].sampling_weight)) for index in self.eligible]
+            weights = [self._song_start_weight(index) for index in self.eligible]
             if not any(weights):
                 raise ValueError("all indexed corpus sampling weights are zero")
             song_index = self.rng.choices(self.eligible, weights=weights, k=1)[0]
