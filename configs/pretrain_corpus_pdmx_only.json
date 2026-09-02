@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "name": "orbitune-pdmx-only-census",
+  "purpose": "Census of the PDMX subset for the commercial_v1 corpus census. Used for measurement; production is configs/pretrain_corpus_commercial_v1.json.",
+  "license_policy": {
+    "allow": ["public-domain", "cc0-1.0", "cc-by-4.0", "cc-by-3.0"],
+    "deny_markers": ["-nc", "noncommercial", "unknown", "unclear"],
+    "note": "PDMX is the only source for this census."
+  },
+  "sources": [
+    {
+      "id": "pdmx",
+      "tier": "primary",
+      "kind": "zenodo_pdmx",
+      "license": "cc-by-4.0/public-domain-compositions",
+      "commercial_safe": true,
+      "record_id": 15571083,
+      "landing_url": "https://zenodo.org/records/15571083",
+      "required_files": ["PDMX.csv", "mid.tar.gz", "subset_paths.tar.gz"],
+      "filters": ["no_license_conflict", "deduplicated", "midi_available"],
+      "quality_weight": 1.0
+    }
+  ],
+  "sampling": {
+    "track_buckets": {
+      "solo": 0.40,
+      "small_ensemble_2_5": 0.50,
+      "large_ensemble_6_plus": 0.10
+    },
+    "quality_multipliers": {
+      "ordinary": 1.0,
+      "rated": 1.5,
+      "high_rated": 2.0,
+      "openscore_verified": 2.0
+    }
+  },
+  "split": {
+    "unit": "composition_fingerprint_v1",
+    "validation_fraction": 0.05,
+    "test_fraction": 0.01,
+    "seed": "orbitune-pdmx-only-census"
+  }
+}

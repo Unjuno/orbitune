@@ -253,9 +253,10 @@ def tbptt_loss(
     states: list[StreamState],
     *,
     reset_mask: torch.Tensor | None = None,
+    event_weight: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[str, float], list[StreamState]]:
     contexts, states = encode_tbptt_chunk(model, inputs, states, reset_mask=reset_mask)
-    loss, parts = model.decoder.loss(contexts, targets)
+    loss, parts = model.decoder.loss(contexts, targets, event_weight=event_weight)
     return loss, parts, states
 
 
