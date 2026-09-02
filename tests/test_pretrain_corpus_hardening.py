@@ -12,11 +12,11 @@ from scripts.build_pretrain_corpus import _mutopia_primary_scores
 from scripts.install_pretrain_corpora import install_hf_midi
 
 
-def _fake_song(*, sha: str, weight: float = 1.0):
+def _fake_song(*, sha: str, weight: float = 1.0, records: int = 12):
     return SimpleNamespace(
         sha256=sha,
         composition_fingerprint="composition-" + sha,
-        records=[[0] * 12 for _ in range(12)],
+        records=[[0] * 12 for _ in range(records)],
         quality_weight=1.0,
         sampling_weight=weight,
         tracks=1,
@@ -101,3 +101,22 @@ def test_indexed_tbptt_resume_rejects_different_corpus() -> None:
     )
     with pytest.raises(ValueError, match="corpus identity mismatch"):
         sampler_b.load_state_dict(state)
+
+
+def test_indexed_tbptt_compensates_song_start_weight_for_chunk_count() -> None:
+    sampler = IndexedSequentialSongChunkSampler(
+        [
+            _fake_song(sha="short", weight=1.0, records=9),
+            _fake_song(sha="long", weight=1.0, records=17),
+        ],
+        batch_size=1,
+        seq_len=4,
+        rng=random.Random(1),
+        weighted=True,
+    )
+    # 9 records -> 2 complete chunks, 17 records -> 4 complete chunks.
+    # A start-weight ratio of 2:1 makes the expected emitted chunk mass 1:1.
+    assert sampler._complete_chunks(0) == 2
+    assert sampler._complete_chunks(1) == 4
+    assert sampler._song_start_weight(0) == pytest.approx(0.5)
+    assert sampler._song_start_weight(1) == pytest.approx(0.25)
