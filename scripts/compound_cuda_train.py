@@ -139,10 +139,13 @@ def cuda_stats() -> dict[str, Any]:
         "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30,
         "peak_reserved_fraction": torch.cuda.max_memory_reserved() / max(1, total),
     }
-    for label, fn_name in (
-        ("utilization", "utilization"),
-        ("power_draw_watts", "power_draw"),
-        ("temperature_c", "temperature"),
+    for label, fn_name, scale in (
+        ("utilization", "utilization", 1.0),
+        # torch.cuda.power_draw() returns milliwatts; convert to watts so the
+        # JSON key matches the documented unit. The label is unchanged for
+        # downstream consumers; only the magnitude is corrected.
+        ("power_draw_watts", "power_draw", 1.0 / 1000.0),
+        ("temperature_c", "temperature", 1.0),
     ):
         fn = getattr(torch.cuda, fn_name, None)
         if fn is None:
@@ -153,7 +156,7 @@ def cuda_stats() -> dict[str, Any]:
             continue
         if value is None:
             continue
-        result[label] = float(value)
+        result[label] = float(value) * scale
     return result
 
 

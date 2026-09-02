@@ -347,7 +347,36 @@ class MixedEventDecoder(nn.Module):
             "control": self.control_head(hidden[:, :, self.SLOT_CONTROL]),
         }
 
-    def loss(self, context: torch.Tensor, records: torch.Tensor) -> tuple[torch.Tensor, dict[str, float]]:
+    def loss(
+        self,
+        context: torch.Tensor,
+        records: torch.Tensor,
+        event_weight: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, dict[str, float]]:
+        """Per-event composite loss for the compound event decoder.
+
+        ``context`` and ``records`` are the standard teacher-forced inputs,
+        shapes ``(B, S, d_model)`` and ``(B, S, 12)`` respectively. When
+        ``event_weight`` is ``None`` the reduction is the legacy unweighted
+        mean (one number per head, then ``.mean()`` across the active
+        heads) — this path is bit-identical to the pre-event-weight loss.
+        When ``event_weight`` is provided, it must broadcast to ``(B, S)``
+        (typically a float tensor of weights in ``[0, 1+]``); each head is
+        then reduced as
+        ``sum(per_event_loss * head_active_mask * event_weight) / sum(head_active_mask * event_weight)``.
+        Setting ``event_weight = 0`` on a position is the correct way to
+        mask padding or idle lanes (the head sees no contribution and the
+        loss / gradient are unaffected).
+        """
+        if event_weight is None:
+            return self._loss_legacy(context, records)
+        return self._loss_weighted(context, records, event_weight)
+
+    def _loss_legacy(
+        self,
+        context: torch.Tensor,
+        records: torch.Tensor,
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         output = self.forward_teacher(context, records)
         target = output["targets"]
         event_type = target["event_type"]
@@ -371,6 +400,85 @@ class MixedEventDecoder(nn.Module):
         control = event_type.eq(int(CompoundEventType.CC)) | event_type.eq(int(CompoundEventType.PITCH_BEND)) | event_type.eq(int(CompoundEventType.CHANNEL_PRESSURE)) | event_type.eq(int(CompoundEventType.POLY_PRESSURE))
         if control.any():
             losses["control"] = GaussianHead.loss(output["control"][0][control], output["control"][1][control], target["control"][control])
+        total = torch.stack(tuple(losses.values())).mean()
+        return total, {name: float(value.detach()) for name, value in losses.items()}
+
+    def _loss_weighted(
+        self,
+        context: torch.Tensor,
+        records: torch.Tensor,
+        event_weight: torch.Tensor,
+    ) -> tuple[torch.Tensor, dict[str, float]]:
+        if event_weight.shape != context.shape[:2]:
+            raise ValueError(
+                f"event_weight shape {tuple(event_weight.shape)} must match context[:2] {tuple(context.shape[:2])}"
+            )
+        output = self.forward_teacher(context, records)
+        target = output["targets"]
+        event_type = target["event_type"]
+        B, S = event_type.shape
+        ew = event_weight.to(dtype=context.dtype)
+
+        def _reduce_event_type(per_event: torch.Tensor) -> torch.Tensor:
+            w = ew.reshape(-1)
+            denom = w.sum().clamp_min(1e-12)
+            return (per_event.reshape(-1) * w).sum() / denom
+
+        def _reduce_full(per_event: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+            m_flat = mask.to(dtype=ew.dtype)
+            w = ew * m_flat
+            denom = w.sum().clamp_min(1e-12)
+            return (per_event * w).sum() / denom
+
+        losses: dict[str, torch.Tensor] = {
+            "event_type": _reduce_event_type(
+                F.cross_entropy(output["event_type"].reshape(-1, 10), event_type.reshape(-1), reduction="none")
+            ),
+            "channel": _reduce_event_type(
+                F.cross_entropy(output["channel"].reshape(-1, 16), target["channel"].reshape(-1), reduction="none")
+            ),
+            "delta": _reduce_event_type(
+                0.5 * (target["delta"] - output["delta"][0]).square() * torch.exp(-2.0 * output["delta"][1]) + output["delta"][1]
+            ),
+        }
+        a1_active = torch.zeros_like(event_type, dtype=torch.bool)
+        for kind in (0, 1, 2, 3, 4, 5, 8, 9):
+            a1_active |= event_type.eq(kind)
+        if a1_active.any():
+            losses["a1"] = _reduce_full(
+                F.cross_entropy(
+                    output["a1"].reshape(-1, 1024),
+                    target["a1"].clamp_max(1023).reshape(-1),
+                    reduction="none",
+                ).reshape(B, S),
+                a1_active,
+            )
+        a2_active = event_type.eq(int(CompoundEventType.BANK)) | event_type.eq(int(CompoundEventType.TIME_SIGNATURE))
+        if a2_active.any():
+            losses["a2"] = _reduce_full(
+                F.cross_entropy(
+                    output["a2"].reshape(-1, 1024),
+                    target["a2"].clamp_max(1023).reshape(-1),
+                    reduction="none",
+                ).reshape(B, S),
+                a2_active,
+            )
+        note = event_type.eq(int(CompoundEventType.NOTE))
+        if note.any():
+            losses["velocity"] = _reduce_full(
+                0.5 * (target["velocity"] - output["velocity"][0]).square() * torch.exp(-2.0 * output["velocity"][1]) + output["velocity"][1],
+                note,
+            )
+            losses["duration"] = _reduce_full(
+                0.5 * (target["duration"] - output["duration"][0]).square() * torch.exp(-2.0 * output["duration"][1]) + output["duration"][1],
+                note,
+            )
+        control = event_type.eq(int(CompoundEventType.CC)) | event_type.eq(int(CompoundEventType.PITCH_BEND)) | event_type.eq(int(CompoundEventType.CHANNEL_PRESSURE)) | event_type.eq(int(CompoundEventType.POLY_PRESSURE))
+        if control.any():
+            losses["control"] = _reduce_full(
+                0.5 * (target["control"] - output["control"][0]).square() * torch.exp(-2.0 * output["control"][1]) + output["control"][1],
+                control,
+            )
         total = torch.stack(tuple(losses.values())).mean()
         return total, {name: float(value.detach()) for name, value in losses.items()}
 

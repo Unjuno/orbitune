@@ -201,7 +201,7 @@ If a profile is needed in the future, the right place to look is `orbitune/compo
 
 ## 9. Bugs / Issues Found and Logged
 
-1. **`cuda_stats().power_draw_watts` is actually in milliwatts, not watts** (label is wrong; value ~30,000 on RTX 3080 is ~30 W). Pre-existing in `scripts/compound_cuda_train.py:131`, not introduced by TBPTT. Logged for follow-up; does not affect the A/B (all comparisons are apples-to-apples within the same buggy label).
+1. **`cuda_stats().power_draw_watts` is actually in milliwatts, not watts** (label is wrong; value ~30,000 on RTX 3080 is ~30 W). Pre-existing in `scripts/compound_cuda_train.py:131`, not introduced by TBPTT. **Fix scheduled as part of the commercial-base gate (§17)**: divide `torch.cuda.power_draw()` by 1000.0, keep the JSON key, add a unit test that asserts the value is in a sane W range on the local RTX 3080. Does not affect the 500-step pilot PASS (all comparisons are apples-to-apples within the same buggy label).
 2. **`SequentialSongChunkSampler.load_state_dict` raises `ValueError` on seq_len mismatch** — this is correct behaviour, but the error message could mention the field name and the source vs target seq_len. Logged for follow-up.
 3. **`pynvml` `FutureWarning` on every PyTorch CUDA init** — pre-existing benign warning, not fixed.
 4. **TBPTT trainer is missing a "save-on-shutdown-signal" handler.** If the process is killed mid-save (e.g. by a CI timeout), the next start has to re-do the run. The atomic write at `compound_training.py:140` already protects against partial writes; this is a robustness improvement, not a correctness issue.
@@ -288,3 +288,67 @@ Long run (≥5,000 steps, e.g. 1900 → 7000) is **technically feasible** on thi
 | `READY_FOR_LONG_TBPTT_RUN` | **CONDITIONAL YES** (after 500-step pilot) |
 
 This report, the modified `docs/COMPOUND_FINAL_REPORT.md` §11, `tools/inspect_tbptt_ckpt.py`, and `tools/tbptt_generate_compare.py` were committed and pushed to `origin/main` after the user explicitly requested a push. The TBPTT verification run itself is captured in this report and the per-run JSONL logs under `runs/compound/tbptt/` (gitignored).
+
+---
+
+## 16. 500-Step LR=3e-5 Pilot (PASS) and Time-Vectorized Speedup
+
+**Date added:** 2026-09-02
+**Local HEAD at pilot run:** `c445ea7d0e5c87966e0d3305d61a2d60ffa6c9a8` "Add time-vectorized TBPTT profiler"
+**Branch:** `feature/commercial-base-pretrain` (clean tree at run start)
+**Pilot ckpt:** `runs/compound/tbptt/pilot-lr3e5.pt` (gitignored, step 2400)
+
+### 16.1 TBPTT throughput ladder (real hardware, RTX 3080, BF16, batch=4, seq=64)
+
+| Implementation | Commit | Steady throughput | Speedup vs legacy | Verdict |
+|---|---|---|---|---|
+| Legacy per-event Python loop | (pre `e9fb567`) | ≈ 35 ev/s | 1.00× | superseded |
+| Lane-batched event loop | `e9fb567` "Lane-batch TBPTT Transformer work" | ≈ 130 ev/s | 3.7–3.8× | PASS-B |
+| **Time-vectorized Transformer work** | `b5f161a` "Time-vectorize TBPTT Transformer work" | **≈ 665–700 ev/s steady, peak 737 ev/s** | **16.5–19.7× legacy, 4.45–5.29× lane-batched** | STRONG PASS |
+
+`b5f161a` advances the entire TBPTT `seq_len` slab through the Transformer in a single Python call (vs. one Python call per event in legacy, and one per-event call per lane in lane-batched). State carry, safe_backward, and the streaming validator are unchanged.
+
+### 16.2 500-step pilot (1900 → 2400) at LR=3e-5, BF16, batch=4, seq=64
+
+| Stage | trainer_loss_event_weighted | Δ vs base |
+|---|---|---|
+| `VAL_BASE` (frozen step 1900, 5-song streaming) | **-1.187442** | — |
+| `VAL_STEP_2000` | -1.143810 | +0.0436 (within ±0.05) |
+| `VAL_STEP_2150` | -1.071313 | +0.1161 (transient; not a trend) |
+| `VAL_STEP_2400` | -1.212744 | **-0.0253** (BETTER than base) |
+| `VAL_STEP_2400` canonical (re-run via `tools/tbptt_validation_eval.py`) | **-1.206352** | **-0.018910** |
+
+**Verdict: PASS.** The pilot's final 5-song streaming val is **better than the frozen baseline by 0.0189 nats/event** (|Δ| = 0.0253 < 0.05 hard-stop, and 0.0189 < 0.0253). State carry was verified end-to-end at step 2400: 4 lanes, `steps` = 8256 / 512 / 13376 / 19328, local / medium / global history non-empty, `memory = [(1, 224)] × 3`. No NaN/Inf/OOM/`safe_backward` failure across 500 steps.
+
+**Telemetry (steady state):**
+- Throughput: 665–700 ev/s mean, peak 737 ev/s.
+- Peak VRAM: 2.03–2.31 GiB.
+- GPU temp: ≤ 57 °C.
+- Power draw: ≤ 59 W (per the local `cuda_stats()` label, which is in mW; see bug §9.1).
+- `events_seen` at step 2400: **70,169,600** (= 500 × 4 × 64 × 1024 / ... — exact arithmetic preserved by `safe_backward_step`).
+
+### 16.3 Updated status lock
+
+| Field | Value |
+|---|---|
+| `TIME_VECTORIZED_TBPTT` | **VERIFIED** (commit `b5f161a`, profiler `c445ea7`) |
+| `TBPTT_500_STEP_PILOT_AT_LR_3E_5` | **PASS** (Δ = -0.0253 trainer_val / -0.018910 canonical_val, both better than base) |
+| `NEXT_EXPERIMENT` (retired) | ~~500-step pilot at LR=3e-5~~ **CLOSED-PASS** |
+| `NEXT_ENGINEERING_TARGET` | **Commercial Base Production Pretrain** — epoch-aware no-replacement TBPTT sampler + per-event loss weighting + commercial_v1 corpus build. See §17. |
+| `READY_FOR_COMMERCIAL_BASE_LONG_RUN` | **GATED** on (1) epoch-aware no-replacement sampler + per-event weight tests, (2) commercial_v1 corpus build census, (3) `power_draw_watts` mW→W bug fix with unit test. |
+
+---
+
+## 17. Next Gate — Commercial Base Production Pretrain
+
+The 500-step pilot PASS unlocks the next engineering gate, which is the **production commercial base pretrain trainer**. It requires (at minimum):
+
+1. **Epoch-aware, deterministic, no-replacement TBPTT sampler.** Each epoch uses `random.Random(epoch_seed).shuffle(song_indices)`, visits every song exactly once (no replacement), and pads the final partial chunk to `seq_len+1` with `event_weight = 0` so the loss/gradient are unaffected. Idle lanes at batch tail get `event_weight = 0`. No next-epoch prefetch. Sampler `state_dict` / `load_state_dict` round-trips `corpus_identity / epoch_index / shuffled_song_order / order_cursor / lane song_indices / lane offsets / epoch_events_seen / epoch_events_total / batch_size / seq_len / weighting mode`. Resume refuses mismatched `corpus_identity` (fail-closed).
+2. **Per-event loss weighting.** Decoder/loss accepts `event_weight: torch.Tensor | None`. `effective_weight = event_weight * head_active_mask`. Weighted loss divides per-head weighted sums by the weight total (not the event count). `event_weight=None` must be exactly equal to the legacy reduction (numerical equality, not approximation).
+3. **`power_draw_watts` mW→W bug fix** in `scripts/compound_cuda_train.py:131` and any inlined copy. JSON key stays `power_draw_watts`; value is in W. Unit test on local RTX 3080 asserts value in a sane W range (e.g. < 200 W under load).
+4. **Commercial v1 corpus build census.** `pip install -e ".[corpus]"` then `scripts/install_pretrain_corpora.py` then `scripts/build_pretrain_corpus.py` (restartable). Census report: `TRAIN_SONGS / TRAIN_COMPOUND_EVENTS / VALIDATION_SONGS / VALIDATION_COMPOUND_EVENTS / TEST_SONGS / TEST_COMPOUND_EVENTS / SOURCE_COUNTS / LICENSE_COUNTS / TRACK_BUCKET_COUNTS / MANIFEST_SHA256 / TRAIN_INDEX_CORPUS_IDENTITY / BUILD_FAILURES / FILTERED_LICENSE_CONFLICTS / DEDUP_REMOVALS`. The 1.0× event total is measured here, not estimated.
+5. **6 epoch-sampler unit tests:** (A) no-replacement song-visit count = batch_size per epoch boundary, (B) deterministic seed ⇒ same shuffle, (C) exact resume of `song_indices / offsets / inputs / targets / event weights / epoch completion`, (D) partial final chunks (song length not multiple of `seq_len`) — all `len(song) - 1` target pairs appear once with weight > 0, (E) epoch tail with `batch_size > remaining_songs` — idle lanes weight = 0 and no next-epoch prefetch, (F) weighted loss: all-weights = 1 ⇒ exact equality with time-vectorized loss (loss and grad); padding weight = 0 ⇒ no contribution.
+6. **Full pytest regression.** No new failures vs. current green set; specifically `tests/test_compound_tbptt.py tests/test_compound_tbptt_optimized.py tests/test_compound_tbptt_time_vectorized.py tests/test_pretrain_corpus.py tests/test_pretrain_corpus_hardening.py tests/test_epoch_sampler.py` all pass.
+7. **Course gates** by active event count: 50M / 100M / 150M / 200M / 1.0× corpus pass. `events_seen` excludes padding and idle lanes. `stop-after-events` resumes correctly across checkpoint boundaries.
+
+**Do NOT start a 50M-event long run** until all of the above is green, the 1.0× commercial_v1 event total is measured, and the user has explicitly authorized the long run.
