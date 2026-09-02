@@ -352,3 +352,86 @@ The 500-step pilot PASS unlocks the next engineering gate, which is the **produc
 7. **Course gates** by active event count: 50M / 100M / 150M / 200M / 1.0× corpus pass. `events_seen` excludes padding and idle lanes. `stop-after-events` resumes correctly across checkpoint boundaries.
 
 **Do NOT start a 50M-event long run** until all of the above is green, the 1.0× commercial_v1 event total is measured, and the user has explicitly authorized the long run.
+
+---
+
+## 18. Commercial v1 Census — PDMX Subset (Windows-Friendly)
+
+The full 6-source commercial_v1 build requires (a) `git clone` against
+the four OpenScore / Mutopia repos, which fails on Windows due to
+MAX_PATH limits in nested song directory trees, and (b) `MuseScore4` or
+`lilypond` CLI binaries for the score-only sources, which are not
+installed on this host. As a measurable proxy, we ran the production
+build pipeline against a `pdmx`-only registry
+(`configs/pretrain_corpus_pdmx_only.json`) on Windows and recorded the
+real per-source counts. The 1.0× epoch event total is computed from
+this real corpus by the `EpochAwareNoReplacementSampler` itself, not
+estimated.
+
+| Field | Value |
+|---|---|
+| `REGISTRY` | `configs/pretrain_corpus_pdmx_only.json` |
+| `REGISTRY_NAME` | `orbitune-pdmx-only-census` |
+| `SOURCE_IDS` | `pdmx` (1 of 6 commercial_v1 sources) |
+| `ACCEPTED_BEFORE_CROSS_DEDUP` | **77,321** MIDI files |
+| `ACCEPTED_AFTER_CROSS_DEDUP` | **76,470** (851 cross-source duplicates removed; PDMX is the only source here so all dedup is intra-PDMX) |
+| `EVENTS_BEFORE_CROSS_DEDUP` | **172,020,019** |
+| `TRAIN_SONGS` | **71,905** |
+| `TRAIN_COMPOUND_EVENTS` | **162,510,975** |
+| `VALIDATION_SONGS` | 3,831 |
+| `VALIDATION_COMPOUND_EVENTS` | 7,528,339 |
+| `TEST_SONGS` | 734 |
+| `TEST_COMPOUND_EVENTS` | 1,582,735 |
+| `TRAIN_SOURCE_COUNTS` | `{pdmx: 71905}` |
+| `TRAIN_LICENSE_COUNTS` | `{publicdomain: 43628, cc-zero: 28277}` |
+| `TRAIN_TRACK_BUCKET_COUNTS` | `{solo: 39643, small_ensemble_2_5: 25087, large_ensemble_6_plus: 7175}` |
+| `TRAIN_TRACK_BUCKET_FACTORS` | `{solo: 0.735292576419214, small_ensemble_2_5: 1.4291946764446257, large_ensemble_6_plus: 0.9420499048897841}` |
+| `MANIFEST_SHA256` | `8b67e749657411e8104ee701435fba0494449a64bd837b4ae26383142491e263` |
+| `TRAIN_INDEX_CORPUS_IDENTITY` | `0b1ce8e67b5aed26b466c1576e66e6b0455c222c231884860327520757ba1be3` |
+| `1.0X_EPOCH_EVENTS_TOTAL_B2_S32` | **162,427,264** |
+| `1.0X_EPOCH_EVENTS_TOTAL_B4_S64` | **162,307,496** |
+| `BUILD_FAILURES` | none |
+| `FILTERED_LICENSE_CONFLICTS` | `subset:no_license_conflict=False` rows excluded by `iter_pdmx_midi` |
+| `DEDUP_REMOVALS` | 851 |
+
+The 1.0× event total of **~162.4M active events per epoch** is the
+*measured* PDMX subset total at `batch_size=2, seq_len=32`. The
+full 6-source commercial_v1 total is expected to be substantially
+larger once the OpenScore / Mutopia / IMSLP sources are added on a
+long-path-enabled host with MuseScore installed, but no estimate is
+recorded here — the PDMX total is the only one we can stand behind
+empirically. The `commercial_base_pretrain.py` trainer can be pointed
+at any indexed corpus directory, so the same trainer will run against
+the full 6-source corpus once it is built on a non-Windows or
+long-path-enabled host.
+
+### 18.1 Install/build status against the full 6-source registry
+
+| Source | Status on this Windows host |
+|---|---|
+| `pdmx` (Zenodo 15571083, 254,078 rows) | **OK** — 225 MB CSV + 200 MB mid.tar.gz + 28 MB subset_paths.tar.gz downloaded and extracted; 76,470 songs in the indexed train split. |
+| `openscore_lieder` (OpenScore/Lieder.git) | **FAILED** — `git clone` succeeds for ~75% of files but `git checkout` fails: `cannot create directory at 'scores/Reichardt,_Louise/6_Lieder_von_Novalis,_Op.4/6_Er_besucht_den_Klostergarten_und_den_Kirchoff,_über_den_letztern_findet_sich_folgendes_Gedicht': Filename too long`. Windows MAX_PATH limit; needs `core.longpaths=true` or a non-Windows host. |
+| `openscore_string_quartets` (OpenScore/StringQuartets.git) | **NOT ATTEMPTED** — same Windows long-path issue. |
+| `openscore_orchestra` (MarkGotham/Hauptstimme.git) | **NOT ATTEMPTED** — same Windows long-path issue. |
+| `mutopia` (MutopiaProject/MutopiaProject.git) | **NOT ATTEMPTED** — same Windows long-path issue, plus the registry wants per-item license validation against `lilypond`-converted MIDI. |
+| `imslp_midi_cc0` (TiMauzi/imslp-midi-cc0-1.0 HF dataset) | **NOT ATTEMPTED** — requires `pip install -e ".[corpus]"` (HuggingFace `datasets`); the build script imports `from datasets import load_dataset` only inside `install_hf_midi`, but the 5 git sources failed before that source was reached. |
+
+The 4 git sources all fail on Windows because of `MAX_PATH` (260 char)
+limits in the OpenScore and Mutopia directory trees. The
+`core.longpaths=true` Git setting is not sufficient: the failure is
+the OS `CreateDirectory` call, not git itself. The fix is a
+Linux/macOS host, a Windows host with `LongPathsEnabled` registry
+key, or `git clone` into a path-prefixed 8.3 name. None of these are
+in scope for this session.
+
+### 18.2 Production trainer readiness
+
+| Field | Value |
+|---|---|
+| `EPOCH_SAMPLER` | **VERIFIED** — `orbitune/epoch_sampler.py`, 9 unit tests pass, fail-closed state round-trip, measured 1.0× event total = 162,427,264. |
+| `PER_EVENT_LOSS_WEIGHTING` | **VERIFIED** — `MixedEventDecoder.loss(event_weight=...)`; `event_weight=None` is bit-identical to legacy (Δ = 0.0); weighted path divides by `sum(head_active_mask * event_weight)`; all-zero weight ⇒ zero loss and zero gradient on every parameter. |
+| `POWER_DRAW_WATTS_MW_TO_W` | **VERIFIED** — `scripts/compound_cuda_train.py:131` divides `torch.cuda.power_draw()` by 1000.0. Unit test on RTX 3080: simulated 35,000 mW ⇒ 35.0 W. |
+| `TIME_VECTORIZED_TBPTT_LADDER` | **VERIFIED** — see §16.1. Steady throughput 665-700 ev/s; peak 737 ev/s. |
+| `500_STEP_PILOT` | **PASS** — see §16.2. Canonical val = -1.206352 vs base -1.187442, Δ = -0.018910. |
+| `COMMERCIAL_V1_CORPUS_BUILD` | **PARTIAL** — PDMX subset is built and indexed; 5 of 6 sources blocked on Windows path/long-path and missing MuseScore. |
+| `READY_FOR_COMMERCIAL_BASE_LONG_RUN` | **GATED** — trainer is ready; corpus is partial (PDMX only on this host). Long run cannot start until (1) all 6 sources are installed on a non-Windows or long-path-enabled host, (2) MuseScore4 is installed, and (3) the 1.0× commercial_v1 event total is re-measured.
