@@ -27,6 +27,7 @@
       "license": "cc0-1.0",
       "commercial_safe": true,
       "git_url": "https://github.com/OpenScore/Lieder.git",
+      "ref": "6b2dc542ce2e8aa4b78c8ee62103b210efc07015",
       "score_globs": ["**/*.mscz", "**/*.mscx", "**/*.musicxml", "**/*.mxl", "**/*.mid", "**/*.midi"],
       "quality_weight": 2.0
     },
@@ -37,6 +38,7 @@
       "license": "cc0-1.0",
       "commercial_safe": true,
       "git_url": "https://github.com/OpenScore/StringQuartets.git",
+      "ref": "8fd2169855a1b27586454b183739573962f9d8ca",
       "score_globs": ["**/*.mscz", "**/*.mscx", "**/*.musicxml", "**/*.mxl", "**/*.mid", "**/*.midi"],
       "quality_weight": 2.0
     },
@@ -47,6 +49,7 @@
       "license": "cc0-1.0-scores",
       "commercial_safe": true,
       "git_url": "https://github.com/MarkGotham/Hauptstimme.git",
+      "ref": "8f677853c45b74ca0afcd79677e5379c06c82354",
       "include_scores_only": true,
       "exclude_annotations": true,
       "score_globs": ["**/*.mscz", "**/*.mscx", "**/*.musicxml", "**/*.mxl", "**/*.mid", "**/*.midi"],
@@ -59,6 +62,7 @@
       "license": "per-item",
       "commercial_safe": true,
       "git_url": "https://github.com/MutopiaProject/MutopiaProject.git",
+      "ref": "2144afd6f52d56c5b6995b8b589ef1268b3139f0",
       "allowed_item_licenses": ["public-domain", "cc0-1.0", "cc-by-4.0", "cc-by-3.0"],
       "score_globs": ["ftp/**/*.mid", "ftp/**/*.midi", "ftp/**/*.ly"],
       "quality_weight": 1.0
