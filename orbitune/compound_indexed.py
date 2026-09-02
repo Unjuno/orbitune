@@ -95,6 +95,8 @@ def build_indexed_compound_dataset(
     object memory. Training processes memory-map the one flat array and only
     copy the sampled song windows needed for the current optimizer step.
 
+    Indexed corpus identity is immutable under the official builder: an output
+    directory that already advertises a different manifest SHA is rejected.
     Rebuild publication is fail-closed: all replacement files are prepared as
     temporaries, any old ``index.json`` is removed before data files change,
     and the new index is published last. A crash can therefore leave a corpus
@@ -112,6 +114,15 @@ def build_indexed_compound_dataset(
     tokenizer = CompoundEventTokenizer()
     manifest_sha256 = _sha256_file(manifest_path)
 
+    if index_path.exists():
+        previous = json.loads(index_path.read_text(encoding="utf-8"))
+        previous_manifest_sha = str(previous.get("manifest_sha256", ""))
+        if previous_manifest_sha and previous_manifest_sha != manifest_sha256:
+            raise ValueError(
+                "refusing to overwrite indexed corpus with a different manifest identity; "
+                "use a new output directory (or explicitly remove the old indexed corpus)"
+            )
+
     song_count = 0
     event_count = 0
     source_counts: dict[str, int] = {}
@@ -125,6 +136,14 @@ def build_indexed_compound_dataset(
         with tmp_records.open("wb") as record_handle, tmp_songs.open("w", encoding="utf-8") as song_handle:
             for row in _read_manifest_rows(manifest_path, split):
                 midi_path = Path(str(row["path"]))
+                expected_raw_sha = str(row.get("raw_sha256", row.get("sha256", "")))
+                if len(expected_raw_sha) == 64:
+                    actual_raw_sha = _sha256_file(midi_path)
+                    if actual_raw_sha != expected_raw_sha:
+                        raise ValueError(
+                            f"{midi_path}: raw MIDI SHA-256 changed after manifest creation "
+                            f"(manifest={expected_raw_sha}, actual={actual_raw_sha})"
+                        )
                 events = read_compound_midi(midi_path)
                 records = tokenizer.encode_events(events)
                 if not records:
@@ -137,7 +156,7 @@ def build_indexed_compound_dataset(
                 length = int(matrix.shape[0])
                 payload = {
                     "path": str(midi_path),
-                    "sha256": str(row.get("raw_sha256", row.get("sha256", ""))),
+                    "sha256": expected_raw_sha,
                     "composition_fingerprint": str(row.get("composition_fingerprint", "")),
                     "source_id": str(row.get("source_id", "")),
                     "license": str(row.get("license", "")),
