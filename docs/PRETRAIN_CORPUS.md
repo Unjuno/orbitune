@@ -13,13 +13,13 @@ The authoritative machine-readable registry is `configs/pretrain_corpus_commerci
 | Source | Role | v1 hard filter |
 | --- | --- | --- |
 | PDMX v9 | Primary scale corpus | `no_license_conflict` + upstream `deduplicated` + MIDI available/parseable |
-| OpenScore Lieder | Quality anchor | CC0 score corpus |
-| OpenScore String Quartets | Quality anchor | CC0 score corpus |
-| OpenScore / Hauptstimme Orchestra | Quality anchor | CC0 score content only; annotations are not training data |
-| Mutopia | Supplement | Per-item Public Domain / CC0 / CC-BY 3.0/4.0 only |
-| IMSLP MIDI CC0 | Direct-MIDI supplement | Public Domain / CC0-only dataset variant |
+| OpenScore Lieder | Quality anchor | CC0 canonical score tree only |
+| OpenScore String Quartets | Quality anchor | CC0 canonical score tree only |
+| OpenScore / Hauptstimme Orchestra | Quality anchor | CC0 canonical full-score files only; annotation-derived melody/CSV material is excluded |
+| Mutopia | Supplement | Per-score Public Domain / CC0 / CC-BY 3.0/4.0 only, inferred from that score itself and converted fail-closed |
+| IMSLP MIDI CC0 | Direct-MIDI supplement | Public Domain / CC0-only dataset variant, pinned to the exact data revision |
 
-Git score sources are pinned to exact source commits in the registry. The installer records the resolved revisions again in `install_manifest.json`.
+Git score sources are pinned to exact source commits in the registry. The Hugging Face source is likewise pinned to a full immutable dataset revision. The installer records resolved source identity again in `install_manifest.json`.
 
 ### PDMX
 
@@ -56,16 +56,17 @@ Install all registered sources locally:
 
 Large dataset bytes are ignored by git under `data/corpora/`.
 
-The installer is restartable. PDMX files are size/checksum verified. Git sources use pinned revisions. Hugging Face direct MIDI is materialized as raw `.mid` plus scalar metadata JSON.
+The installer is restartable. PDMX files are size/checksum verified. Git sources use pinned revisions. Hugging Face direct MIDI is loaded from its pinned data revision and all upstream splits are materialized as raw `.mid` plus scalar metadata JSON before Orbitune performs its own composition-level split.
 
 ## Normalize, deduplicate and build indexed Compound data
 
-OpenScore repositories are notation-first. Install MuseScore 4 and either place its CLI on `PATH` or pass it explicitly:
+OpenScore repositories are notation-first. Install MuseScore 4. Mutopia source-score conversion additionally requires LilyPond. Put both CLIs on `PATH` or pass them explicitly:
 
 ```powershell
 .\venv_cuda\Scripts\python.exe scripts\build_pretrain_corpus.py `
   --root data\corpora\commercial_v1 `
-  --musescore-bin "C:\Program Files\MuseScore 4\bin\MuseScore4.exe"
+  --musescore-bin "C:\Program Files\MuseScore 4\bin\MuseScore4.exe" `
+  --lilypond-bin "C:\Program Files\LilyPond\usr\bin\lilypond.exe"
 ```
 
 The build performs:
@@ -80,6 +81,8 @@ The build performs:
 8. Instrumentation-bucket and quality sampling weights.
 9. Direct Compound Event tokenization.
 10. Flat int32 memory-mapped record stores and song indexes.
+
+OpenScore source selection is deliberately narrow. Lieder and String Quartets are read only from their canonical `scores/` trees. OpenScore Orchestra is converted only from canonical `data/**/*.mscz` full scores; `_melody.mxl`, annotation CSVs and other annotation-derived artifacts are not candidates. Mutopia does not admit arbitrary source-tree MIDI: only LilyPond primary scores whose **own file** has an allowlisted license are converted, and the converted MIDI carries a local normalized license sidecar.
 
 Outputs are under:
 
@@ -105,6 +108,8 @@ data/corpora/commercial_v1/
 ```
 
 The indexed format is intentional. The previous JSONL loader materializes all song records as Python objects and the fixed-window CFE sampler then copies all songs to Torch tensors. That is acceptable for the small MAESTRO smoke corpus but not for a 100k-song / hundreds-of-millions-event Base corpus. The indexed backend memory-maps one flat int32 matrix and copies only current training windows.
+
+`index.json` contains the SHA-256 of the source manifest. Rebuild publication is fail-closed: the index is the commit marker and is published last, so a crash cannot leave an old index advertising partially replaced record/song files.
 
 ## Dedup and split semantics
 
@@ -133,7 +138,7 @@ high-rated             2.0x total
 OpenScore quality      2.0x source prior
 ```
 
-Enable it explicitly during training with `--weighted-corpus-sampling`. Validation should remain deterministic and unweighted.
+Enable it explicitly during training with `--weighted-corpus-sampling`. Validation remains deterministic and unweighted. Sequential TBPTT compensates song-start probability by the number of complete chunks, so long songs do not silently receive extra probability mass merely because a selected lane remains on them longer.
 
 ## Fixed-window indexed training
 
@@ -165,10 +170,13 @@ The intended long-form Base path is state-carry TBPTT once its RTX 3080 context-
   --steps <STAGED_TARGET> `
   --batch-size <TBPTT_CFE_BATCH> `
   --seq-len <TBPTT_CFE_SEQ> `
+  --validation-songs 64 `
   --weighted-corpus-sampling
 ```
 
-Do not reuse the fixed-window `batch=144, seq=256` assumption for TBPTT without the dedicated GPU context-fit experiment.
+Do not reuse the fixed-window `batch=144, seq=256` assumption for TBPTT without the dedicated GPU context-fit experiment. The trainer's low-cost default validation count is not sufficient for selecting a large-corpus Base checkpoint: use a materially larger deterministic set such as 64 songs during staged training, and use `--validation-songs 0` for full-validation stage gates before increasing the training budget.
+
+Indexed TBPTT checkpoint sampler state is bound to an ordered corpus identity including song hashes, composition fingerprints, lengths and sampling weights. Exact resume rejects a changed indexed training corpus instead of silently carrying lane offsets into different songs.
 
 ## Base scaling plan
 
@@ -179,3 +187,5 @@ Do not assume the full corpus must be repeated for a fixed epoch count. Measure 
 ```
 
 Track at least streaming validation, per-head loss, instrumentation/generalization, generation diversity, nearest-training-piece similarity, and downstream LoRA adaptation efficiency. A strong Base is defined partly by how quickly small LoRA datasets can move it to the target musical distribution without destroying general musical competence.
+
+Before distributing a trained Base, generate a source/attribution report from the retained manifest for any CC-BY material and include it with the model release metadata. The corpus manifest is provenance input; it is not itself a substitute for release-time attribution review.
