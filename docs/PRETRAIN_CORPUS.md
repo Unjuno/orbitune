@@ -39,6 +39,36 @@ The v1 Base does not ingest MAESTRO, Aria-MIDI, GigaMIDI, Discover/Godzilla, Com
 
 NES-style or other retro specialization should be evaluated as LoRA data rather than silently changing the Base corpus license/style distribution.
 
+## Candidate commercial-safe expansion sources
+
+The following are **candidates only** and are not part of `commercial_v1` until a pinned installer, fail-closed provenance filter and regression tests are merged. A Hugging Face or repository-level license tag is not sufficient by itself when upstream score or composition rights are ambiguous.
+
+| Candidate | Intended admission rule | Status |
+| --- | --- | --- |
+| CPDL / Choral Public Domain Library | Edition-level Public Domain / CC0 / CC-BY only; reject CPDL License, SA, NC and ambiguous external editions | Candidate |
+| Humdrum / KernScores | Allowlisted upstream repository license plus no conflicting per-file copyright/license metadata | Candidate |
+| Muse OMR Benchmark | CC0 dataset with Public Domain underlying works; pin exact dataset revision | Candidate |
+| Florence Price Art Song Dataset | Use only the publisher-provided CC0 / copyright-cleared training subset | Candidate |
+| Wikimedia Commons MIDI | Per-file Public Domain / CC0 / CC-BY only, with revision and license provenance retained | Candidate |
+
+Large wrapper datasets assembled from Lakh, MetaMIDI, FreeMIDI, Bread MIDI or other unclear upstream collections remain excluded even when the wrapper repository advertises a permissive license. Upstream provenance must survive the entire rights chain.
+
+## Current Base pretraining course
+
+This section is the current project course for the commercial Base and should be treated as the planning source of truth until replaced by measured corpus/build results.
+
+1. Build the complete commercial-safe corpus and record the **post-filter, post-dedup train Compound-event count**. Do not infer the final size from raw source file counts.
+2. The present planning estimate is roughly **200M-300M unique-ish train Compound events**, with ~250M as a budgetary center only. This is **not** a measured corpus size and must be replaced by `build_report.json` / indexed-corpus census once the full build is complete.
+3. Prefer a true one-pass first epoch over repeatedly sampling a small corpus. One epoch means consuming each admitted training composition once in a deterministic shuffled order while carrying TBPTT state within a song and resetting at song boundaries.
+4. Save staged evaluation snapshots during the first pass. Initial planning gates are approximately `50M`, `100M`, `150M`, `200M`, then the measured **1.0x corpus pass** checkpoint. If the measured corpus is larger, add intermediate gates rather than skipping directly to the end.
+5. Evaluate every promotion candidate with the same frozen validation/evaluation suite. The final Base is **the best validated checkpoint, not automatically the last checkpoint**.
+6. If the 1.0x checkpoint is still improving materially, continue the same run in controlled additional exposure stages, for example `1.5x`, `2.0x`, `3.0x`, and at most about **1B total training-event exposure** unless evidence justifies a different ceiling.
+7. `1B` is therefore an **exposure ceiling / scaling probe**, not a requirement to fabricate or admit 1B unique events. Corpus quality, provenance and deduplication take precedence over reaching a round number.
+8. Keep release metadata, corpus identity, source commit, metrics and checkpoint hashes in git. Large checkpoint binaries should live in release/artifact storage rather than ordinary git history.
+9. Promote the selected Base to the product/model registry only after its model card records why that checkpoint beat the alternatives (training exposure, validation, generation checks and downstream adaptation evidence).
+
+The existing indexed samplers currently use random song selection. That is appropriate for staged CFE experiments but it does **not** constitute an exact one-pass epoch. Before full Base pretraining, add and test an epoch-aware deterministic sequential sampler so the `1.0x` checkpoint has a literal corpus-pass meaning and exact resume preserves the remaining shuffled order.
+
 ## Install
 
 Install the optional Hugging Face dataset dependency:
@@ -140,6 +170,8 @@ OpenScore quality      2.0x source prior
 
 Enable it explicitly during training with `--weighted-corpus-sampling`. Validation remains deterministic and unweighted. Sequential TBPTT compensates song-start probability by the number of complete chunks, so long songs do not silently receive extra probability mass merely because a selected lane remains on them longer.
 
+For the planned literal one-pass epoch, weighting must not be implemented by sampling admitted compositions with replacement. Preserve one composition visit per epoch and express desired distribution control through deterministic ordering/interleaving, selective corpus admission/downsampling, or explicitly documented loss weighting. The exact policy must remain auditable in the manifest and run metadata.
+
 ## Fixed-window indexed training
 
 The legacy fixed-window production path remains available for controlled experiments:
@@ -178,13 +210,11 @@ Do not reuse the fixed-window `batch=144, seq=256` assumption for TBPTT without 
 
 Indexed TBPTT checkpoint sampler state is bound to an ordered corpus identity including song hashes, composition fingerprints, lengths and sampling weights. Exact resume rejects a changed indexed training corpus instead of silently carrying lane offsets into different songs.
 
-## Base scaling plan
+## Base scaling and checkpoint promotion
 
-Do not assume the full corpus must be repeated for a fixed epoch count. Measure the 10M-class model's data scaling curve using unique Compound-event caps such as:
+Do not run independent `10M -> 30M -> 100M -> 300M` corpus experiments by default. The preferred experiment is one reproducible long run over the measured commercial-safe corpus, with staged checkpoints that expose the scaling curve without changing the underlying data definition.
 
-```text
-10M -> 30M -> 100M -> 300M -> full commercial-safe corpus
-```
+During the first corpus pass, checkpoint by cumulative training exposure at the documented gates and at `1.0x`. Continue beyond one pass only when held-out metrics and generation checks still improve materially. When continuation is justified, measure the same run at additional corpus-pass/exposure gates up to the planned 1B exposure ceiling.
 
 Track at least streaming validation, per-head loss, instrumentation/generalization, generation diversity, nearest-training-piece similarity, and downstream LoRA adaptation efficiency. A strong Base is defined partly by how quickly small LoRA datasets can move it to the target musical distribution without destroying general musical competence.
 
