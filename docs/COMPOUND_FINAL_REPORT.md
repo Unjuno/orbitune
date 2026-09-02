@@ -184,5 +184,6 @@ Required sequence:
 * **`FIXED_WINDOW_BASE = COMPLETE`.**
 * **`SHIP_CHECKPOINT = runs/compound/base-maestro2004.best.pt` (step 1900).** Historical full-validation trainer-loss metric = **-1.534510**.
 * **`FURTHER_FIXED_WINDOW_TRAINING = STOP`.**
-* **`STATE_CARRY_TBPTT = IMPLEMENTED_AWAITING_GPU_AB`.** Correctness path exists; it is not yet the shipped training recipe.
-* **`NEXT_EXPERIMENT = TBPTT_SMOKE_PROFILE_AND_AB`.** Benchmark the new execution path on RTX 3080, then A/B against the frozen step-1900 baseline before any long run.
+* **`STATE_CARRY_TBPTT = VERIFIED_OK`.** Real-hardware verification complete on RTX 3080. See `docs/TBPTT_REPORT.md` for the full A/B and per-head deltas. 5-song streaming-state val of the SHIP_CHECKPOINT = **-1.187442**; LR=3e-5 TBPTT continuation (50 steps) = **-1.164991** (within noise, +0.022); LR=1e-4 TBPTT continuation (50 steps) = **-0.888059** (catastrophic, +0.299). **Safe LR for TBPTT fine-tuning is ≤ 3e-5.**
+* **`TRAINING_THROUGHPUT = TBPTT_BOUNDED_BY_PYTHON_LOOP`.** Plateau at ~35 ev/s on RTX 3080 regardless of (batch, seq_len). The 1-event Python call inside `tbptt_loss` is the binding constraint; the model is sub-millisecond and the GPU is 30–60% utilised.
+* **`NEXT_EXPERIMENT = TBPTT_500_STEP_PILOT_AT_LR_3E_5`.** A 500-step pilot from step 1900 at LR=3e-5 (~30 min wall time, 64,000 events trained) with 5-song streaming val at steps 100, 250, 500. If the streaming val stays within ±0.05 of -1.187 at step 500, declare TBPTT production-equivalent and plan a longer run. **Do not start a >1,000-step TBPTT run without the 500-step pilot first.**
