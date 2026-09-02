@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tarfile
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 
 from orbitune.pretrain_corpus import commercial_safe_sources, load_registry
@@ -100,22 +101,59 @@ def install_hf_midi(source: dict[str, object], target: Path) -> dict[str, object
         from datasets import load_dataset
     except ImportError as exc:
         raise RuntimeError('Hugging Face source requires: pip install -e ".[corpus]"') from exc
+
     repo_id = str(source["repo_id"])
+    revision = str(source.get("revision", "")).strip()
+    if len(revision) != 40:
+        raise RuntimeError(f"{repo_id}: registry must pin a full 40-character revision")
     midi_column = str(source.get("midi_column", "midi"))
     target.mkdir(parents=True, exist_ok=True)
-    dataset = load_dataset(repo_id, split="train")
+
+    # Remove the pre-v1 unprefixed materialization scheme if a developer ran an
+    # earlier branch revision. Otherwise the builder would see those rows twice.
+    for legacy in target.glob("[0-9][0-9][0-9][0-9][0-9][0-9].mid"):
+        legacy.unlink(missing_ok=True)
+        legacy.with_suffix(".json").unlink(missing_ok=True)
+
+    loaded = load_dataset(repo_id, revision=revision)
+    if isinstance(loaded, Mapping):
+        split_items = sorted(loaded.items(), key=lambda item: str(item[0]))
+    else:
+        split_items = [("train", loaded)]
+
     written = 0
-    for index, row in enumerate(dataset):
-        raw = row[midi_column]
-        if isinstance(raw, dict) and "bytes" in raw:
-            raw = raw["bytes"]
-        if not isinstance(raw, (bytes, bytearray)):
-            raise RuntimeError(f"{repo_id}:{index}: MIDI column is not bytes")
-        (target / f"{index:06d}.mid").write_bytes(bytes(raw))
-        meta = {key: value for key, value in row.items() if key != midi_column and isinstance(value, (str, int, float, bool, type(None)))}
-        (target / f"{index:06d}.json").write_text(json.dumps(meta, ensure_ascii=False) + "\n", encoding="utf-8")
-        written += 1
-    return {"repo_id": repo_id, "rows": written, "path": str(target)}
+    split_counts: dict[str, int] = {}
+    for split_name_raw, dataset in split_items:
+        split_name = str(split_name_raw)
+        count = 0
+        for index, row in enumerate(dataset):
+            raw = row[midi_column]
+            if isinstance(raw, dict) and "bytes" in raw:
+                raw = raw["bytes"]
+            if not isinstance(raw, (bytes, bytearray)):
+                raise RuntimeError(f"{repo_id}:{split_name}:{index}: MIDI column is not bytes")
+            stem = f"{split_name}-{index:06d}"
+            (target / f"{stem}.mid").write_bytes(bytes(raw))
+            meta = {
+                key: value
+                for key, value in row.items()
+                if key != midi_column and isinstance(value, (str, int, float, bool, type(None)))
+            }
+            meta["upstream_split"] = split_name
+            (target / f"{stem}.json").write_text(
+                json.dumps(meta, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+            written += 1
+            count += 1
+        split_counts[split_name] = count
+
+    return {
+        "repo_id": repo_id,
+        "revision": revision,
+        "rows": written,
+        "splits": split_counts,
+        "path": str(target),
+    }
 
 
 def main() -> None:
