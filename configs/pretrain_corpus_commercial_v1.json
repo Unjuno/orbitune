@@ -74,6 +74,7 @@
       "license": "public-domain/cc0-1.0",
       "commercial_safe": true,
       "repo_id": "TiMauzi/imslp-midi-cc0-1.0",
+      "revision": "6ae7ad248c5a599aef5f095b0694598b266eb13f",
       "midi_column": "midi",
       "quality_weight": 1.0
     }
