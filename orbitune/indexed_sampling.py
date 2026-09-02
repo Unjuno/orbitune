@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import random
 from typing import Any
 
@@ -10,12 +11,34 @@ from orbitune.compound_indexed import IndexedCompoundSong
 from orbitune.compound_tbptt import ChunkBatch
 
 
+def _corpus_identity(songs: list[IndexedCompoundSong]) -> str:
+    """Stable identity for sampler-visible corpus order, content and weights."""
+    digest = hashlib.sha256()
+    for index, song in enumerate(songs):
+        values = (
+            index,
+            song.sha256,
+            song.composition_fingerprint,
+            len(song.records),
+            repr(float(song.quality_weight)),
+            repr(float(song.sampling_weight)),
+            int(song.tracks),
+            song.source_id,
+            song.license,
+        )
+        for value in values:
+            digest.update(str(value).encode("utf-8"))
+            digest.update(b"\0")
+    return digest.hexdigest()
+
+
 class IndexedTensorSampler:
     """Fixed-window sampler that copies only sampled windows from a memmap."""
 
     def __init__(self, songs: list[IndexedCompoundSong], *, weighted: bool = False) -> None:
         self.songs = songs
         self.weighted = bool(weighted)
+        self.corpus_identity = _corpus_identity(songs)
         self._eligible_cache: dict[int, list[int]] = {}
 
     def _eligible(self, seq: int) -> list[int]:
@@ -66,6 +89,7 @@ class IndexedSequentialSongChunkSampler:
         self.seq_len = int(seq_len)
         self.rng = rng
         self.weighted = bool(weighted)
+        self.corpus_identity = _corpus_identity(songs)
         self.eligible = [i for i, song in enumerate(songs) if len(song.records) >= seq_len + 1]
         if not self.eligible:
             raise ValueError("no indexed song is long enough for the requested seq_len")
@@ -124,6 +148,7 @@ class IndexedSequentialSongChunkSampler:
             "batch_size": self.batch_size,
             "seq_len": self.seq_len,
             "weighted": self.weighted,
+            "corpus_identity": self.corpus_identity,
             "song_indices": list(self.song_indices),
             "offsets": list(self.offsets),
         }
@@ -135,6 +160,8 @@ class IndexedSequentialSongChunkSampler:
             raise ValueError("TBPTT sampler seq_len mismatch")
         if bool(state.get("weighted", False)) != self.weighted:
             raise ValueError("TBPTT sampler weighted-mode mismatch")
+        if str(state.get("corpus_identity", "")) != self.corpus_identity:
+            raise ValueError("TBPTT sampler corpus identity mismatch")
         song_indices = [int(value) for value in state.get("song_indices", [])]
         offsets = [int(value) for value in state.get("offsets", [])]
         if len(song_indices) != self.batch_size or len(offsets) != self.batch_size:
