@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import json
 import random
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from orbitune.compound import CompoundEvent, CompoundEventType
+from orbitune.compound_base import write_compound_midi
+from orbitune.compound_indexed import build_indexed_compound_dataset
 from orbitune.indexed_sampling import IndexedSequentialSongChunkSampler
 from orbitune.pretrain_corpus import load_registry
 from scripts.build_pretrain_corpus import _mutopia_primary_scores
@@ -25,10 +30,28 @@ def _fake_song(*, sha: str, weight: float = 1.0, records: int = 12):
     )
 
 
+def _write_tiny_midi(path: Path) -> Path:
+    events = [CompoundEvent(CompoundEventType.TEMPO, 0, 0, 120)]
+    for index in range(12):
+        events.append(CompoundEvent(CompoundEventType.NOTE, index * 24, 0, 60 + index % 5, 12, 80))
+    write_compound_midi(path, events)
+    return path
+
+
 def test_huggingface_source_is_pinned_to_full_revision() -> None:
     registry = load_registry()
     source = next(item for item in registry["sources"] if item["id"] == "imslp_midi_cc0")
     assert source["revision"] == "6ae7ad248c5a599aef5f095b0694598b266eb13f"
+
+
+def test_openscore_registry_selects_only_canonical_score_trees() -> None:
+    registry = load_registry()
+    sources = {item["id"]: item for item in registry["sources"]}
+    assert all(pattern.startswith("scores/") for pattern in sources["openscore_lieder"]["score_globs"])
+    assert all(pattern.startswith("scores/") for pattern in sources["openscore_string_quartets"]["score_globs"])
+    orchestra = sources["openscore_orchestra"]
+    assert orchestra["score_globs"] == ["data/**/*.mscz"]
+    assert orchestra["exclude_annotations"] is True
 
 
 def test_huggingface_installer_ingests_all_upstream_splits(tmp_path, monkeypatch) -> None:
@@ -120,3 +143,41 @@ def test_indexed_tbptt_compensates_song_start_weight_for_chunk_count() -> None:
     assert sampler._complete_chunks(1) == 4
     assert sampler._song_start_weight(0) == pytest.approx(0.5)
     assert sampler._song_start_weight(1) == pytest.approx(0.25)
+
+
+def test_indexed_rebuild_failure_removes_old_commit_marker(tmp_path, monkeypatch) -> None:
+    midi = _write_tiny_midi(tmp_path / "song.mid")
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "path": str(midi),
+                "split": "train",
+                "raw_sha256": "song",
+                "composition_fingerprint": "composition-song",
+                "source_id": "test",
+                "license": "cc0-1.0",
+                "quality_weight": 1.0,
+                "sampling_weight": 1.0,
+                "tracks": 1,
+                "track_bucket": "solo",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "indexed"
+    build_indexed_compound_dataset(manifest, out_dir, split="train")
+    assert (out_dir / "index.json").exists()
+
+    original_replace = Path.replace
+
+    def fail_on_song_index(self: Path, target: Path):
+        if self.name == "songs.jsonl.tmp":
+            raise OSError("simulated publish failure")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_on_song_index)
+    with pytest.raises(OSError, match="simulated publish failure"):
+        build_indexed_compound_dataset(manifest, out_dir, split="train")
+    assert not (out_dir / "index.json").exists()
