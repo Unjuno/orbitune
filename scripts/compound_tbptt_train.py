@@ -13,6 +13,7 @@ from typing import Any
 import torch
 
 from orbitune.compound_base import CompoundHierarchicalGPT
+from orbitune.compound_indexed import load_indexed_compound_corpus
 from orbitune.compound_longrun import build_longrun_checkpoint, restore_longrun_rng, safe_backward_step
 from orbitune.compound_tbptt import (
     SequentialSongChunkSampler,
@@ -23,6 +24,7 @@ from orbitune.compound_tbptt import (
     tbptt_loss,
 )
 from orbitune.compound_training import atomic_torch_save, load_compound_jsonl, parse_compound_checkpoint
+from orbitune.indexed_sampling import IndexedSequentialSongChunkSampler
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,6 +47,15 @@ def _looks_like_synthetic(path: str | Path) -> bool:
     return any(token in text for token in ("synthetic", "fixture", "cfe/"))
 
 
+def _load_source(path: str | Path):
+    candidate = Path(path)
+    index_path = candidate / "index.json" if candidate.is_dir() else candidate
+    if index_path.name == "index.json" and index_path.exists():
+        corpus = load_indexed_compound_corpus(index_path)
+        return corpus.songs, corpus
+    return load_compound_jsonl(path), None
+
+
 def _save(
     *,
     target: Path,
@@ -55,7 +66,7 @@ def _save(
     events_seen: int,
     runtime: dict[str, object],
     sampler_rng: random.Random,
-    sampler: SequentialSongChunkSampler,
+    sampler,
     stream_states,
     loss_history: list[float],
     grad_history: list[float],
@@ -139,8 +150,10 @@ def train(args: argparse.Namespace) -> None:
     if args.causal_fastpath:
         cfe.install_causal_fastpath()
 
-    train_songs = load_compound_jsonl(args.train_jsonl)
-    validation_songs = load_compound_jsonl(args.validation_jsonl)
+    train_songs, train_corpus = _load_source(args.train_jsonl)
+    validation_songs, validation_corpus = _load_source(args.validation_jsonl)
+    if args.weighted_corpus_sampling and train_corpus is None:
+        raise SystemExit("--weighted-corpus-sampling requires an indexed corpus source")
 
     payload: dict[str, Any] = {}
     source_training_mode = "fresh"
@@ -178,12 +191,23 @@ def train(args: argparse.Namespace) -> None:
     if payload:
         restore_longrun_rng(payload, sampler_rng)
 
-    sampler = SequentialSongChunkSampler(
-        train_songs,
-        batch_size=args.batch_size,
-        seq_len=args.seq_len,
-        rng=sampler_rng,
-    )
+    if train_corpus is not None:
+        sampler = IndexedSequentialSongChunkSampler(
+            train_songs,
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            rng=sampler_rng,
+            weighted=args.weighted_corpus_sampling,
+        )
+        train_source_format = "indexed_memmap"
+    else:
+        sampler = SequentialSongChunkSampler(
+            train_songs,
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            rng=sampler_rng,
+        )
+        train_source_format = "jsonl_memory"
     if not transitioning_from_fixed and isinstance(payload.get("tbptt_sampler_state"), dict):
         sampler.load_state_dict(payload["tbptt_sampler_state"])
 
@@ -209,8 +233,6 @@ def train(args: argparse.Namespace) -> None:
     best_validation_loss = health.get("best_validation_loss")
     best_step = health.get("best_step")
     if transitioning_from_fixed:
-        # Fixed-window validation and TBPTT streaming validation are different
-        # metrics. Do not let the old best value suppress TBPTT best checkpoints.
         loss_history = []
         grad_history = []
         validation_history = []
@@ -235,7 +257,20 @@ def train(args: argparse.Namespace) -> None:
         "tbptt_state_semantics": "generation_equivalent_advance_stream",
         "tbptt_source_training_mode": source_training_mode,
         "tbptt_source_step": start_step,
+        "training_source": str(args.train_jsonl),
+        "validation_source": str(args.validation_jsonl),
+        "training_source_format": train_source_format,
+        "validation_source_format": "indexed_memmap" if validation_corpus is not None else "jsonl_memory",
+        "weighted_corpus_sampling": bool(args.weighted_corpus_sampling),
     }
+
+    previous_runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
+    if payload and not transitioning_from_fixed and previous_runtime:
+        for key in ("training_source_format", "weighted_corpus_sampling"):
+            if key in previous_runtime and previous_runtime.get(key) != runtime.get(key):
+                raise SystemExit(
+                    f"TBPTT resume runtime mismatch for {key}: checkpoint={previous_runtime.get(key)!r} cli={runtime.get(key)!r}"
+                )
 
     model.train()
     interval_start = time.perf_counter()
@@ -336,8 +371,8 @@ def train(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="State-carry TBPTT trainer for Orbitune Compound Base")
-    parser.add_argument("--train-jsonl", required=True)
-    parser.add_argument("--validation-jsonl", required=True)
+    parser.add_argument("--train-jsonl", "--train-source", dest="train_jsonl", required=True)
+    parser.add_argument("--validation-jsonl", "--validation-source", dest="validation_jsonl", required=True)
     parser.add_argument("--config", default="configs/compound_hierarchical_9m_nhead7.json")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--resume")
@@ -351,6 +386,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--override-resume-lr", type=float)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--grad-clip", type=float, default=1.0)
+    parser.add_argument(
+        "--weighted-corpus-sampling",
+        action="store_true",
+        help="Use manifest-derived quality and instrumentation balancing weights. Requires indexed corpus input.",
+    )
     parser.add_argument("--checkpoint-every", type=int, default=100)
     parser.add_argument("--eval-every", type=int, default=100)
     parser.add_argument("--validation-songs", type=int, default=2, help="0 means all validation songs")
