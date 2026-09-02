@@ -61,6 +61,29 @@ def _tiny_songs(n_songs: int, *, length: int = 1024, seed: int = 0) -> list:
         return load_compound_jsonl(str(p))
 
 
+def _write_tiny_jsonl(path: Path, n_songs: int = 2, length: int = 1024, seed: int = 0) -> None:
+    """Write a minimal 12-wide Compound JSONL at ``path`` for subprocess
+    trainer tests. The trainer only needs syntactically valid records;
+    it samples a batch per step, so the data quality does not matter as
+    long as it's consistent."""
+    from orbitune.tokenizer.compound_event import CompoundEventTokenizer
+    import random as _r
+    rng = _r.Random(seed)
+    abi = CompoundEventTokenizer.abi
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for i in range(n_songs):
+            records = [
+                [rng.randint(0, 9), rng.randint(0, 15), rng.randint(0, 6),
+                 rng.randint(0, 15), rng.randint(0, 127), rng.randint(0, 127),
+                 rng.randint(1, 127), 0, rng.randint(0, 6), rng.randint(0, 15),
+                 rng.randint(0, 7), rng.randint(0, 7)]
+                for _ in range(length)
+            ]
+            row = {"tokenizer_abi": abi, "record_width": 12, "records": records, "name": f"s{i}"}
+            f.write(json.dumps(row) + "\n")
+
+
 def _tiny_checkpoint(step: int = 0, *, n_head: int = 2) -> Path:
     """Save a small Compound checkpoint that fits in CPU memory and runs
     in <1 second on the evaluator."""
@@ -241,22 +264,28 @@ class TestResumeLrOverride(unittest.TestCase):
         # Run the trainer without --resume and with --override-resume-lr;
         # it must exit with code 2 and the error must mention the
         # --resume dependency.
-        result = subprocess.run(
-            [
-                sys.executable, "-W", "ignore",
-                str(ROOT / "scripts" / "compound_longrun_train.py"),
-                "--train-jsonl", str(ROOT / "data" / "real_midi" / "train.jsonl"),
-                "--validation-jsonl", str(ROOT / "data" / "real_midi" / "val.jsonl"),
-                "--checkpoint", str(Path(tempfile.mkdtemp()) / "x.pt"),
-                "--steps", "1",
-                "--config", str(ROOT / "configs" / "compound_hierarchical_9m_nhead7.json"),
-                "--override-resume-lr", "1e-4",
-                "--allow-fixed-window-training",
-            ],
-            env={**os.environ, "PYTHONWARNINGS": "ignore"},
-            capture_output=True,
-            text=True,
-        )
+        with tempfile.TemporaryDirectory() as d:
+            train_jsonl = Path(d) / "train.jsonl"
+            val_jsonl = Path(d) / "val.jsonl"
+            _write_tiny_jsonl(train_jsonl, n_songs=2, length=1024)
+            _write_tiny_jsonl(val_jsonl, n_songs=1, length=512)
+            out_ckpt = Path(d) / "x.pt"
+            result = subprocess.run(
+                [
+                    sys.executable, "-W", "ignore",
+                    str(ROOT / "scripts" / "compound_longrun_train.py"),
+                    "--train-jsonl", str(train_jsonl),
+                    "--validation-jsonl", str(val_jsonl),
+                    "--checkpoint", str(out_ckpt),
+                    "--steps", "1",
+                    "--config", str(ROOT / "configs" / "compound_hierarchical_9m_nhead7.json"),
+                    "--override-resume-lr", "1e-4",
+                    "--allow-fixed-window-training",
+                ],
+                env={**os.environ, "PYTHONWARNINGS": "ignore"},
+                capture_output=True,
+                text=True,
+            )
         self.assertNotEqual(result.returncode, 0, msg=result.stdout + "\n" + result.stderr)
         combined = result.stdout + result.stderr
         self.assertIn("--resume", combined)
@@ -294,6 +323,10 @@ class TestResumeLrOverride(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             ckpt = Path(d) / "base.pt"
             out = Path(d) / "out.pt"
+            train_jsonl = Path(d) / "train.jsonl"
+            val_jsonl = Path(d) / "val.jsonl"
+            _write_tiny_jsonl(train_jsonl, n_songs=2, length=1024)
+            _write_tiny_jsonl(val_jsonl, n_songs=1, length=512)
             payload = build_compound_checkpoint(
                 model=model, optimizer=opt, scaler=None, step=10, events_seen=10 * 1024,
                 runtime={
@@ -309,8 +342,8 @@ class TestResumeLrOverride(unittest.TestCase):
                 [
                     sys.executable, "-W", "ignore",
                     str(ROOT / "scripts" / "compound_longrun_train.py"),
-                    "--train-jsonl", str(ROOT / "data" / "real_midi" / "train.jsonl"),
-                    "--validation-jsonl", str(ROOT / "data" / "real_midi" / "val.jsonl"),
+                    "--train-jsonl", str(train_jsonl),
+                    "--validation-jsonl", str(val_jsonl),
                     "--checkpoint", str(out),
                     "--resume", str(ckpt),
                     "--steps", "1",
