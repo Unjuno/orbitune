@@ -110,6 +110,14 @@ def _float_or_none(value: object) -> float | None:
     return parsed if parsed > 0 else None
 
 
+def _positive_int_or_none(value: object) -> int | None:
+    try:
+        parsed = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
 def iter_pdmx_midi(root: str | Path) -> Iterator[tuple[Path, dict[str, object]]]:
     """Yield PDMX rows that pass the commercial Base hard filters.
 
@@ -138,7 +146,7 @@ def iter_pdmx_midi(root: str | Path) -> Iterator[tuple[Path, dict[str, object]]]
             if midi_path.exists():
                 yield midi_path, {
                     "rating": _float_or_none(row.get("rating")),
-                    "n_tracks": row.get("n_tracks"),
+                    "n_tracks": _positive_int_or_none(row.get("n_tracks")),
                     "license": row.get("license") or "public-domain",
                 }
 
@@ -155,15 +163,42 @@ def _mutopia_license_from_text(text: str) -> str | None:
     return None
 
 
-def mutopia_license_for_midi(path: str | Path) -> str | None:
-    midi = Path(path)
-    for candidate in midi.parent.glob("*.ly"):
+def _license_from_lilypond_neighborhood(path: Path) -> str | None:
+    candidates = [path, *path.parent.glob("*.ly")]
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen or not candidate.exists():
+            continue
+        seen.add(candidate)
         try:
             license_id = _mutopia_license_from_text(candidate.read_text(encoding="utf-8", errors="ignore"))
         except OSError:
             continue
         if license_id:
             return license_id
+    return None
+
+
+def mutopia_license_for_midi(
+    path: str | Path,
+    *,
+    source_root: str | Path | None = None,
+    converted_root: str | Path | None = None,
+) -> str | None:
+    midi = Path(path)
+    direct = _license_from_lilypond_neighborhood(midi.with_suffix(".ly"))
+    if direct:
+        return direct
+    if source_root is not None and converted_root is not None:
+        source_root = Path(source_root)
+        converted_root = Path(converted_root)
+        try:
+            relative = midi.relative_to(converted_root)
+        except ValueError:
+            relative = None
+        if relative is not None:
+            source_score = (source_root / relative).with_suffix(".ly")
+            return _license_from_lilypond_neighborhood(source_score)
     return None
 
 
@@ -237,16 +272,17 @@ def collect_entries(
     for path, meta in candidates:
         license_id = str(meta.get("license") or source.license)
         if source.id == "mutopia":
-            detected = mutopia_license_for_midi(path)
+            detected = mutopia_license_for_midi(path, source_root=root, converted_root=converted_root)
             if detected is None:
                 rejected.append({"path": str(path), "reason": "mutopia_license_not_in_pd_cc0_ccby_allowlist"})
                 continue
             license_id = detected
         try:
-            raw_sha, norm_hash, comp_hash, event_count, tracks = midi_fingerprints(path)
+            raw_sha, norm_hash, comp_hash, event_count, midi_track_count = midi_fingerprints(path)
         except (ValueError, IndexError, OSError) as exc:
             rejected.append({"path": str(path), "reason": f"{type(exc).__name__}: {exc}"})
             continue
+        tracks = _positive_int_or_none(meta.get("n_tracks")) or midi_track_count
         rating = meta.get("rating") if isinstance(meta, dict) else None
         flags: list[str] = []
         weight = float(source.raw.get("quality_weight", 1.0))
@@ -314,16 +350,16 @@ def split_for_composition(composition_fingerprint: str, *, seed: str, validation
 
 
 def _sampling_weights(entries: list[CorpusEntry], targets: dict[str, object]) -> dict[str, float]:
-    counts = {name: 0 for name in targets}
+    mass = {name: 0.0 for name in targets}
     for entry in entries:
         bucket = track_bucket(entry.tracks)
-        if bucket in counts:
-            counts[bucket] += 1
-    total = max(1, sum(counts.values()))
+        if bucket in mass:
+            mass[bucket] += max(0.0, float(entry.quality_weight))
+    total = max(1e-12, sum(mass.values()))
     factors: dict[str, float] = {}
     for bucket, target_value in targets.items():
         target = float(target_value)
-        observed = counts[bucket] / total if counts[bucket] else 0.0
+        observed = mass[bucket] / total if mass[bucket] else 0.0
         factors[bucket] = 0.0 if observed == 0.0 else target / observed
     return factors
 
