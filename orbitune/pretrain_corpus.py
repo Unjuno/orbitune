@@ -10,11 +10,11 @@ from typing import Iterable, Iterator
 
 from orbitune.compound import CompoundEventType
 from orbitune.compound_midi import read_compound_midi
+from orbitune.midi_metadata import inspect_midi_metadata
 
 
 CONFIG_DEFAULT = Path("configs/pretrain_corpus_commercial_v1.json")
 _MIDI_SUFFIXES = {".mid", ".midi"}
-_SCORE_SUFFIXES = {".mscz", ".mscx", ".musicxml", ".mxl", ".ly"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +71,10 @@ def load_registry(path: str | Path = CONFIG_DEFAULT) -> dict[str, object]:
 
 def registry_sources(payload: dict[str, object]) -> list[CorpusSource]:
     result: list[CorpusSource] = []
-    for item in payload["sources"]:  # type: ignore[index]
+    raw_sources = payload.get("sources")
+    if not isinstance(raw_sources, list):
+        raise ValueError("sources must be a list")
+    for item in raw_sources:
         if not isinstance(item, dict):
             raise ValueError("source entry must be an object")
         result.append(
@@ -108,11 +111,12 @@ def _float_or_none(value: object) -> float | None:
 
 
 def iter_pdmx_midi(root: str | Path) -> Iterator[tuple[Path, dict[str, object]]]:
-    """Yield the conservative PDMX Base-pretraining subset.
+    """Yield PDMX rows that pass the commercial Base hard filters.
 
-    Requires the upstream license-conflict flag and PDMX's own best-unique-
-    arrangement flag.  The latter preserves distinct instrumentation/arrangement
-    variants while removing near-identical exports identified by PDMX.
+    Upstream PDMX's ``no_license_conflict`` removes rows whose public-facing
+    public-domain license disagrees with embedded score metadata. Its
+    ``deduplicated`` flag keeps the best unique title/instrumentation/
+    arrangement representative rather than repeated exports.
     """
 
     root = Path(root)
@@ -153,8 +157,7 @@ def _mutopia_license_from_text(text: str) -> str | None:
 
 def mutopia_license_for_midi(path: str | Path) -> str | None:
     midi = Path(path)
-    candidates = list(midi.parent.glob("*.ly"))
-    for candidate in candidates:
+    for candidate in midi.parent.glob("*.ly"):
         try:
             license_id = _mutopia_license_from_text(candidate.read_text(encoding="utf-8", errors="ignore"))
         except OSError:
@@ -175,10 +178,9 @@ def _hash_parts(parts: Iterable[str]) -> str:
 def midi_fingerprints(path: str | Path) -> tuple[str, str, str, int, int]:
     """Return raw, normalized and transposition-invariant composition hashes.
 
-    The composition hash intentionally ignores MIDI programs/channels/velocity
-    and expresses note pitch relative to the first NOTE.  It is used to keep
-    obvious transpositions/exports of one composition in one split. It is not a
-    copyright or plagiarism detector.
+    The composition fingerprint ignores programs/channels/velocity and encodes
+    NOTE pitch relative to the first NOTE. It is a conservative split-leakage
+    heuristic, not a plagiarism or copyright detector.
     """
 
     path = Path(path)
@@ -186,14 +188,13 @@ def midi_fingerprints(path: str | Path) -> tuple[str, str, str, int, int]:
     events = read_compound_midi(path)
     if not events:
         raise ValueError("empty MIDI event sequence")
+    metadata = inspect_midi_metadata(path)
     first_step = events[0].step
     normalized: list[str] = []
     notes = [event for event in events if event.type is CompoundEventType.NOTE]
     first_pitch = notes[0].a1 if notes else 0
     composition: list[str] = []
-    channels: set[int] = set()
     for event in events:
-        channels.add(event.channel)
         normalized.append(
             f"{int(event.type)}:{event.step-first_step}:{event.channel}:{event.a1}:{event.a2}:{event.a3}:{event.a4}"
         )
@@ -203,7 +204,7 @@ def midi_fingerprints(path: str | Path) -> tuple[str, str, str, int, int]:
             composition.append(f"ts:{event.step-first_step}:{event.a1}:{event.a2}")
     normalized_hash = _hash_parts(normalized)
     composition_hash = _hash_parts(composition or normalized)
-    return raw_sha, normalized_hash, composition_hash, len(events), len(channels)
+    return raw_sha, normalized_hash, composition_hash, len(events), metadata.track_count
 
 
 def collect_entries(
@@ -234,7 +235,7 @@ def collect_entries(
     accepted: list[CorpusEntry] = []
     rejected: list[dict[str, str]] = []
     for path, meta in candidates:
-        license_id = source.license
+        license_id = str(meta.get("license") or source.license)
         if source.id == "mutopia":
             detected = mutopia_license_for_midi(path)
             if detected is None:
@@ -277,7 +278,7 @@ def collect_entries(
 
 
 def deduplicate_entries(entries: Iterable[CorpusEntry]) -> list[CorpusEntry]:
-    """Cross-source dedup, preferring quality anchors and then larger files."""
+    """Cross-source exact-normalized dedup, preferring verified editions."""
 
     tier_rank = {"quality-anchor": 0, "primary": 1, "direct-midi-supplement": 2, "supplement": 3}
     by_normalized: dict[str, CorpusEntry] = {}
@@ -293,6 +294,14 @@ def deduplicate_entries(entries: Iterable[CorpusEntry]) -> list[CorpusEntry]:
     return sorted(by_normalized.values(), key=lambda item: (item.composition_fingerprint, item.source_id, item.path))
 
 
+def track_bucket(tracks: int) -> str:
+    if tracks <= 1:
+        return "solo"
+    if tracks <= 5:
+        return "small_ensemble_2_5"
+    return "large_ensemble_6_plus"
+
+
 def split_for_composition(composition_fingerprint: str, *, seed: str, validation_fraction: float, test_fraction: float) -> str:
     if validation_fraction < 0 or test_fraction < 0 or validation_fraction + test_fraction >= 1:
         raise ValueError("invalid validation/test fractions")
@@ -304,25 +313,65 @@ def split_for_composition(composition_fingerprint: str, *, seed: str, validation
     return "train"
 
 
-def write_manifest(entries: Iterable[CorpusEntry], path: str | Path, *, split_config: dict[str, object]) -> dict[str, object]:
+def _sampling_weights(entries: list[CorpusEntry], targets: dict[str, object]) -> dict[str, float]:
+    counts = {name: 0 for name in targets}
+    for entry in entries:
+        bucket = track_bucket(entry.tracks)
+        if bucket in counts:
+            counts[bucket] += 1
+    total = max(1, sum(counts.values()))
+    factors: dict[str, float] = {}
+    for bucket, target_value in targets.items():
+        target = float(target_value)
+        observed = counts[bucket] / total if counts[bucket] else 0.0
+        factors[bucket] = 0.0 if observed == 0.0 else target / observed
+    return factors
+
+
+def write_manifest(
+    entries: Iterable[CorpusEntry],
+    path: str | Path,
+    *,
+    split_config: dict[str, object],
+    track_bucket_targets: dict[str, object] | None = None,
+) -> dict[str, object]:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    rows = list(entries)
     seed = str(split_config["seed"])
     validation_fraction = float(split_config["validation_fraction"])
     test_fraction = float(split_config["test_fraction"])
+    bucket_targets = track_bucket_targets or {
+        "solo": 1.0,
+        "small_ensemble_2_5": 1.0,
+        "large_ensemble_6_plus": 1.0,
+    }
+    bucket_factors = _sampling_weights(rows, bucket_targets)
     counts = {"train": 0, "validation": 0, "test": 0}
     events = {"train": 0, "validation": 0, "test": 0}
+    compositions: dict[str, set[str]] = {"train": set(), "validation": set(), "test": set()}
     with target.open("w", encoding="utf-8") as handle:
-        for entry in entries:
+        for entry in rows:
             split = split_for_composition(
                 entry.composition_fingerprint,
                 seed=seed,
                 validation_fraction=validation_fraction,
                 test_fraction=test_fraction,
             )
+            bucket = track_bucket(entry.tracks)
             payload = entry.as_dict()
             payload["split"] = split
+            payload["track_bucket"] = bucket
+            payload["sampling_weight"] = entry.quality_weight * bucket_factors.get(bucket, 1.0)
             handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
             counts[split] += 1
             events[split] += entry.events
-    return {"files": counts, "events": events}
+            compositions[split].add(entry.composition_fingerprint)
+    if (compositions["train"] & compositions["validation"]) or (compositions["train"] & compositions["test"]) or (compositions["validation"] & compositions["test"]):
+        raise AssertionError("composition fingerprint leaked across corpus splits")
+    return {
+        "files": counts,
+        "events": events,
+        "compositions": {key: len(value) for key, value in compositions.items()},
+        "track_bucket_factors": bucket_factors,
+    }
