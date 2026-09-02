@@ -46,15 +46,20 @@ def _download(url: str, target: Path, *, expected_size: int | None = None, md5: 
 
 
 def _safe_extract_tar(archive: Path, target: Path) -> None:
+    """Extract only ordinary files/directories without relying on 3.12 filters."""
     target.mkdir(parents=True, exist_ok=True)
     root = target.resolve()
     with tarfile.open(archive, "r:gz") as tar:
-        members = tar.getmembers()
-        for member in members:
+        for member in tar.getmembers():
             resolved = (target / member.name).resolve()
             if root != resolved and root not in resolved.parents:
-                raise RuntimeError(f"unsafe tar member: {member.name}")
-        tar.extractall(target, members=members, filter="data")
+                raise RuntimeError(f"unsafe tar member path: {member.name}")
+            if member.issym() or member.islnk() or member.isdev() or member.isfifo():
+                raise RuntimeError(f"unsupported tar member type: {member.name}")
+            if not (member.isfile() or member.isdir()):
+                raise RuntimeError(f"unsupported tar member type: {member.name}")
+        for member in tar.getmembers():
+            tar.extract(member, target)  # noqa: S202 - path/type checks above make this portable and bounded
 
 
 def install_pdmx(target: Path) -> dict[str, object]:
