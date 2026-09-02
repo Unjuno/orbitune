@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -263,6 +264,67 @@ class TestStateSemanticsEquivalence(unittest.TestCase):
             streamed = torch.stack(streamed_contexts)
         diff = (enc_context - streamed).abs().max().item()
         self.assertLess(diff, 1e-4, msg=f"window-1 equivalence broken: max abs diff {diff}")
+
+
+class TestCfeProductionCliWindowsCompat(unittest.TestCase):
+    """Regression test: the production CFE smoke must be invokable on Windows
+    even when ``shutil.which('orbitune-compound')`` returns None (Windows
+    editable installs do not always place the script on PATH). The trainer
+    must remain reachable as ``python -m orbitune.compound_cli`` so the
+    long-run launcher can always spawn it.
+    """
+
+    def test_module_invocation_succeeds(self):
+        result = subprocess.run(
+            [sys.executable, "-W", "ignore", "-m", "orbitune.compound_cli", "--help"],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONWARNINGS": "ignore"},
+        )
+        self.assertIn("orbitune-compound", result.stdout)
+
+
+class TestCudaSmokePrimerAbi(unittest.TestCase):
+    """Regression test: the cuda_smoke.py primer must be a CompoundEvent ABI-
+    valid ``CompoundRecord`` so the MIDI write/read round-trip succeeds.
+    Earlier versions of the smoke used a CC primer with non-zero ``a3``,
+    which violates the CC unused-field rule in
+    ``orbitune.compound.CompoundEvent.validate`` and crashed the smoke
+    test (and any future production user invoking the same path)."""
+
+    def test_tempo_primer_validates(self):
+        from orbitune.compound import CompoundEvent
+        from orbitune.tokenizer.compound_event import CompoundEventTokenizer
+        from orbitune.tokenizer.compound_event import CompoundRecord  # type: ignore
+
+        primer = CompoundRecord(
+            event_type=4, channel=0, delta_coarse=0, delta_residual=0,
+            a1=120, a2=0, a3=0, a4=0,
+            duration_coarse=0, duration_residual=0,
+            continuous_coarse=0, continuous_residual=0,
+        )
+        events = CompoundEventTokenizer().decode_records([primer])
+        # canonicalize_events calls CompoundEvent.validate() for every event;
+        # if the primer violated the ABI it would raise here.
+        for event in events:
+            event.validate()
+
+    def test_cc_primer_with_a3_nonzero_rejected(self):
+        """Negative-control: a CC record with a3 != 0 MUST be rejected, so
+        future regressions to the smoke primer are caught loudly."""
+        from orbitune.tokenizer.compound_event import CompoundEventTokenizer
+        from orbitune.tokenizer.compound_event import CompoundRecord  # type: ignore
+
+        bad = CompoundRecord(
+            event_type=1,  # CC
+            channel=0, delta_coarse=0, delta_residual=0,
+            a1=60, a2=0, a3=100, a4=0,  # a3 must be 0 for CC
+            duration_coarse=0, duration_residual=0,
+            continuous_coarse=0, continuous_residual=0,
+        )
+        with self.assertRaises(ValueError):
+            CompoundEventTokenizer().decode_records([bad])
 
 
 if __name__ == "__main__":

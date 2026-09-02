@@ -124,17 +124,20 @@ def main() -> None:
 
         # Real MIDI round-trip from the resumed checkpoint.
         model.eval()
+        # Use a TEMPO primer (event_type=4). TEMPO requires a1 in 1..999 and
+        # all of a2/a3/a4/continuous_* to be zero, which a hand-written
+        # CompoundRecord cannot accidentally violate.
         primer = [
             CompoundRecord(
-                event_type=1,
+                event_type=4,   # TEMPO
                 channel=0,
                 delta_coarse=0,
                 delta_residual=0,
-                a1=60,
+                a1=120,        # BPM
                 a2=0,
-                a3=100,
+                a3=0,
                 a4=0,
-                duration_coarse=2,
+                duration_coarse=0,
                 duration_residual=0,
                 continuous_coarse=0,
                 continuous_residual=0,

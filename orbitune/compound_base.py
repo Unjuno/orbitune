@@ -456,8 +456,68 @@ class MixedEventDecoder(nn.Module):
         if event_type in (int(CompoundEventType.CC), int(CompoundEventType.PITCH_BEND), int(CompoundEventType.CHANNEL_PRESSURE), int(CompoundEventType.POLY_PRESSURE)):
             control_norm = self._sample_gaussian(*self.control_head(hidden), temperature)
             control = quantize_unsigned(int(round(control_norm * 16383.0)), maximum=16383)
-        return CompoundRecord(event_type, channel, delta.coarse, delta.residual, a1, a2, velocity, 0,
-                              duration.coarse, duration.residual, control.coarse, control.residual)
+        return self._build_record(event_type, channel, delta, a1, a2, velocity, duration, control)
+
+    @staticmethod
+    def _build_record(
+        event_type: int,
+        channel: int,
+        delta: "FactorizedTime",
+        a1: int,
+        a2: int,
+        velocity: int,
+        duration: "FactorizedTime",
+        control: "FactorizedValue",
+    ) -> "CompoundRecord":
+        """Assemble a CompoundRecord and zero out slots that are unused for
+        the sampled event type so the output satisfies the CompoundEvent
+        ABI validation rules (see ``orbitune.compound.CompoundEvent.validate``).
+        Without this normalisation, a CC / TEMPO / PROGRAM event produced
+        by the model can carry leftover values in ``a3``/``a4`` (which the
+        heads above may have set for NOTE events) and fail the MIDI
+        write-path validation in ``tokenizer.decode_records``.
+        """
+        v = velocity if event_type == int(CompoundEventType.NOTE) else 0
+        a4 = 0  # currently unused for every event type in the ABI
+        a3 = v
+        d_coarse, d_resid = (duration.coarse, duration.residual) if event_type == int(CompoundEventType.NOTE) else (0, 0)
+        c_coarse = control.coarse if event_type in (
+            int(CompoundEventType.CC),
+            int(CompoundEventType.PITCH_BEND),
+            int(CompoundEventType.CHANNEL_PRESSURE),
+            int(CompoundEventType.POLY_PRESSURE),
+        ) else 0
+        c_resid = control.residual if event_type in (
+            int(CompoundEventType.CC),
+            int(CompoundEventType.PITCH_BEND),
+            int(CompoundEventType.CHANNEL_PRESSURE),
+            int(CompoundEventType.POLY_PRESSURE),
+        ) else 0
+        # Slots a2, a3, a4 are unused for some event types; zero them so
+        # the record passes CompoundEvent.validate() and MIDI round-trip
+        # works end-to-end. NOTE / BANK / TIME_SIGNATURE / POLY_PRESSURE
+        # keep a2; everything else forces a2=0.
+        keep_a2 = event_type in (
+            int(CompoundEventType.NOTE),  # a2 used for duration coarse
+            int(CompoundEventType.BANK),
+            int(CompoundEventType.TIME_SIGNATURE),
+            int(CompoundEventType.POLY_PRESSURE),
+        )
+        a2_final = a2 if keep_a2 else 0
+        return CompoundRecord(
+            event_type=event_type,
+            channel=channel,
+            delta_coarse=delta.coarse,
+            delta_residual=delta.residual,
+            a1=a1,
+            a2=a2_final,
+            a3=a3,
+            a4=a4,
+            duration_coarse=d_coarse,
+            duration_residual=d_resid,
+            continuous_coarse=c_coarse,
+            continuous_residual=c_resid,
+        )
 
 
 class CompoundHierarchicalGPT(nn.Module):

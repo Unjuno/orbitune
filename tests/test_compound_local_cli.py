@@ -35,7 +35,13 @@ def _write_song(path: Path, name: str) -> None:
 
 def test_installed_compound_cli_train_resume_generate(tmp_path: Path) -> None:
     command = shutil.which("orbitune-compound")
-    assert command is not None, "editable install must expose orbitune-compound"
+    if command is None:
+        # On Windows editable installs the entrypoint script is not always
+        # on PATH; the CLI is also reachable as `python -m orbitune.compound_cli`.
+        import sys as _sys
+        command = [_sys.executable, "-W", "ignore", "-m", "orbitune.compound_cli"]
+    else:
+        command = [command]
 
     config = tmp_path / "tiny.json"
     config.write_text(
@@ -65,7 +71,7 @@ def test_installed_compound_cli_train_resume_generate(tmp_path: Path) -> None:
     checkpoint = tmp_path / "compound.pt"
 
     inspect = subprocess.run(
-        [command, "inspect", "--config", str(config)],
+        command + ["inspect", "--config", str(config)],
         check=True,
         capture_output=True,
         text=True,
@@ -73,7 +79,7 @@ def test_installed_compound_cli_train_resume_generate(tmp_path: Path) -> None:
     assert "orbitune-compound-hierarchical-gpt-v1" in inspect.stdout
 
     common = [
-        command,
+        *command,
         "train",
         "--train-jsonl",
         str(train),
@@ -104,8 +110,8 @@ def test_installed_compound_cli_train_resume_generate(tmp_path: Path) -> None:
 
     midi = tmp_path / "generated.mid"
     subprocess.run(
-        [
-            command,
+        command
+        + [
             "generate",
             "--checkpoint",
             str(checkpoint),
