@@ -1,45 +1,124 @@
 #!/usr/bin/env pwsh
-# Context Fit Envelope (CFE) optimized launch command for the Compound Base
-# on an NVIDIA RTX 3080 (16 GB) laptop GPU, BF16, PyTorch 2.5.1+cu124.
+# Production launcher for Compound Base training on the measured RTX 3080 CFE.
 #
-# Chosen config (vs default n_head=8):
-#   - n_head=7, head_dim=32 (multi-of-8 -> cuDNN SDPA fast-path on Ampere)
-#   - seq_len=256, microbatch=128  (sweet spot for 16 GB)
-#   - causal-fastpath enabled (SDPA is_causal=True)
-#   - precision=auto -> bf16
-#
-# See docs/CFE_REPORT_3080.md for the full report.
+# The CFE geometry remains n_head=7 / head_dim=32 / seq=256 / batch=144.
+# This launcher deliberately uses scripts/compound_longrun_train.py rather
+# than the benchmark-oriented CFE trainer so exact resume and health gates
+# run before optimizer mutation.
+
+[CmdletBinding()]
 param(
-    [string]$TrainJsonl = "data/continuous/synthetic_compound_train.jsonl",
-    [string]$ValJsonl   = "data/continuous/synthetic_compound_val.jsonl",
-    [string]$Config     = "configs/compound_hierarchical_9m_nhead7.json",
-    [string]$Checkpoint = "runs/compound_9m_nhead7.pt",
-    [int]$Steps         = 10000,
-    [int]$BatchSize     = 128,
-    [int]$SeqLen        = 256
+    [Parameter(Mandatory = $true)]
+    [string]$TrainJsonl,
+
+    [Parameter(Mandatory = $true)]
+    [string]$ValJsonl,
+
+    [string]$Config = "configs/compound_hierarchical_9m_nhead7.json",
+
+    [Parameter(Mandatory = $true)]
+    [string]$Checkpoint,
+
+    [string]$Resume,
+
+    [Parameter(Mandatory = $true)]
+    [int]$Steps,
+
+    [int]$BatchSize = 144,
+    [int]$SeqLen = 256,
+    [int]$NHead = 7,
+    [switch]$CausalFastpath = $true,
+
+    [ValidateSet("auto", "bf16", "fp16", "fp32")]
+    [string]$Precision = "auto",
+
+    [double]$LearningRate = 3e-4,
+    [double]$WeightDecay = 0.01,
+    [double]$GradClip = 1.0,
+    [int]$CheckpointEvery = 250,
+    [int]$LogEvery = 25,
+    [int]$EvalEvery = 250,
+    [int]$ValidationBatches = 4,
+    [int]$ValidationBatchSize = 4,
+    [int]$ValidationSeed = 10001,
+    [int]$Seed = 1,
+
+    [switch]$AllowSynthetic,
+    [switch]$AllowRuntimeChange,
+
+    # Required until state-carry TBPTT is implemented. This prevents a
+    # multi-hour run from silently implying train/generation state equivalence.
+    [switch]$AllowFixedWindowTraining
 )
 
 $ErrorActionPreference = "Stop"
 $env:PYTHONWARNINGS = "ignore"
 $venv = ".\venv_cuda\Scripts\python.exe"
 
-& $venv -W ignore scripts/compound_cfe_train.py train `
-    --train-jsonl $TrainJsonl `
-    --validation-jsonl $ValJsonl `
-    --config $Config `
-    --checkpoint $Checkpoint `
-    --steps $Steps `
-    --batch-size $BatchSize `
-    --seq-len $SeqLen `
-    --n-head 7 `
-    --causal-fastpath `
-    --precision auto `
-    --learning-rate 3e-4 `
-    --weight-decay 0.01 `
-    --grad-clip 1.0 `
-    --log-every 25 `
-    --eval-every 250 `
-    --validation-batches 4 `
-    --validation-batch-size 4 `
-    --checkpoint-every 250 `
-    --seed 1
+if (-not (Test-Path -LiteralPath $venv)) {
+    throw "Python venv not found at $venv. Install the CUDA environment first."
+}
+if (-not (Test-Path -LiteralPath $TrainJsonl)) {
+    throw "Training JSONL not found: $TrainJsonl"
+}
+if (-not (Test-Path -LiteralPath $ValJsonl)) {
+    throw "Validation JSONL not found: $ValJsonl"
+}
+if (-not $AllowFixedWindowTraining) {
+    throw "Fixed-window training resets pre-window local/medium/global/recurrent history. Read docs/STATE_CARRY_AUDIT.md and pass -AllowFixedWindowTraining explicitly for the current training mode."
+}
+
+$configObject = Get-Content -LiteralPath $Config -Raw -ErrorAction Stop | ConvertFrom-Json
+if ([int]$configObject.n_head -ne $NHead) {
+    throw "n_head=$NHead does not match config n_head=$($configObject.n_head) in $Config"
+}
+
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot ".")
+$gitHead = "unknown"
+try {
+    Push-Location $repoRoot
+    $gitHead = (& git rev-parse HEAD 2>$null) | Select-Object -First 1
+} finally {
+    Pop-Location -ErrorAction SilentlyContinue
+}
+$env:ORBITUNE_SOURCE_COMMIT = $gitHead
+
+Write-Host "[launcher] git HEAD: $gitHead"
+Write-Host "[launcher] train:    $TrainJsonl"
+Write-Host "[launcher] val:      $ValJsonl"
+Write-Host "[launcher] ckpt:     $Checkpoint"
+Write-Host "[launcher] resume:   $Resume"
+Write-Host "[launcher] geometry: n_head=$NHead batch=$BatchSize seq=$SeqLen precision=$Precision"
+Write-Warning "[launcher] fixed-window mode is explicitly enabled; state-carry TBPTT remains a documented follow-up."
+
+$argsList = @(
+    "--train-jsonl", $TrainJsonl
+    "--validation-jsonl", $ValJsonl
+    "--config", $Config
+    "--checkpoint", $Checkpoint
+    "--steps", $Steps
+    "--batch-size", $BatchSize
+    "--seq-len", $SeqLen
+    "--n-head", $NHead
+    "--precision", $Precision
+    "--learning-rate", $LearningRate
+    "--weight-decay", $WeightDecay
+    "--grad-clip", $GradClip
+    "--checkpoint-every", $CheckpointEvery
+    "--log-every", $LogEvery
+    "--eval-every", $EvalEvery
+    "--validation-batches", $ValidationBatches
+    "--validation-batch-size", $ValidationBatchSize
+    "--validation-seed", $ValidationSeed
+    "--seed", $Seed
+    "--allow-fixed-window-training"
+)
+if ($CausalFastpath) { $argsList += "--causal-fastpath" } else { $argsList += "--no-causal-fastpath" }
+if ($Resume) { $argsList += @("--resume", $Resume) }
+if ($AllowSynthetic) { $argsList += "--allow-synthetic" }
+if ($AllowRuntimeChange) { $argsList += "--allow-runtime-change" }
+
+& $venv -W ignore scripts/compound_longrun_train.py @argsList
+if ($LASTEXITCODE -ne 0) {
+    throw "Compound long-run trainer exited with code $LASTEXITCODE"
+}

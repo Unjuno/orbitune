@@ -139,13 +139,21 @@ def cuda_stats() -> dict[str, Any]:
         "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30,
         "peak_reserved_fraction": torch.cuda.max_memory_reserved() / max(1, total),
     }
-    for name, key in (("utilization", "gpu_util_percent"), ("memory_usage", "memory_bw_percent")):
-        fn = getattr(torch.cuda, name, None)
-        if fn:
-            try:
-                result[key] = float(fn())
-            except Exception:
-                pass
+    for label, fn_name in (
+        ("utilization", "utilization"),
+        ("power_draw_watts", "power_draw"),
+        ("temperature_c", "temperature"),
+    ):
+        fn = getattr(torch.cuda, fn_name, None)
+        if fn is None:
+            continue
+        try:
+            value = fn()
+        except Exception:
+            continue
+        if value is None:
+            continue
+        result[label] = float(value)
     return result
 
 
