@@ -46,6 +46,13 @@ param(
     [switch]$AllowSynthetic,
     [switch]$AllowRuntimeChange,
 
+    # When -Resume is set, overwrite the optimizer's param_group 'lr' to
+    # this value after the checkpoint's optimizer state is loaded. Without
+    # this flag, -LearningRate is silently ignored on resume (the saved
+    # optimizer state restores the original LR). Recorded in the new
+    # checkpoint's runtime dict for audit. Requires -Resume.
+    [double]$OverrideResumeLr,
+
     # Required until state-carry TBPTT is implemented. This prevents a
     # multi-hour run from silently implying train/generation state equivalence.
     [switch]$AllowFixedWindowTraining
@@ -117,6 +124,12 @@ if ($CausalFastpath) { $argsList += "--causal-fastpath" } else { $argsList += "-
 if ($Resume) { $argsList += @("--resume", $Resume) }
 if ($AllowSynthetic) { $argsList += "--allow-synthetic" }
 if ($AllowRuntimeChange) { $argsList += "--allow-runtime-change" }
+if ($PSBoundParameters.ContainsKey('OverrideResumeLr')) {
+    if (-not $Resume) {
+        throw "-OverrideResumeLr requires -Resume; refusing to silently retune a fresh run."
+    }
+    $argsList += @("--override-resume-lr", $OverrideResumeLr)
+}
 
 & $venv -W ignore scripts/compound_longrun_train.py @argsList
 if ($LASTEXITCODE -ne 0) {

@@ -18,8 +18,10 @@ web/.vite/
 
 # Local data and training artifacts
 data/raw/
+data/raw_midi/
 data/processed/
 data/tokens/
+data/real_midi/
 runs/
 checkpoints/
 outputs/batches/

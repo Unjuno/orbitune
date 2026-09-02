@@ -1,0 +1,53 @@
+{
+  "checkpoint": "runs/compound/stage2-B-1e4.pt",
+  "checkpoint_step": 2200,
+  "validation_jsonl": "data/real_midi/val.jsonl",
+  "seq_len": 256,
+  "batch_size": 32,
+  "precision": "bf16",
+  "window_count": 1444,
+  "window_hash": "031d937fae27ad1dbf2e5afd283247853f5199cadadb1ad9b5826a2f6adb5379",
+  "total_events": 369664,
+  "total_scalar_fields": 4435968,
+  "record_width": 12,
+  "elapsed_seconds": 36.929851055145264,
+  "mean_loss_per_event": -1.5272017446581347,
+  "mean_loss_trainer_style": -1.5272016843111407,
+  "per_component": {
+    "a1": {
+      "sum": 610679.267578125,
+      "events": 369664,
+      "mean_per_event": 1.6519846876572375
+    },
+    "channel": {
+      "sum": 104.32064652442932,
+      "events": 369664,
+      "mean_per_event": 0.00028220396501804157
+    },
+    "control": {
+      "sum": -1144877.3784179688,
+      "events": 369664,
+      "mean_per_event": -3.0970756644357276
+    },
+    "delta": {
+      "sum": -1689275.2612304688,
+      "events": 369664,
+      "mean_per_event": -4.569758649017672
+    },
+    "duration": {
+      "sum": -1213652.9462890625,
+      "events": 369664,
+      "mean_per_event": -3.2831245300842453
+    },
+    "event_type": {
+      "sum": 223326.83563232422,
+      "events": 369664,
+      "mean_per_event": 0.6041346618343258
+    },
+    "velocity": {
+      "sum": -738165.2219238281,
+      "events": 369664,
+      "mean_per_event": -1.996854500096921
+    }
+  }
+}

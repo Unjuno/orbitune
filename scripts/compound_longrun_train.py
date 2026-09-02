@@ -139,6 +139,30 @@ def train(args: argparse.Namespace) -> None:
     optimizer, fused = base.optimizer_for(model, args.learning_rate, args.weight_decay)
     if payload.get("optimizer_state_dict"):
         optimizer.load_state_dict(payload["optimizer_state_dict"])
+    resume_lr_override_applied: float | None = None
+    if args.override_resume_lr is not None:
+        if not args.resume:
+            raise SystemExit(
+                "--override-resume-lr requires --resume; refusing to silently retune a fresh run."
+            )
+        old_lrs = sorted({float(pg.get("lr", 0.0)) for pg in optimizer.param_groups})
+        for pg in optimizer.param_groups:
+            pg["lr"] = float(args.override_resume_lr)
+        new_lrs = sorted({float(pg.get("lr", 0.0)) for pg in optimizer.param_groups})
+        resume_lr_override_applied = float(args.override_resume_lr)
+        print(
+            json.dumps(
+                {
+                    "event": "resume_lr_override_applied",
+                    "old_lrs": old_lrs,
+                    "new_lr": resume_lr_override_applied,
+                    "new_lrs": new_lrs,
+                    "resume_source": str(args.resume),
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
     scaler = torch.amp.GradScaler("cuda", enabled=precision == "fp16")
     if scaler.is_enabled() and payload.get("amp_scaler_state_dict"):
         scaler.load_state_dict(payload["amp_scaler_state_dict"])
@@ -174,6 +198,10 @@ def train(args: argparse.Namespace) -> None:
         "training_mode": "fixed_window_explicit_opt_in",
         "training_jsonl": str(args.train_jsonl),
         "validation_jsonl": str(args.validation_jsonl),
+        "learning_rate": float(args.learning_rate),
+        "weight_decay": float(args.weight_decay),
+        "grad_clip": float(args.grad_clip),
+        "resume_lr_override_applied": resume_lr_override_applied,
     }
     drift = assert_runtime_compatible(
         payload.get("runtime"),
@@ -357,6 +385,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--grad-clip", type=float, default=1.0)
+    parser.add_argument(
+        "--override-resume-lr",
+        type=float,
+        default=None,
+        help=(
+            "When --resume is set, overwrite the optimizer param_group "
+            "'lr' to this value after load_state_dict. The override is "
+            "recorded in the new checkpoint's runtime dict. Without this "
+            "flag, --learning-rate is ignored on resume because the saved "
+            "optimizer state restores the original LR. Requires --resume."
+        ),
+    )
     parser.add_argument("--checkpoint-every", type=int, default=250)
     parser.add_argument("--log-every", type=int, default=25)
     parser.add_argument("--eval-every", type=int, default=250)

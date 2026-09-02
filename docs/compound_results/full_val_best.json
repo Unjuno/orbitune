@@ -1,0 +1,53 @@
+{
+  "checkpoint": "runs/compound/base-maestro2004.best.pt",
+  "checkpoint_step": 1900,
+  "validation_jsonl": "data/real_midi/val.jsonl",
+  "seq_len": 256,
+  "batch_size": 32,
+  "precision": "bf16",
+  "window_count": 1444,
+  "window_hash": "031d937fae27ad1dbf2e5afd283247853f5199cadadb1ad9b5826a2f6adb5379",
+  "total_events": 369664,
+  "total_scalar_fields": 4435968,
+  "record_width": 12,
+  "elapsed_seconds": 36.20076298713684,
+  "mean_loss_per_event": -1.5345100847968105,
+  "mean_loss_trainer_style": -1.534510008658518,
+  "per_component": {
+    "a1": {
+      "sum": 617995.2248535156,
+      "events": 369664,
+      "mean_per_event": 1.6717755173712225
+    },
+    "channel": {
+      "sum": 123.49749517440796,
+      "events": 369664,
+      "mean_per_event": 0.00033408039510043707
+    },
+    "control": {
+      "sum": -1147418.1994628906,
+      "events": 369664,
+      "mean_per_event": -3.103948990063654
+    },
+    "delta": {
+      "sum": -1679217.8403320312,
+      "events": 369664,
+      "mean_per_event": -4.542551723543626
+    },
+    "duration": {
+      "sum": -1250161.0732421875,
+      "events": 369664,
+      "mean_per_event": -3.381884828498819
+    },
+    "event_type": {
+      "sum": 224134.40435791016,
+      "events": 369664,
+      "mean_per_event": 0.6063192638664034
+    },
+    "velocity": {
+      "sum": -736227.7685546875,
+      "events": 369664,
+      "mean_per_event": -1.991613380136252
+    }
+  }
+}
