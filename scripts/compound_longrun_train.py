@@ -13,6 +13,7 @@ from typing import Any
 import torch
 
 from orbitune.compound_base import CompoundHierarchicalGPT
+from orbitune.compound_indexed import IndexedCompoundCorpus, load_indexed_compound_corpus
 from orbitune.compound_longrun import build_longrun_checkpoint, restore_longrun_rng, safe_backward_step
 from orbitune.compound_training import (
     assert_runtime_compatible,
@@ -21,6 +22,7 @@ from orbitune.compound_training import (
     load_compound_jsonl,
     parse_compound_checkpoint,
 )
+from orbitune.indexed_sampling import IndexedTensorSampler
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,6 +43,15 @@ cfe = _load_script("orbitune_compound_cfe", ROOT / "scripts" / "compound_cfe_tra
 def _looks_like_synthetic(path: str | Path) -> bool:
     text = str(path).replace("\\", "/").lower()
     return any(token in text for token in ("synthetic", "fixture", "cfe/"))
+
+
+def _load_source(path: str | Path):
+    candidate = Path(path)
+    index_path = candidate / "index.json" if candidate.is_dir() else candidate
+    if index_path.name == "index.json" and index_path.exists():
+        corpus = load_indexed_compound_corpus(index_path)
+        return corpus.songs, corpus
+    return load_compound_jsonl(path), None
 
 
 def _save(
@@ -111,9 +122,17 @@ def train(args: argparse.Namespace) -> None:
     sampler_rng = random.Random(args.seed + 7919)
     cfe.install_causal_fastpath() if args.causal_fastpath else cfe.uninstall_causal_fastpath()
 
-    train_songs = load_compound_jsonl(args.train_jsonl)
-    validation_songs = load_compound_jsonl(args.validation_jsonl)
-    train_sampler = base.TensorSampler(train_songs)
+    train_songs, train_corpus = _load_source(args.train_jsonl)
+    validation_songs, validation_corpus = _load_source(args.validation_jsonl)
+    if train_corpus is not None:
+        train_sampler = IndexedTensorSampler(train_songs, weighted=args.weighted_corpus_sampling)
+        train_source_format = "indexed_memmap"
+    else:
+        if args.weighted_corpus_sampling:
+            raise SystemExit("--weighted-corpus-sampling requires an indexed corpus source")
+        train_sampler = base.TensorSampler(train_songs)
+        train_source_format = "jsonl_memory"
+    validation_source_format = "indexed_memmap" if validation_corpus is not None else "jsonl_memory"
 
     checkpoint_path = Path(args.checkpoint)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -198,6 +217,9 @@ def train(args: argparse.Namespace) -> None:
         "training_mode": "fixed_window_explicit_opt_in",
         "training_jsonl": str(args.train_jsonl),
         "validation_jsonl": str(args.validation_jsonl),
+        "training_source_format": train_source_format,
+        "validation_source_format": validation_source_format,
+        "weighted_corpus_sampling": bool(args.weighted_corpus_sampling),
         "learning_rate": float(args.learning_rate),
         "weight_decay": float(args.weight_decay),
         "grad_clip": float(args.grad_clip),
@@ -371,8 +393,8 @@ def train(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Production long-run trainer for Orbitune Compound Base")
-    parser.add_argument("--train-jsonl", required=True)
-    parser.add_argument("--validation-jsonl", required=True)
+    parser.add_argument("--train-jsonl", "--train-source", dest="train_jsonl", required=True)
+    parser.add_argument("--validation-jsonl", "--validation-source", dest="validation_jsonl", required=True)
     parser.add_argument("--config", default="configs/compound_hierarchical_9m_nhead7.json")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--resume")
@@ -397,6 +419,11 @@ def build_parser() -> argparse.ArgumentParser:
             "optimizer state restores the original LR. Requires --resume."
         ),
     )
+    parser.add_argument(
+        "--weighted-corpus-sampling",
+        action="store_true",
+        help="Use manifest-derived quality and instrumentation balancing weights. Requires indexed corpus input.",
+    )
     parser.add_argument("--checkpoint-every", type=int, default=250)
     parser.add_argument("--log-every", type=int, default=25)
     parser.add_argument("--eval-every", type=int, default=250)
@@ -412,7 +439,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-fixed-window-training",
         action="store_true",
-        help="Acknowledge the documented train/generation history-state gap. Required until state-carry TBPTT is implemented.",
+        help="Acknowledge the documented train/generation history-state gap. Required for the legacy fixed-window path.",
     )
     return parser
 
