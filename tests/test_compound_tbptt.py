@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import random
+import subprocess
+import sys
+from pathlib import Path
 
 import torch
 
@@ -16,6 +19,8 @@ from orbitune.compound_tbptt import (
     tbptt_loss,
 )
 from orbitune.compound_training import CompoundSong
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _cfg() -> CompoundBaseConfig:
@@ -165,8 +170,6 @@ def test_sequential_sampler_never_crosses_song_boundary_and_marks_reset():
     assert second.reset_mask.tolist() == [False]
     assert second.offsets == (4,)
 
-    # Continue until a lane has insufficient tail and therefore starts a new
-    # song at offset zero. The returned chunk itself never spans the boundary.
     saw_reset = False
     for _ in range(10):
         batch = sampler.sample("cpu")
@@ -219,3 +222,15 @@ def test_stream_state_cpu_payload_roundtrip_preserves_values():
         assert restored[0].memory is not None
         for left, right in zip(restored[0].memory, states[0].memory):
             torch.testing.assert_close(left, right.cpu())
+
+
+def test_tbptt_trainer_help_imports_without_cuda():
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "compound_tbptt_train.py"), "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "State-carry TBPTT trainer" in result.stdout
+    assert "--override-resume-lr" in result.stdout
