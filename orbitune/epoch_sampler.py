@@ -138,19 +138,26 @@ class EpochAwareNoReplacementSampler:
     # --- epoch management ------------------------------------------------
 
     def _begin_epoch(self) -> None:
-        order = list(self.eligible)
-        self.rng.shuffle(order)
-        self.shuffled_song_order = order
+        # Shuffle local eligible positions (0..len(eligible)-1) so the
+        # per-epoch song order is independent of the corpus song index.
+        local_order = list(range(len(self.eligible)))
+        self.rng.shuffle(local_order)
+        # Map each local position back to the corpus song index for sampler
+        # bookkeeping. ``shuffled_song_order`` is the corpus-indexed shuffle;
+        # it round-trips through state_dict verbatim.
+        self.shuffled_song_order = [self.eligible[local] for local in local_order]
         self.order_cursor = 0
         self.lane_song_indices = [-1] * self.batch_size
         self.lane_offsets = [0] * self.batch_size
         self.lane_tail_left = [0] * self.batch_size
         self.epoch_events_seen = 0
-        # Compute deterministic total over the *current* shuffled order
+        # Compute deterministic total over the *current* shuffled order.
+        # ``_chunks_per_song`` and ``_tail_per_song`` are indexed by the
+        # *local* eligible position.
         total = 0
-        for eligible_index in self.shuffled_song_order:
-            chunks = self._chunks_per_song[eligible_index]
-            tail = self._tail_per_song[eligible_index]
+        for local in local_order:
+            chunks = self._chunks_per_song[local]
+            tail = self._tail_per_song[local]
             # Full chunks contribute seq_len active events each
             total += chunks * self.seq_len
             # Partial tail contributes tail active events (and seq_len - tail padding)
@@ -163,17 +170,32 @@ class EpochAwareNoReplacementSampler:
             self.lane_offsets[lane] = 0
             self.lane_tail_left[lane] = 0
             return
-        eligible_index = self.shuffled_song_order[self.order_cursor]
+        corpus_index = self.shuffled_song_order[self.order_cursor]
         self.order_cursor += 1
-        self.lane_song_indices[lane] = eligible_index
+        self.lane_song_indices[lane] = corpus_index
         self.lane_offsets[lane] = 0
-        self.lane_tail_left[lane] = self._tail_per_song[eligible_index]
+        # Map back to local position for tail lookup
+        self._lane_local_index: dict[int, int] = getattr(self, "_lane_local_index", {})
+        # Find the local position for the lane's corpus index
+        # (linear search; only run on song start so O(N) is fine)
+        for local_pos, elig in enumerate(self.eligible):
+            if elig == corpus_index:
+                self.lane_tail_left[lane] = self._tail_per_song[local_pos]
+                break
+        else:
+            self.lane_tail_left[lane] = 0
 
     def _lane_complete_chunks_left(self, lane: int) -> int:
         if self.lane_song_indices[lane] < 0:
             return 0
-        eligible_index = self.lane_song_indices[lane]
-        return max(0, self._chunks_per_song[eligible_index] - (self.lane_offsets[lane] // self.seq_len))
+        corpus_index = self.lane_song_indices[lane]
+        # Find local position
+        for local_pos, elig in enumerate(self.eligible):
+            if elig == corpus_index:
+                chunks_total = self._chunks_per_song[local_pos]
+                consumed = self.lane_offsets[lane] // self.seq_len
+                return max(0, chunks_total - consumed)
+        return 0
 
     # --- public API ------------------------------------------------------
 
