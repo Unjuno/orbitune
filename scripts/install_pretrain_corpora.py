@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import tarfile
@@ -19,6 +20,8 @@ PDMX_FILES = {
     "subset_paths.tar.gz": (29258714, "092eee416ece8060f77d08575b94a43d"),
 }
 PDMX_RECORD = 15571083
+_HF_SOURCE_LOCK = ".orbitune_source_lock.json"
+_FULL_HEX_REVISION = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 def _md5(path: Path) -> str:
@@ -96,6 +99,97 @@ def install_git_source(url: str, target: Path, *, ref: str | None = None) -> dic
     return {"git_url": url, "commit": _git("rev-parse", "HEAD", cwd=target), "path": str(target)}
 
 
+def _require_full_hf_revision(repo_id: str, revision: object) -> str:
+    value = str(revision or "").strip()
+    if not _FULL_HEX_REVISION.fullmatch(value):
+        raise RuntimeError(f"{repo_id}: Hugging Face revision must be an exact 40-character hexadecimal SHA")
+    return value.lower()
+
+
+def install_hf_score_snapshot(source: dict[str, object], target: Path) -> dict[str, object]:
+    """Resolve once, lock, and materialize only score files from a HF dataset.
+
+    Dynamic resolution is allowed only as a local *pin creation* step. The first
+    successful install stores the exact Hub SHA in ``.orbitune_source_lock.json``.
+    Subsequent installs reuse that SHA and never follow a moving default branch.
+    A pre-existing non-empty target without a lock fails closed to prevent a
+    mixed or unprovenanced snapshot.
+    """
+    try:
+        from huggingface_hub import HfApi, snapshot_download
+    except ImportError as exc:
+        raise RuntimeError('Hugging Face score source requires: pip install -e ".[corpus]"') from exc
+
+    repo_id = str(source["repo_id"])
+    policy = str(source.get("revision_policy", "")).strip()
+    allow_patterns_raw = source.get("allow_patterns", [])
+    score_globs_raw = source.get("score_globs", [])
+    if not isinstance(allow_patterns_raw, list) or not allow_patterns_raw:
+        raise RuntimeError(f"{repo_id}: allow_patterns must be a non-empty list")
+    if not isinstance(score_globs_raw, list) or not score_globs_raw:
+        raise RuntimeError(f"{repo_id}: score_globs must be a non-empty list")
+    allow_patterns = [str(item) for item in allow_patterns_raw]
+    score_globs = [str(item) for item in score_globs_raw]
+    if any(".pdf" in pattern.lower() for pattern in allow_patterns):
+        raise RuntimeError(f"{repo_id}: Base score snapshot must not download PDF payloads")
+
+    lock_path = target / _HF_SOURCE_LOCK
+    locked: dict[str, object] | None = None
+    if lock_path.exists():
+        locked = json.loads(lock_path.read_text(encoding="utf-8"))
+        if locked.get("repo_id") != repo_id:
+            raise RuntimeError(f"{repo_id}: source lock belongs to {locked.get('repo_id')!r}")
+        revision = _require_full_hf_revision(repo_id, locked.get("revision"))
+        if locked.get("allow_patterns") != allow_patterns:
+            raise RuntimeError(f"{repo_id}: source lock allow_patterns differ from registry")
+    else:
+        if target.exists() and any(target.iterdir()):
+            raise RuntimeError(f"{repo_id}: non-empty target has no {_HF_SOURCE_LOCK}; refusing unprovenanced reuse")
+        explicit_revision = source.get("revision")
+        if explicit_revision:
+            revision = _require_full_hf_revision(repo_id, explicit_revision)
+        elif policy == "resolve-exact-at-install":
+            resolved = HfApi().dataset_info(repo_id).sha
+            revision = _require_full_hf_revision(repo_id, resolved)
+        else:
+            raise RuntimeError(
+                f"{repo_id}: registry must provide an exact revision or revision_policy=resolve-exact-at-install"
+            )
+
+    target.mkdir(parents=True, exist_ok=True)
+    snapshot_download(
+        repo_id=repo_id,
+        repo_type="dataset",
+        revision=revision,
+        allow_patterns=allow_patterns,
+        local_dir=str(target),
+    )
+
+    score_files: set[Path] = set()
+    for pattern in score_globs:
+        score_files.update(path for path in target.glob(pattern) if path.is_file())
+    if not score_files:
+        raise RuntimeError(f"{repo_id}@{revision}: snapshot produced zero configured score files")
+
+    lock = {
+        "repo_id": repo_id,
+        "repo_type": "dataset",
+        "revision": revision,
+        "allow_patterns": allow_patterns,
+        "score_globs": score_globs,
+    }
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    return {
+        "repo_id": repo_id,
+        "revision": revision,
+        "revision_policy": policy or "explicit",
+        "score_files": len(score_files),
+        "allow_patterns": allow_patterns,
+        "lock_file": str(lock_path),
+        "path": str(target),
+    }
+
+
 def install_hf_midi(source: dict[str, object], target: Path) -> dict[str, object]:
     try:
         from datasets import load_dataset
@@ -103,9 +197,7 @@ def install_hf_midi(source: dict[str, object], target: Path) -> dict[str, object
         raise RuntimeError('Hugging Face source requires: pip install -e ".[corpus]"') from exc
 
     repo_id = str(source["repo_id"])
-    revision = str(source.get("revision", "")).strip()
-    if len(revision) != 40:
-        raise RuntimeError(f"{repo_id}: registry must pin a full 40-character revision")
+    revision = _require_full_hf_revision(repo_id, source.get("revision"))
     midi_column = str(source.get("midi_column", "midi"))
     target.mkdir(parents=True, exist_ok=True)
 
@@ -186,6 +278,8 @@ def main() -> None:
             )
         elif source.kind == "huggingface_midi_bytes":
             installed[source.id] = install_hf_midi(source.raw, target)
+        elif source.kind == "huggingface_score_snapshot":
+            installed[source.id] = install_hf_score_snapshot(source.raw, target)
         else:
             raise SystemExit(f"unsupported source kind: {source.kind}")
 
