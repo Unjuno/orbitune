@@ -79,6 +79,40 @@ def test_weighted_mode_emits_manifest_weight_but_counts_real_events() -> None:
     assert sampler.is_epoch_complete
 
 
+def test_resume_in_later_epoch_keeps_future_shuffle_sequence() -> None:
+    songs = [_song(10, tag=str(i)) for i in range(7)]
+    live = EpochAwareNoReplacementSampler(
+        songs, batch_size=2, seq_len=4, epoch_seed=123, weighted=False
+    )
+
+    # Finish epoch 0, enter epoch 1, and save from a non-trivial point there.
+    while not live.is_epoch_complete:
+        live.sample("cpu")
+    live.advance_epoch()
+    live.sample("cpu")
+    state = live.state_dict()
+
+    resumed = EpochAwareNoReplacementSampler(
+        songs, batch_size=2, seq_len=4, epoch_seed=999, weighted=False
+    )
+    resumed.load_state_dict(state)
+
+    # Finish epoch 1 in lockstep.
+    while not live.is_epoch_complete:
+        a = live.sample("cpu")
+        b = resumed.sample("cpu")
+        assert a.batch.song_indices == b.batch.song_indices
+        assert a.batch.offsets == b.batch.offsets
+        assert torch.equal(a.event_weight, b.event_weight)
+
+    # Advancing after resume must produce the same epoch-2 shuffle even though
+    # the constructor used a different seed before state restoration.
+    live.advance_epoch()
+    resumed.advance_epoch()
+    assert live.epoch_index == resumed.epoch_index == 2
+    assert live.shuffled_song_order == resumed.shuffled_song_order
+
+
 @pytest.mark.parametrize("weight", [-1.0, float("nan"), float("inf")])
 def test_weighted_mode_rejects_invalid_manifest_weight(weight: float) -> None:
     with pytest.raises(ValueError, match="invalid sampling_weight"):
