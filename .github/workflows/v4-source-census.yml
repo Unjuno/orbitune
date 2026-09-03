@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "tools/v4_source_census.py"
+      - "tools/v4_cpdl_census_runner.py"
       - ".github/workflows/v4-source-census.yml"
   workflow_dispatch:
 
@@ -49,7 +50,7 @@ jobs:
           python -m pip install -e . --no-deps
       - name: CPDL fail-closed edition metadata census
         run: |
-          python tools/v4_source_census.py cpdl --workers 8 --output cpdl_census.json
+          python tools/v4_cpdl_census_runner.py --workers 4 --output cpdl_census.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -95,7 +96,7 @@ jobs:
           python -m pip install -e . --no-deps
       - name: Download official chunked CocoChorales MIDI-only payload
         run: |
-          gdown --fuzzy "https://drive.google.com/file/d/1yhCJgrY1rP01hYqif_lgITSophB3eRaW/view?usp=sharing" -O cocochorales_midi.archive
+          gdown "1yhCJgrY1rP01hYqif_lgITSophB3eRaW" -O cocochorales_midi.archive
           ls -lh cocochorales_midi.archive
           file cocochorales_midi.archive
           python - <<'PY'
