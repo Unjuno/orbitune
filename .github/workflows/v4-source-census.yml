@@ -5,6 +5,8 @@ on:
     paths:
       - "tools/v4_source_census.py"
       - "tools/v4_cpdl_census_runner.py"
+      - "tools/v4_imslp_exact_runner.py"
+      - "tools/v4_coco_note_estimate.py"
       - ".github/workflows/v4-source-census.yml"
   workflow_dispatch:
 
@@ -37,7 +39,8 @@ jobs:
 
   cpdl:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,9 +61,9 @@ jobs:
           path: cpdl_census.json
           if-no-files-found: warn
 
-  imslp:
+  imslp-exact:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -71,17 +74,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy duckdb
           python -m pip install -e . --no-deps
-      - name: IMSLP CC-BY 3/4 metadata extraction
+      - name: Exact IMSLP CC-BY 3/4 MIDI census
         run: |
-          python tools/v4_source_census.py imslp --output imslp_ccby_census.json
+          python tools/v4_imslp_exact_runner.py --workers 4 --output imslp_ccby_exact_census.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: imslp-ccby-census
-          path: imslp_ccby_census.json
+          name: imslp-ccby-exact-census
+          path: imslp_ccby_exact_census.json
           if-no-files-found: warn
 
-  cocochorales-midi:
+  cocochorales-40k-estimate:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -89,30 +92,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install minimal Orbitune and Google Drive dependencies
+      - name: Install minimal Orbitune census dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy gdown
+          python -m pip install numpy
           python -m pip install -e . --no-deps
-      - name: Download official chunked CocoChorales MIDI-only payload
+      - name: Official 40k tiny note census plus exact example calibration
         run: |
-          gdown "1yhCJgrY1rP01hYqif_lgITSophB3eRaW" -O cocochorales_midi.archive
-          ls -lh cocochorales_midi.archive
-          file cocochorales_midi.archive
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('cocochorales_midi.archive')
-          size = p.stat().st_size
-          print(f'COCO_ARCHIVE_BYTES={size}')
-          if size > 8 * 1024**3:
-              raise SystemExit('MIDI-only archive exceeds 8 GiB CI safety limit')
-          PY
-      - name: Exact CocoChorales MIDI Compound census
-        run: |
-          python tools/v4_source_census.py scan-archive --input cocochorales_midi.archive --source-name cocochorales --workers 4 --output cocochorales_census.json
+          python tools/v4_coco_note_estimate.py --output cocochorales_40k_estimate.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cocochorales-midi-census
-          path: cocochorales_census.json
+          name: cocochorales-40k-estimate
+          path: cocochorales_40k_estimate.json
           if-no-files-found: warn
