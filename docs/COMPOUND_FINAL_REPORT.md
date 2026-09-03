@@ -1,4 +1,4 @@
-﻿# Compound Hierarchical Base: Full-Validation Report
+# Compound Hierarchical Base: Full-Validation Report
 
 **Date:** 2026-09-02
 **Model:** `CompoundHierarchicalGPT` (orbitune-compound-v0-experimental)
@@ -195,35 +195,34 @@ Required sequence:
 The Windows path / long-path and MuseScore4 / LilyPond install blockers
 called out in §11 have been worked around on this host:
 
-* All 4 OpenScore + Mutopia git sources cloned into C:\ov1\ with
-  GIT_CONFIG_COUNT=core.longpaths=true + git config --global
-  core.longpaths true.
+* All 4 OpenScore + Mutopia git sources cloned into `C:\ov1\` with
+  `GIT_CONFIG_COUNT=core.longpaths=true` + `git config --global core.longpaths true`.
 * MuseScore 4.7.4 extracted from the official
-  MuseScore-Studio-4.7.4-x86_64.paf.exe portable self-extractor
-  and run under WSL2 (Arch Linux) with QT_QPA_PLATFORM=offscreen
-  via a .bat shim that uses wsl --user root --exec to bypass
-  bash's argv-escape (the original wsl ... bash -c form was
-  mangling Windows backslash paths: \t → TAB, \o → dropped).
+  `MuseScore-Studio-4.7.4-x86_64.paf.exe` portable self-extractor
+  and run under WSL2 (Arch Linux) with `QT_QPA_PLATFORM=offscreen`
+  via a `.bat` shim that uses `wsl --user root --exec` to bypass
+  bash's argv-escape (the original `wsl ... bash -c` form was
+  mangling Windows backslash paths: `\t` → TAB, `\o` → dropped).
 * LilyPond 2.26.0 installed in the same WSL2 distro via
-  pacman -S lilypond.
-* scripts/build_pretrain_corpus.py ran end-to-end against
-  configs/pretrain_corpus_commercial_v1.json at C:\ov1\ with
-  PYTHONUTF8=1 (the script's 	ext=True default decoder was
-  cp932 which crashed on LilyPond's non-ASCII output).
+  `pacman -S lilypond`.
+* `scripts/build_pretrain_corpus.py` ran end-to-end against
+  `configs/pretrain_corpus_commercial_v1.json` at `C:\ov1\` with
+  `PYTHONUTF8=1`; the converter subprocesses are now hardened to decode
+  diagnostics explicitly as UTF-8 with replacement rather than relying on cp932.
 
 Resulting 1.0× epoch event totals, measured by
-EpochAwareNoReplacementSampler.epoch_events_total on the indexed
+`EpochAwareNoReplacementSampler.epoch_events_total` on the indexed
 train split (75,162 songs, 184,862,577 records):
 
 | Geometry | epoch_events_total | matches sum(len(records)-1) = 184,787,415? |
 |---|---|---|
-| atch_size=2, seq_len=32 | **184,787,415** | ✅ |
-| atch_size=4, seq_len=64 | **184,787,415** | ✅ |
-| atch_size=1, seq_len=128 | **184,787,415** | ✅ |
+| `batch_size=2, seq_len=32` | **184,787,415** | ✅ |
+| `batch_size=4, seq_len=64` | **184,787,415** | ✅ |
+| `batch_size=1, seq_len=128` | **184,787,415** | ✅ |
 
 PR #31 1.0× invariant: **PASS** for the full 6-source commercial_v1
 corpus. All three geometries produce an identical
-epoch_events_total, as the contract requires.
+`epoch_events_total`, as the contract requires.
 
 Per-source event counts (train split, pre-cross-dedup):
 
@@ -238,13 +237,18 @@ Per-source event counts (train split, pre-cross-dedup):
 | **Total pre-dedup** | 80,316 | 199,330,714 |
 | **After cross-source dedup (881 removed)** | **79,911** | **198,924,135** |
 
-Manifest SHA256: 1595e79a2a38543c67cdcd9f2cdbfe3fcc88efad66517a3ff4d1f9df6fc1f178
-Indexed corpus root: C:\ov1\compound_indexed\.
-Build report: C:\ov1\build_report.json.
+Manifest SHA256: `1595e79a2a38543c67cdcd9f2cdbfe3fcc88efad66517a3ff4d1f9df6fc1f178`
 
-The 50M-event commercial base long run is **not** auto-started by
-this report. The full 1.0× event total (184,787,415) is roughly
-3.7× the originally planned 50M-event run length, so the trainer
-will be configured to do 184,787,415 / 4 (batch=4, seq=64) ≈ 460,000
-optimizer steps per epoch at full coverage. **Explicit user
-authorization is still required** before launching the long run.
+Indexed corpus root: `C:\ov1\compound_indexed\`.
+Build report: `C:\ov1\build_report.json`.
+
+The full 1.0× event total is **184,787,415 active events**, roughly
+3.7× the 50M course gate. At `batch_size=4, seq_len=64`, one optimizer
+step has at most 256 active event slots, so the correct geometry is:
+
+- **50M gate:** `ceil(50,000,000 / 256) = 195,313` optimizer steps (subject to active-event tail/idle padding; the trainer stops by actual `events_seen`).
+- **1.0× corpus pass:** `ceil(184,787,415 / 256) = 721,826` optimizer steps at minimum by slot arithmetic; actual completion remains defined by the epoch-aware sampler's `epoch_events_seen == epoch_events_total`.
+
+The earlier `≈460,000 optimizer steps per epoch` figure divided only by
+batch size and was incorrect. It is superseded by the event-slot arithmetic
+above. The 50M-event commercial Base run has **not** been auto-started.

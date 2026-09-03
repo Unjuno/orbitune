@@ -86,6 +86,8 @@ def convert_scores_to_midi(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if process.returncode != 0 or not output.exists() or output.stat().st_size == 0:
@@ -171,6 +173,8 @@ def convert_mutopia_to_midi(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         generated = sorted(output.parent.glob(prefix.name + "*.midi"))
