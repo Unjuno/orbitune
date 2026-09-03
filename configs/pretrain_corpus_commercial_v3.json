@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "orbitune-commercial-safe-v3",
-  "purpose": "Commercial-safe Base pretraining corpus v3: v2 plus pinned CC-BY 4.0 NIFC Humdrum score corpora.",
+  "purpose": "Commercial-safe Base pretraining corpus v3: v2 plus Muse OMR CC0 and pinned CC-BY 4.0 NIFC score corpora.",
   "license_policy": {
     "allow": ["public-domain", "cc0-1.0", "cc-by-4.0", "cc-by-3.0"],
     "deny_markers": ["-nc", "noncommercial", "unknown", "unclear", "sharealike", "cc-by-sa"],
@@ -89,6 +89,19 @@
       "score_globs": ["price_songs_main/Thou'rt My Loved One/*.mscz"],
       "quality_weight": 2.0,
       "provenance_note": "Pinned upstream CC0 dataset. Upstream README explicitly omits 17 songs with unresolved copyright risk; Orbitune admits only the pinned repository generation. Existing complete-song MIDI files are consumed directly; the single complete score without MIDI is converted from its pinned MuseScore source."
+    },
+    {
+      "id": "muse_omr_benchmark",
+      "tier": "supplement",
+      "kind": "huggingface_score_snapshot",
+      "license": "cc0-1.0",
+      "commercial_safe": true,
+      "repo_id": "musegroup/omr_benchmark",
+      "revision_policy": "resolve-exact-at-install",
+      "allow_patterns": ["*.mscz", "**/*.mscz", "benchmark_dataset.json"],
+      "score_globs": ["*.mscz", "**/*.mscz"],
+      "quality_weight": 2.0,
+      "provenance_note": "Muse OMR Benchmark dataset card declares CC0-1.0 with Public Domain underlying works. The installer resolves the current Hub state exactly once to a 40-character SHA, downloads only symbolic MuseScore payload plus benchmark metadata, and persists that immutable revision in the source lock and install manifest. PDFs are excluded."
     },
     {
       "id": "nifc_polish_scores",
