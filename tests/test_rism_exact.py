@@ -67,6 +67,15 @@ def test_load_baseline_normalized_is_fail_closed(tmp_path: Path) -> None:
     assert report["rows"] == 2
     assert len(report["sha256"]) == 64
 
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("", encoding="utf-8")
+    try:
+        MOD.load_baseline_normalized(empty)
+    except ValueError as exc:
+        assert "empty" in str(exc)
+    else:
+        raise AssertionError("empty baseline manifest must fail closed")
+
     bad = tmp_path / "bad.jsonl"
     bad.write_text(json.dumps({"normalized_fingerprint": "not-a-sha"}) + "\n", encoding="utf-8")
     try:
@@ -75,6 +84,34 @@ def test_load_baseline_normalized_is_fail_closed(tmp_path: Path) -> None:
         assert "not suitable" in str(exc)
     else:
         raise AssertionError("invalid baseline fingerprint must fail closed")
+
+
+def test_validate_baseline_build_report_pins_complete_v4_identity(tmp_path: Path) -> None:
+    manifest_sha = "a" * 64
+    source_reports = {source_id: {} for source_id in MOD.EXPECTED_BASELINE_SOURCE_IDS}
+    report = {
+        "registry_name": MOD.EXPECTED_BASELINE_REGISTRY,
+        "sources": source_reports,
+        "accepted_after_cross_dedup": 2,
+        "indexes": {
+            split: {"manifest_sha256": manifest_sha}
+            for split in ("train", "validation", "test")
+        },
+    }
+    path = tmp_path / "build_report.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    validated = MOD.validate_baseline_build_report(path, manifest_sha256=manifest_sha, manifest_rows=2)
+    assert validated["registry_name"] == MOD.EXPECTED_BASELINE_REGISTRY
+    assert set(validated["source_ids"]) == MOD.EXPECTED_BASELINE_SOURCE_IDS
+
+    report["indexes"]["train"]["manifest_sha256"] = "b" * 64
+    path.write_text(json.dumps(report), encoding="utf-8")
+    try:
+        MOD.validate_baseline_build_report(path, manifest_sha256=manifest_sha, manifest_rows=2)
+    except ValueError as exc:
+        assert "SHA256 mismatch" in str(exc)
+    else:
+        raise AssertionError("mismatched baseline build report must fail closed")
 
 
 def test_classify_conversion_result_uses_normalized_not_composition_for_dedup() -> None:
