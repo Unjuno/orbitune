@@ -1,0 +1,127 @@
+name: commercial-v4-source-census
+
+on:
+  pull_request:
+    paths:
+      - "tools/v4_source_census.py"
+      - "tools/v4_cpdl_census_runner.py"
+      - "tools/v4_imslp_exact_runner.py"
+      - "tools/v4_coco_note_estimate.py"
+      - "tools/v4_bach_doodle_sample.py"
+      - ".github/workflows/v4-source-census.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nrg-cp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal Orbitune census dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy
+          python -m pip install -e . --no-deps
+      - name: Exact NRG-CP Compound census
+        run: |
+          python tools/v4_source_census.py nrg-cp --workers 4 --output nrg_cp_census.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nrg-cp-census
+          path: nrg_cp_census.json
+          if-no-files-found: warn
+
+  cpdl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal Orbitune census dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy
+          python -m pip install -e . --no-deps
+      - name: CPDL fail-closed edition metadata census
+        run: |
+          python tools/v4_cpdl_census_runner.py --workers 4 --output cpdl_census.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpdl-census
+          path: cpdl_census.json
+          if-no-files-found: warn
+
+  imslp-exact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal Orbitune and DuckDB dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy duckdb
+          python -m pip install -e . --no-deps
+      - name: Exact IMSLP CC-BY 3/4 MIDI census
+        run: |
+          python tools/v4_imslp_exact_runner.py --workers 1 --output imslp_ccby_exact_census.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: imslp-ccby-exact-census
+          path: imslp_ccby_exact_census.json
+          if-no-files-found: warn
+
+  cocochorales-40k-estimate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal Orbitune census dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy
+          python -m pip install -e . --no-deps
+      - name: Official 40k tiny note census plus exact example calibration
+        run: |
+          python tools/v4_coco_note_estimate.py --output cocochorales_40k_estimate.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cocochorales-40k-estimate
+          path: cocochorales_40k_estimate.json
+          if-no-files-found: warn
+
+  bach-doodle-sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Multi-shard Bach Doodle scale and duplication sample
+        run: |
+          python tools/v4_bach_doodle_sample.py --shards 0,24,48,72,96,120,144,168 --output bach_doodle_sample.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bach-doodle-sample
+          path: bach_doodle_sample.json
+          if-no-files-found: warn
