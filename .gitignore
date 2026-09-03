@@ -26,6 +26,7 @@ data/corpora/
 runs/
 checkpoints/
 outputs/batches/
+outputs/local-gpu-canary/
 wandb/
 
 # Base model weights: never commit base checkpoints under models/
