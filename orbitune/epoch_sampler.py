@@ -81,11 +81,11 @@ class EpochAwareNoReplacementSampler:
     case its only chunk is a padded partial chunk and every real
     ``len(song) - 1`` target pair still participates exactly once.
 
-    Per-epoch song order is a deterministic shuffle driven by the
-    sampler RNG. Within a song, offsets advance monotonically in
-    ``seq_len`` chunks. Idle lanes at the epoch tail receive a fully
-    padded chunk with zero loss weight, and the next epoch is never
-    prefetched into the current epoch.
+    Per-epoch song order is a deterministic shuffle derived from
+    ``epoch_seed + epoch_index``. Within a song, offsets advance
+    monotonically in ``seq_len`` chunks. Idle lanes at the epoch tail
+    receive a fully padded chunk with zero loss weight, and the next
+    epoch is never prefetched into the current epoch.
 
     The ``state_dict`` is the source of truth for exact resume:
     ``corpus_identity / epoch_index / epoch_seed / shuffled_song_order /
@@ -153,6 +153,10 @@ class EpochAwareNoReplacementSampler:
 
     def _begin_epoch(self) -> None:
         local_order = list(range(len(self.eligible)))
+        # Make each epoch order a pure function of the persisted seed/index.
+        # This avoids a hidden RNG cursor that would diverge after resuming in
+        # epoch > 0 and then advancing to the next epoch.
+        self.rng.seed(self.epoch_seed + self.epoch_index)
         self.rng.shuffle(local_order)
         self.shuffled_song_order = [self.eligible[local] for local in local_order]
         self.order_cursor = 0
@@ -196,7 +200,6 @@ class EpochAwareNoReplacementSampler:
         return float(self.songs[corpus_index].sampling_weight)
 
     def _idle_window(self) -> np.ndarray:
-        # ``eligible`` is non-empty and every eligible song has >=2 records.
         song = self.songs[self.eligible[0]]
         last_record_row = np.asarray(song.records[-1]).reshape(1, -1)
         return np.tile(last_record_row, (self.seq_len + 1, 1)).astype(np.int64)
@@ -259,7 +262,9 @@ class EpochAwareNoReplacementSampler:
                 resets.append(reset)
             elif tail_left > 0:
                 full_end = start + self.seq_len + 1
-                records = np.asarray(song.records[start : min(full_end, len(song.records))], dtype=np.int64)
+                records = np.asarray(
+                    song.records[start : min(full_end, len(song.records))], dtype=np.int64
+                )
                 if records.shape[0] < self.seq_len + 1:
                     pad_needed = self.seq_len + 1 - records.shape[0]
                     last_row = np.asarray(song.records[-1]).reshape(1, -1)
