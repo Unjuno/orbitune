@@ -1,21 +1,22 @@
 """Epoch-aware, deterministic, no-replacement TBPTT sampler.
 
 The production commercial-base pretrain must (1) train on every song
-exactly once per epoch with no replacement, (2) deterministically
-shuffle the per-epoch song order from a stable per-epoch seed, (3)
-pad the final partial chunk to ``seq_len + 1`` with
-``event_weight = 0`` so the loss/gradient are unaffected, (4) keep
-idle lanes at the epoch tail at ``event_weight = 0``, (5) not
-prefetch the next epoch, and (6) round-trip a complete
-``state_dict`` so an exact checkpoint/resume can continue from the
-same next chunks. The sampler is the source of truth for the
-``epoch_events_seen`` and ``epoch_events_total`` counters; idle and
-padding positions are excluded from both.
+with at least one next-event target exactly once per epoch with no
+replacement, (2) deterministically shuffle the per-epoch song order
+from a stable per-epoch RNG state, (3) pad the final partial chunk to
+``seq_len + 1`` with ``event_weight = 0`` so padding is lossless,
+(4) keep idle lanes at the epoch tail at ``event_weight = 0``, (5) not
+prefetch the next epoch, and (6) round-trip a complete ``state_dict``
+so an exact checkpoint/resume can continue from the same next chunks.
+The sampler is the source of truth for ``epoch_events_seen`` and
+``epoch_events_total``; both count real next-event pairs, independent
+of padding, batch size, sequence length, or loss weighting.
 """
 
 from __future__ import annotations
 
 import hashlib
+import math
 import random
 from dataclasses import dataclass
 from typing import Any
@@ -25,6 +26,9 @@ import torch
 
 from orbitune.compound_indexed import IndexedCompoundSong
 from orbitune.compound_tbptt import ChunkBatch
+
+
+SAMPLER_SCHEMA = "orbitune-epoch-sampler-v2"
 
 
 def _corpus_identity(songs: list[IndexedCompoundSong]) -> str:
@@ -55,13 +59,13 @@ def _corpus_identity(songs: list[IndexedCompoundSong]) -> str:
 
 @dataclass(slots=True)
 class EpochSample:
-    """One optimizer-step's data: the TBPTT chunk and a per-event weight tensor.
+    """One optimizer-step's data and per-event loss weights.
 
-    ``event_weight`` has shape ``(batch_size, seq_len)`` with values in
-    ``{0, 1}``: ``1`` for active (loss-bearing) positions and ``0`` for
-    padding inside a song or for an idle lane at the epoch tail. The
-    ``events_counted`` field is the number of ``1`` entries and is
-    what the production trainer adds to ``epoch_events_seen``.
+    ``event_weight`` has shape ``(batch_size, seq_len)``. Real
+    next-event pairs receive either ``1.0`` (unweighted mode) or the
+    source song's manifest ``sampling_weight`` (weighted mode).
+    Padding and idle lanes receive ``0.0``. ``events_counted`` counts
+    real next-event pairs, not the sum of loss weights.
     """
 
     batch: ChunkBatch
@@ -72,26 +76,22 @@ class EpochSample:
 class EpochAwareNoReplacementSampler:
     """No-replacement epoch-aware TBPTT sampler.
 
-    Each epoch visits every eligible song exactly once. Per-epoch the
-    song order is a deterministic ``random.Random(epoch_seed).shuffle``
-    of the song index list. Within a song the sampler advances in
-    monotonic ``seq_len`` chunks. The final partial chunk of a song
-    is padded with the song's own last record (a no-op target pair)
-    and the per-position ``event_weight`` is set to ``0`` for the
-    padded positions so they contribute neither loss nor gradient.
+    Each epoch visits every song with at least two Compound records
+    exactly once. A song may be shorter than ``seq_len + 1``; in that
+    case its only chunk is a padded partial chunk and every real
+    ``len(song) - 1`` target pair still participates exactly once.
 
-    Idle lanes at the epoch tail (``batch_size > remaining_songs``)
-    receive a fully padded chunk with ``event_weight = 0`` and a
-    sentinel ``song_index = -1``; the next epoch starts a fresh
-    shuffle and never pre-fetches into the new shuffle.
+    Per-epoch song order is a deterministic shuffle derived from
+    ``epoch_seed + epoch_index``. Within a song, offsets advance
+    monotonically in ``seq_len`` chunks. Idle lanes at the epoch tail
+    receive a fully padded chunk with zero loss weight, and the next
+    epoch is never prefetched into the current epoch.
 
     The ``state_dict`` is the source of truth for exact resume:
     ``corpus_identity / epoch_index / epoch_seed / shuffled_song_order /
-    order_cursor / lane song_indices / lane offsets /
+    order_cursor / lane song_indices / lane offsets / lane tail state /
     epoch_events_seen / epoch_events_total / batch_size / seq_len /
-    weighting mode``. ``load_state_dict`` is fail-closed: it raises if
-    the saved corpus identity, batch size, seq length, or weighting
-    mode does not match the live sampler.
+    weighting mode``. Loading is fail-closed on incompatible state.
     """
 
     def __init__(
@@ -113,18 +113,32 @@ class EpochAwareNoReplacementSampler:
         self.weighted = bool(weighted)
         self.rng = rng if rng is not None else random.Random(epoch_seed)
         self.corpus_identity = _corpus_identity(songs)
-        self.eligible = [i for i, song in enumerate(songs) if len(song.records) >= seq_len + 1]
+
+        # Any song with at least one next-event pair is trainable. Short songs
+        # are padded instead of being silently dropped based on seq_len.
+        self.eligible = [i for i, song in enumerate(songs) if len(song.records) >= 2]
         if not self.eligible:
-            raise ValueError("no song is long enough for the requested seq_len")
-        # Per-song eligible completeness counts: number of full chunks per song
-        # and the size of the (possibly partial) final tail. These are stable
-        # per (corpus_identity, seq_len) so the epoch total event count is
-        # deterministic.
-        self._chunks_per_song: list[int] = [max(1, (len(songs[i].records) - 1) // self.seq_len) for i in self.eligible]
+            raise ValueError("no song contains a next-event training pair")
+        self._eligible_position = {corpus_index: local for local, corpus_index in enumerate(self.eligible)}
+
+        if self.weighted:
+            for corpus_index in self.eligible:
+                value = float(self.songs[corpus_index].sampling_weight)
+                if not math.isfinite(value) or value < 0.0:
+                    raise ValueError(
+                        f"invalid sampling_weight for corpus song {corpus_index}: {value!r}"
+                    )
+
+        # Number of complete seq_len chunks and real-event tail size. No
+        # max(1, ...) here: a song shorter than seq_len has zero complete
+        # chunks and one padded tail.
+        self._chunks_per_song: list[int] = [
+            (len(songs[i].records) - 1) // self.seq_len for i in self.eligible
+        ]
         self._tail_per_song: list[int] = [
             (len(songs[i].records) - 1) % self.seq_len for i in self.eligible
         ]
-        # State
+
         self.epoch_index: int = 0
         self.shuffled_song_order: list[int] = []
         self.order_cursor: int = 0
@@ -138,31 +152,25 @@ class EpochAwareNoReplacementSampler:
     # --- epoch management ------------------------------------------------
 
     def _begin_epoch(self) -> None:
-        # Shuffle local eligible positions (0..len(eligible)-1) so the
-        # per-epoch song order is independent of the corpus song index.
         local_order = list(range(len(self.eligible)))
+        # Make each epoch order a pure function of the persisted seed/index.
+        # This avoids a hidden RNG cursor that would diverge after resuming in
+        # epoch > 0 and then advancing to the next epoch.
+        self.rng.seed(self.epoch_seed + self.epoch_index)
         self.rng.shuffle(local_order)
-        # Map each local position back to the corpus song index for sampler
-        # bookkeeping. ``shuffled_song_order`` is the corpus-indexed shuffle;
-        # it round-trips through state_dict verbatim.
         self.shuffled_song_order = [self.eligible[local] for local in local_order]
         self.order_cursor = 0
         self.lane_song_indices = [-1] * self.batch_size
         self.lane_offsets = [0] * self.batch_size
         self.lane_tail_left = [0] * self.batch_size
         self.epoch_events_seen = 0
-        # Compute deterministic total over the *current* shuffled order.
-        # ``_chunks_per_song`` and ``_tail_per_song`` are indexed by the
-        # *local* eligible position.
-        total = 0
-        for local in local_order:
-            chunks = self._chunks_per_song[local]
-            tail = self._tail_per_song[local]
-            # Full chunks contribute seq_len active events each
-            total += chunks * self.seq_len
-            # Partial tail contributes tail active events (and seq_len - tail padding)
-            total += tail
-        self.epoch_events_total = total
+
+        # This is exactly sum(len(song)-1) across trainable songs and therefore
+        # must be invariant to seq_len, batch size, shuffle order, and weights.
+        self.epoch_events_total = sum(
+            self._chunks_per_song[local] * self.seq_len + self._tail_per_song[local]
+            for local in local_order
+        )
 
     def _start_lane(self, lane: int) -> None:
         if self.order_cursor >= len(self.shuffled_song_order):
@@ -174,28 +182,27 @@ class EpochAwareNoReplacementSampler:
         self.order_cursor += 1
         self.lane_song_indices[lane] = corpus_index
         self.lane_offsets[lane] = 0
-        # Map back to local position for tail lookup
-        self._lane_local_index: dict[int, int] = getattr(self, "_lane_local_index", {})
-        # Find the local position for the lane's corpus index
-        # (linear search; only run on song start so O(N) is fine)
-        for local_pos, elig in enumerate(self.eligible):
-            if elig == corpus_index:
-                self.lane_tail_left[lane] = self._tail_per_song[local_pos]
-                break
-        else:
-            self.lane_tail_left[lane] = 0
+        local_pos = self._eligible_position[corpus_index]
+        self.lane_tail_left[lane] = self._tail_per_song[local_pos]
 
     def _lane_complete_chunks_left(self, lane: int) -> int:
-        if self.lane_song_indices[lane] < 0:
-            return 0
         corpus_index = self.lane_song_indices[lane]
-        # Find local position
-        for local_pos, elig in enumerate(self.eligible):
-            if elig == corpus_index:
-                chunks_total = self._chunks_per_song[local_pos]
-                consumed = self.lane_offsets[lane] // self.seq_len
-                return max(0, chunks_total - consumed)
-        return 0
+        if corpus_index < 0:
+            return 0
+        local_pos = self._eligible_position[corpus_index]
+        chunks_total = self._chunks_per_song[local_pos]
+        consumed = self.lane_offsets[lane] // self.seq_len
+        return max(0, chunks_total - consumed)
+
+    def _song_loss_weight(self, corpus_index: int) -> float:
+        if not self.weighted:
+            return 1.0
+        return float(self.songs[corpus_index].sampling_weight)
+
+    def _idle_window(self) -> np.ndarray:
+        song = self.songs[self.eligible[0]]
+        last_record_row = np.asarray(song.records[-1]).reshape(1, -1)
+        return np.tile(last_record_row, (self.seq_len + 1, 1)).astype(np.int64)
 
     # --- public API ------------------------------------------------------
 
@@ -210,95 +217,120 @@ class EpochAwareNoReplacementSampler:
         resets: list[bool] = []
         starts: list[int] = []
         songs_used: list[int] = []
-        event_weights: list[list[int]] = []
+        event_weights: list[list[float]] = []
         active_count = 0
 
         for lane in range(self.batch_size):
-            eligible_index = self.lane_song_indices[lane]
-            reset = eligible_index < 0
-            if not reset and self._lane_complete_chunks_left(lane) <= 0 and self.lane_tail_left[lane] <= 0:
+            corpus_index = self.lane_song_indices[lane]
+            reset = corpus_index < 0
+            if (
+                not reset
+                and self._lane_complete_chunks_left(lane) <= 0
+                and self.lane_tail_left[lane] <= 0
+            ):
                 reset = True
             if reset:
                 self._start_lane(lane)
-                eligible_index = self.lane_song_indices[lane]
+                corpus_index = self.lane_song_indices[lane]
                 reset = True
-            if eligible_index < 0:
-                # Epoch tail: idle lane, fully padded
-                song_index_in_corpus = -1
-                song = self.songs[0]
-                last_record_row = np.asarray(song.records[-1]).reshape(1, -1)
-                pad_window = np.tile(last_record_row, (self.seq_len + 1, 1)).astype(np.int64)
+
+            if corpus_index < 0:
+                pad_window = self._idle_window()
                 xs.append(torch.from_numpy(pad_window[:-1]))
                 ys.append(torch.from_numpy(pad_window[1:]))
                 resets.append(True)
                 starts.append(0)
-                songs_used.append(song_index_in_corpus)
-                event_weights.append([0] * self.seq_len)
+                songs_used.append(-1)
+                event_weights.append([0.0] * self.seq_len)
                 continue
 
-            song = self.songs[eligible_index]
+            song = self.songs[corpus_index]
             start = self.lane_offsets[lane]
             chunks_left = self._lane_complete_chunks_left(lane)
             tail_left = self.lane_tail_left[lane]
+            loss_weight = self._song_loss_weight(corpus_index)
+
             if chunks_left > 0:
-                # Full chunk: every position is active
-                window = np.asarray(song.records[start : start + self.seq_len + 1], dtype=np.int64)
+                window = np.asarray(
+                    song.records[start : start + self.seq_len + 1], dtype=np.int64
+                )
                 if window.shape[0] != self.seq_len + 1:
                     raise RuntimeError("epoch sampler produced a short chunk")
-                weight = [1] * self.seq_len
+                weight = [loss_weight] * self.seq_len
+                real_events = self.seq_len
                 self.lane_offsets[lane] += self.seq_len
                 resets.append(reset)
             elif tail_left > 0:
-                # Partial tail chunk: full window from records, but event_weight
-                # is 0 for the padded positions (events beyond song length).
                 full_end = start + self.seq_len + 1
-                if full_end <= len(song.records):
-                    window = np.asarray(song.records[start:full_end], dtype=np.int64)
-                else:
-                    records = np.asarray(song.records[start:len(song.records)], dtype=np.int64)
-                    pad_needed = full_end - len(song.records)
+                records = np.asarray(
+                    song.records[start : min(full_end, len(song.records))], dtype=np.int64
+                )
+                if records.shape[0] < self.seq_len + 1:
+                    pad_needed = self.seq_len + 1 - records.shape[0]
                     last_row = np.asarray(song.records[-1]).reshape(1, -1)
                     pad = np.tile(last_row, (pad_needed, 1))
                     window = np.concatenate([records, pad]).astype(np.int64)
+                else:
+                    window = records
                 if window.shape[0] != self.seq_len + 1:
                     raise RuntimeError("epoch sampler produced a short tail chunk")
-                weight = [1] * tail_left + [0] * (self.seq_len - tail_left)
+                weight = [loss_weight] * tail_left + [0.0] * (self.seq_len - tail_left)
+                real_events = tail_left
                 self.lane_offsets[lane] += self.seq_len
                 self.lane_tail_left[lane] = 0
-                resets.append(False)
+                # A song shorter than seq_len starts directly with this tail;
+                # preserve the song-boundary reset in that case.
+                resets.append(reset)
             else:
-                # No chunks left (already exhausted): start a new song
+                # Defensive fallback. Normal control flow resets exhausted lanes
+                # at the top of the next call.
                 self._start_lane(lane)
-                eligible_index = self.lane_song_indices[lane]
-                if eligible_index < 0:
-                    last_record_row = np.asarray(song.records[-1]).reshape(1, -1)
-                    pad_window = np.tile(last_record_row, (self.seq_len + 1, 1)).astype(np.int64)
+                corpus_index = self.lane_song_indices[lane]
+                if corpus_index < 0:
+                    pad_window = self._idle_window()
                     xs.append(torch.from_numpy(pad_window[:-1]))
                     ys.append(torch.from_numpy(pad_window[1:]))
                     resets.append(True)
                     starts.append(0)
                     songs_used.append(-1)
-                    event_weights.append([0] * self.seq_len)
+                    event_weights.append([0.0] * self.seq_len)
                     continue
-                song = self.songs[eligible_index]
+                song = self.songs[corpus_index]
                 start = 0
-                window = np.asarray(song.records[start : start + self.seq_len + 1], dtype=np.int64)
-                if window.shape[0] != self.seq_len + 1:
-                    raise RuntimeError("epoch sampler produced a short chunk")
-                weight = [1] * self.seq_len
-                self.lane_offsets[lane] = self.seq_len
+                local_pos = self._eligible_position[corpus_index]
+                chunks_left = self._chunks_per_song[local_pos]
+                tail_left = self._tail_per_song[local_pos]
+                loss_weight = self._song_loss_weight(corpus_index)
+                if chunks_left > 0:
+                    window = np.asarray(song.records[: self.seq_len + 1], dtype=np.int64)
+                    if window.shape[0] != self.seq_len + 1:
+                        raise RuntimeError("epoch sampler produced a short chunk")
+                    weight = [loss_weight] * self.seq_len
+                    real_events = self.seq_len
+                    self.lane_offsets[lane] = self.seq_len
+                elif tail_left > 0:
+                    records = np.asarray(song.records[:], dtype=np.int64)
+                    pad_needed = self.seq_len + 1 - records.shape[0]
+                    last_row = np.asarray(song.records[-1]).reshape(1, -1)
+                    pad = np.tile(last_row, (pad_needed, 1))
+                    window = np.concatenate([records, pad]).astype(np.int64)
+                    weight = [loss_weight] * tail_left + [0.0] * (self.seq_len - tail_left)
+                    real_events = tail_left
+                    self.lane_offsets[lane] = self.seq_len
+                    self.lane_tail_left[lane] = 0
+                else:
+                    raise RuntimeError("eligible song has no next-event pairs")
                 resets.append(True)
+
             starts.append(start)
-            songs_used.append(eligible_index)
+            songs_used.append(corpus_index)
             xs.append(torch.from_numpy(window[:-1]))
             ys.append(torch.from_numpy(window[1:]))
             event_weights.append(weight)
-            active_count += sum(weight)
+            active_count += real_events
 
-        # Cap epoch_events_seen at the deterministic total. This guards against
-        # rounding/edge effects in partial-tail bookkeeping.
         if self.epoch_events_seen + active_count > self.epoch_events_total:
-            active_count = self.epoch_events_total - self.epoch_events_seen
+            raise RuntimeError("epoch sampler emitted more real events than epoch_events_total")
         self.epoch_events_seen += active_count
 
         ew_tensor = torch.tensor(event_weights, dtype=torch.float32, device=device)
@@ -323,7 +355,7 @@ class EpochAwareNoReplacementSampler:
 
     def state_dict(self) -> dict[str, Any]:
         return {
-            "schema": "orbitune-epoch-sampler-v1",
+            "schema": SAMPLER_SCHEMA,
             "batch_size": self.batch_size,
             "seq_len": self.seq_len,
             "weighted": self.weighted,
@@ -340,7 +372,7 @@ class EpochAwareNoReplacementSampler:
         }
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
-        if str(state.get("schema", "")) != "orbitune-epoch-sampler-v1":
+        if str(state.get("schema", "")) != SAMPLER_SCHEMA:
             raise ValueError(f"unknown epoch-sampler schema: {state.get('schema')!r}")
         if int(state.get("batch_size", -1)) != self.batch_size:
             raise ValueError("epoch sampler batch_size mismatch")
@@ -351,7 +383,7 @@ class EpochAwareNoReplacementSampler:
         if str(state.get("corpus_identity", "")) != self.corpus_identity:
             raise ValueError("epoch sampler corpus identity mismatch")
         order = [int(v) for v in state.get("shuffled_song_order", [])]
-        if set(order) != set(self.eligible):
+        if set(order) != set(self.eligible) or len(order) != len(self.eligible):
             raise ValueError("epoch sampler shuffled order does not match eligible set")
         self.epoch_index = int(state.get("epoch_index", 0))
         self.epoch_seed = int(state.get("epoch_seed", self.epoch_seed))
@@ -366,5 +398,22 @@ class EpochAwareNoReplacementSampler:
             or len(self.lane_tail_left) != self.batch_size
         ):
             raise ValueError("epoch sampler lane-state length mismatch")
+        if not 0 <= self.order_cursor <= len(self.shuffled_song_order):
+            raise ValueError("epoch sampler order_cursor out of range")
+        for corpus_index, offset, tail_left in zip(
+            self.lane_song_indices, self.lane_offsets, self.lane_tail_left
+        ):
+            if corpus_index != -1 and corpus_index not in self._eligible_position:
+                raise ValueError(f"invalid epoch sampler song index {corpus_index}")
+            if offset < 0 or tail_left < 0:
+                raise ValueError("epoch sampler lane offset/tail must be non-negative")
         self.epoch_events_seen = int(state.get("epoch_events_seen", 0))
         self.epoch_events_total = int(state.get("epoch_events_total", 0))
+        expected_total = sum(len(self.songs[i].records) - 1 for i in self.eligible)
+        if self.epoch_events_total != expected_total:
+            raise ValueError(
+                "epoch sampler event total mismatch: "
+                f"checkpoint={self.epoch_events_total} live={expected_total}"
+            )
+        if not 0 <= self.epoch_events_seen <= self.epoch_events_total:
+            raise ValueError("epoch sampler epoch_events_seen out of range")
