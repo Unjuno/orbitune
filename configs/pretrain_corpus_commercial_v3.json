@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "name": "orbitune-commercial-safe-v3",
+  "purpose": "Commercial-safe Base pretraining corpus v3: v2 plus Muse OMR CC0 and pinned CC-BY 4.0 NIFC score corpora.",
+  "license_policy": {
+    "allow": ["public-domain", "cc0-1.0", "cc-by-4.0", "cc-by-3.0"],
+    "deny_markers": ["-nc", "noncommercial", "unknown", "unclear", "sharealike", "cc-by-sa"],
+    "note": "Dataset inclusion is conservative and is not legal advice. Per-item provenance remains in the generated manifest."
+  },
+  "sources": [
+    {
+      "id": "pdmx",
+      "tier": "primary",
+      "kind": "zenodo_pdmx",
+      "license": "cc-by-4.0/public-domain-compositions",
+      "commercial_safe": true,
+      "record_id": 15571083,
+      "landing_url": "https://zenodo.org/records/15571083",
+      "required_files": ["PDMX.csv", "mid.tar.gz", "subset_paths.tar.gz"],
+      "filters": ["no_license_conflict", "deduplicated", "midi_available"],
+      "quality_weight": 1.0
+    },
+    {
+      "id": "openscore_lieder",
+      "tier": "quality-anchor",
+      "kind": "git_scores",
+      "license": "cc0-1.0",
+      "commercial_safe": true,
+      "git_url": "https://github.com/OpenScore/Lieder.git",
+      "ref": "6b2dc542ce2e8aa4b78c8ee62103b210efc07015",
+      "score_globs": ["scores/**/*.mscz", "scores/**/*.mscx"],
+      "quality_weight": 2.0
+    },
+    {
+      "id": "openscore_string_quartets",
+      "tier": "quality-anchor",
+      "kind": "git_scores",
+      "license": "cc0-1.0",
+      "commercial_safe": true,
+      "git_url": "https://github.com/OpenScore/StringQuartets.git",
+      "ref": "8fd2169855a1b27586454b183739573962f9d8ca",
+      "score_globs": ["scores/**/*.mscz", "scores/**/*.mscx"],
+      "quality_weight": 2.0
+    },
+    {
+      "id": "openscore_orchestra",
+      "tier": "quality-anchor",
+      "kind": "git_scores",
+      "license": "cc0-1.0-scores",
+      "commercial_safe": true,
+      "git_url": "https://github.com/MarkGotham/Hauptstimme.git",
+      "ref": "8f677853c45b74ca0afcd79677e5379c06c82354",
+      "include_scores_only": true,
+      "exclude_annotations": true,
+      "score_globs": ["data/**/*.mscz"],
+      "quality_weight": 2.0
+    },
+    {
+      "id": "mutopia",
+      "tier": "supplement",
+      "kind": "git_scores",
+      "license": "per-item",
+      "commercial_safe": true,
+      "git_url": "https://github.com/MutopiaProject/MutopiaProject.git",
+      "ref": "2144afd6f52d56c5b6995b8b589ef1268b3139f0",
+      "allowed_item_licenses": ["public-domain", "cc0-1.0", "cc-by-4.0", "cc-by-3.0"],
+      "score_globs": ["ftp/**/*.mid", "ftp/**/*.midi", "ftp/**/*.ly"],
+      "quality_weight": 1.0
+    },
+    {
+      "id": "imslp_midi_cc0",
+      "tier": "direct-midi-supplement",
+      "kind": "huggingface_midi_bytes",
+      "license": "public-domain/cc0-1.0",
+      "commercial_safe": true,
+      "repo_id": "TiMauzi/imslp-midi-cc0-1.0",
+      "revision": "6ae7ad248c5a599aef5f095b0694598b266eb13f",
+      "midi_column": "midi",
+      "quality_weight": 1.0
+    },
+    {
+      "id": "florence_price_art_songs",
+      "tier": "direct-midi-supplement",
+      "kind": "git_scores",
+      "license": "cc0-1.0",
+      "commercial_safe": true,
+      "git_url": "https://github.com/TT515/Florence_Price_Art_Song_Dataset.git",
+      "ref": "fa25c98d495e4ab86217dcc341a4b2d9fb714cfa",
+      "score_globs": ["price_songs_main/Thou'rt My Loved One/*.mscz"],
+      "quality_weight": 2.0,
+      "provenance_note": "Pinned upstream CC0 dataset. Upstream README explicitly omits 17 songs with unresolved copyright risk; Orbitune admits only the pinned repository generation. Existing complete-song MIDI files are consumed directly; the single complete score without MIDI is converted from its pinned MuseScore source."
+    },
+    {
+      "id": "muse_omr_benchmark",
+      "tier": "supplement",
+      "kind": "huggingface_score_snapshot",
+      "license": "cc0-1.0",
+      "commercial_safe": true,
+      "repo_id": "musegroup/omr_benchmark",
+      "revision_policy": "resolve-exact-at-install",
+      "allow_patterns": ["*.mscz", "**/*.mscz", "benchmark_dataset.json"],
+      "score_globs": ["*.mscz", "**/*.mscz"],
+      "quality_weight": 2.0,
+      "provenance_note": "Muse OMR Benchmark dataset card declares CC0-1.0 with Public Domain underlying works. The installer resolves the current Hub state exactly once to a 40-character SHA, downloads only symbolic MuseScore payload plus benchmark metadata, and persists that immutable revision in the source lock and install manifest. PDFs are excluded."
+    },
+    {
+      "id": "nifc_polish_scores",
+      "tier": "supplement",
+      "kind": "git_scores",
+      "license": "cc-by-4.0",
+      "commercial_safe": true,
+      "git_url": "https://github.com/pl-wnifc/humdrum-polish-scores.git",
+      "ref": "13ac964e0dd8bcd5fffd837169cbf653242c12e8",
+      "converter": "hum2mid",
+      "humdrum_globs": ["**/kern/*.krn"],
+      "quality_weight": 1.0,
+      "attribution_required": true,
+      "provenance_note": "Pinned NIFC Polish Music Heritage in Open Access Humdrum score corpus. Repository LICENSE.txt is CC-BY-4.0 and permits sharing/adaptation for any purpose including commercial use with attribution."
+    },
+    {
+      "id": "nifc_chopin_first_editions",
+      "tier": "supplement",
+      "kind": "git_scores",
+      "license": "cc-by-4.0",
+      "commercial_safe": true,
+      "git_url": "https://github.com/pl-wnifc/humdrum-chopin-first-editions.git",
+      "ref": "95dfb105c1669c72d10b04088566154f12d3dc1c",
+      "converter": "hum2mid",
+      "humdrum_globs": ["kern/*.krn"],
+      "quality_weight": 1.0,
+      "attribution_required": true,
+      "provenance_note": "Pinned NIFC Chopin First Editions Humdrum score corpus. Repository LICENSE.txt is CC-BY-4.0 and permits sharing/adaptation for any purpose including commercial use with attribution."
+    }
+  ],
+  "sampling": {
+    "track_buckets": {
+      "solo": 0.40,
+      "small_ensemble_2_5": 0.50,
+      "large_ensemble_6_plus": 0.10
+    },
+    "quality_multipliers": {
+      "ordinary": 1.0,
+      "rated": 1.5,
+      "high_rated": 2.0,
+      "openscore_verified": 2.0
+    }
+  },
+  "split": {
+    "unit": "composition_fingerprint_v1",
+    "validation_fraction": 0.05,
+    "test_fraction": 0.01,
+    "seed": "orbitune-commercial-safe-v1"
+  }
+}

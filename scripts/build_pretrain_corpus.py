@@ -18,6 +18,7 @@ from orbitune.pretrain_corpus import (
 
 
 _MUSESCORE_SUFFIXES = {".mscz", ".mscx", ".musicxml", ".mxl"}
+_HUMDRUM_SUFFIXES = {".krn"}
 _MUTOPIA_DENY_MARKERS = (
     "noncommercial",
     "non-commercial",
@@ -48,6 +49,18 @@ def _score_candidates(root: Path, source_raw: dict[str, object]) -> list[Path]:
     for pattern in globs:
         for path in root.glob(str(pattern)):
             if path.is_file() and path.suffix.lower() in _MUSESCORE_SUFFIXES:
+                result.add(path)
+    return sorted(result)
+
+
+def _humdrum_candidates(root: Path, source_raw: dict[str, object]) -> list[Path]:
+    globs = source_raw.get("humdrum_globs", [])
+    if not isinstance(globs, list):
+        return []
+    result: set[Path] = set()
+    for pattern in globs:
+        for path in root.glob(str(pattern)):
+            if path.is_file() and path.suffix.lower() in _HUMDRUM_SUFFIXES:
                 result.add(path)
     return sorted(result)
 
@@ -83,6 +96,63 @@ def convert_scores_to_midi(
             continue
         process = subprocess.run(
             [musescore_bin, "-o", str(output), str(source_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if process.returncode != 0 or not output.exists() or output.stat().st_size == 0:
+            output.unlink(missing_ok=True)
+            failed.append({"path": str(source_path), "output": process.stdout[-1000:]})
+            continue
+        converted += 1
+    return {
+        "score_candidates": len(candidates),
+        "converted": converted,
+        "cached": cached,
+        "failed": failed,
+    }
+
+
+def convert_humdrum_to_midi(
+    source_root: Path,
+    converted_root: Path,
+    source_raw: dict[str, object],
+    *,
+    hum2mid_bin: str | None,
+) -> dict[str, object]:
+    """Convert allowlisted pinned Humdrum **kern files through hum2mid.
+
+    NIFC's own repositories use the same ``hum2mid <input> -o <output>``
+    contract for their MIDI build target. Orbitune keeps conversion output in a
+    separate derived-data tree so the pinned source checkout remains immutable.
+    """
+    candidates = _humdrum_candidates(source_root, source_raw)
+    if not candidates:
+        return {"score_candidates": 0, "converted": 0, "cached": 0, "failed": []}
+    if hum2mid_bin is None:
+        return {
+            "score_candidates": len(candidates),
+            "converted": 0,
+            "cached": 0,
+            "failed": [],
+            "blocked": "hum2mid CLI not found; pass --hum2mid-bin to include Humdrum score sources",
+        }
+
+    converted = 0
+    cached = 0
+    failed: list[dict[str, str]] = []
+    for source_path in candidates:
+        relative = source_path.relative_to(source_root)
+        output = (converted_root / relative).with_suffix(".mid")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if output.exists() and output.stat().st_size > 0 and output.stat().st_mtime_ns >= source_path.stat().st_mtime_ns:
+            cached += 1
+            continue
+        process = subprocess.run(
+            [hum2mid_bin, str(source_path), "-o", str(output)],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -208,6 +278,7 @@ def main() -> None:
     parser.add_argument("--root", default="data/corpora/commercial_v1")
     parser.add_argument("--musescore-bin", default=None)
     parser.add_argument("--lilypond-bin", default=None)
+    parser.add_argument("--hum2mid-bin", default=None)
     parser.add_argument("--skip-score-conversion", action="store_true")
     parser.add_argument("--manifest", default=None)
     parser.add_argument("--index-root", default=None)
@@ -221,6 +292,7 @@ def main() -> None:
         args.musescore_bin, ("MuseScore4", "MuseScore4.exe", "mscore", "musescore")
     )
     lilypond = None if args.skip_score_conversion else _find_binary(args.lilypond_bin, ("lilypond", "lilypond.exe"))
+    hum2mid = None if args.skip_score_conversion else _find_binary(args.hum2mid_bin, ("hum2mid", "hum2mid.exe"))
 
     all_entries = []
     source_reports: dict[str, object] = {}
@@ -233,7 +305,7 @@ def main() -> None:
             )
         conversion: dict[str, object] = {"score_candidates": 0, "converted": 0, "cached": 0, "failed": []}
         converted_root: Path | None = None
-        if source.kind == "git_scores":
+        if source.kind in {"git_scores", "huggingface_score_snapshot"}:
             converted_root = converted_base / source.id
             if not args.skip_score_conversion:
                 if source.id == "mutopia":
@@ -241,6 +313,13 @@ def main() -> None:
                         source_root,
                         converted_root,
                         lilypond_bin=lilypond,
+                    )
+                elif source.raw.get("converter") == "hum2mid":
+                    conversion = convert_humdrum_to_midi(
+                        source_root,
+                        converted_root,
+                        source.raw,
+                        hum2mid_bin=hum2mid,
                     )
                 else:
                     conversion = convert_scores_to_midi(
@@ -296,6 +375,7 @@ def main() -> None:
         "registry_name": registry.get("name"),
         "musescore_bin": musescore,
         "lilypond_bin": lilypond,
+        "hum2mid_bin": hum2mid,
         "sources": source_reports,
         "accepted_before_cross_dedup": len(all_entries),
         "accepted_after_cross_dedup": len(deduped),

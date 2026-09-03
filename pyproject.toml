@@ -27,7 +27,8 @@ dev = [
   "jsonschema>=4"
 ]
 corpus = [
-  "datasets>=3,<5"
+  "datasets>=3,<5",
+  "huggingface_hub>=0.27,<2"
 ]
 export = [
   "onnx",
