@@ -118,37 +118,80 @@ def _positive_int_or_none(value: object) -> int | None:
     return parsed if parsed > 0 else None
 
 
-def iter_pdmx_midi(root: str | Path) -> Iterator[tuple[Path, dict[str, object]]]:
-    """Yield PDMX rows that pass the commercial Base hard filters.
+# v3 commercial Base PDMX admission filters (must match the v3 registry).
+_PDMX_V3_FILTERS: tuple[str, ...] = ("no_license_conflict", "deduplicated", "midi_available")
 
-    Upstream PDMX's ``no_license_conflict`` removes rows whose public-facing
-    public-domain license disagrees with embedded score metadata. Its
-    ``deduplicated`` flag keeps the best unique title/instrumentation/
-    arrangement representative rather than repeated exports.
+# Filters that may be applied to a PDMX row.
+_PDMX_NO_CONFLICT = "no_license_conflict"
+_PDMX_DEDUPLICATED = "deduplicated"
+_PDMX_MIDI_AVAILABLE = "midi_available"
+
+
+def _pdmx_row_admits(row: dict[str, str], *, filters: tuple[str, ...]) -> bool:
+    """Apply the registry's PDMX filter list to one row.
+
+    The filter set is the single source of truth for PDMX admission. v3
+    uses ``("no_license_conflict", "deduplicated", "midi_available")``;
+    v4 uses ``("no_license_conflict", "midi_available")`` and explicitly
+    drops the upstream ``deduplicated`` gate, replacing it with
+    Orbitune-level cross-source dedup.
+    """
+    if _PDMX_NO_CONFLICT in filters:
+        if not _truthy(row.get("subset:no_license_conflict", row.get("no_license_conflict", ""))):
+            return False
+    if _PDMX_DEDUPLICATED in filters:
+        if not _truthy(row.get("subset:deduplicated", row.get("is_best_unique_arrangement", ""))):
+            return False
+    if _PDMX_MIDI_AVAILABLE in filters:
+        raw_mid = str(row.get("mid", "")).strip()
+        if not raw_mid or raw_mid.lower() in {"n/a", "nan", "none"}:
+            return False
+        norm = raw_mid.replace("\\", "/")
+        if norm.startswith("./"):
+            norm = norm[2:]
+        if not (Path(row.get("__pdmx_root__", "")) / norm).exists():
+            return False
+    return True
+
+
+def iter_pdmx_midi(
+    root: str | Path,
+    *,
+    filters: tuple[str, ...] | list[str] = _PDMX_V3_FILTERS,
+) -> Iterator[tuple[Path, dict[str, object]]]:
+    """Yield PDMX rows that pass the registry-controlled filter set.
+
+    The default ``filters`` is the v3 commercial Base filter set:
+    ``("no_license_conflict", "deduplicated", "midi_available")``. The
+    v4 commercial Base filter set is
+    ``("no_license_conflict", "midi_available")``; passing it here drops
+    the upstream ``deduplicated`` gate while preserving the license-
+    conflict gate and the on-disk MIDI gate.
     """
 
     root = Path(root)
     csv_path = root / "PDMX.csv"
     if not csv_path.exists():
         raise FileNotFoundError(f"missing {csv_path}")
+    filter_set = tuple(filters)
     with csv_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
-            no_conflict = _truthy(row.get("subset:no_license_conflict", row.get("no_license_conflict", "")))
-            dedup = _truthy(row.get("subset:deduplicated", row.get("is_best_unique_arrangement", "")))
-            raw_mid = str(row.get("mid", "")).strip()
-            if not no_conflict or not dedup or not raw_mid or raw_mid.lower() in {"n/a", "nan", "none"}:
+            # Synthesize a row view that carries the root so the
+            # ``midi_available`` gate can resolve the on-disk path.
+            row_with_root = dict(row)
+            row_with_root["__pdmx_root__"] = str(root)
+            if not _pdmx_row_admits(row_with_root, filters=filter_set):
                 continue
-            raw_mid = raw_mid.replace("\\", "/")
+            raw_mid = str(row.get("mid", "")).strip().replace("\\", "/")
             if raw_mid.startswith("./"):
                 raw_mid = raw_mid[2:]
             midi_path = root / raw_mid
-            if midi_path.exists():
-                yield midi_path, {
-                    "rating": _float_or_none(row.get("rating")),
-                    "n_tracks": _positive_int_or_none(row.get("n_tracks")),
-                    "license": row.get("license") or "public-domain",
-                }
+            yield midi_path, {
+                "rating": _float_or_none(row.get("rating")),
+                "n_tracks": _positive_int_or_none(row.get("n_tracks")),
+                "license": row.get("license") or "public-domain",
+            }
 
 
 def _mutopia_license_from_text(text: str) -> str | None:
@@ -258,7 +301,11 @@ def collect_entries(
     converted_root = Path(converted_root) if converted_root is not None else None
     candidates: list[tuple[Path, dict[str, object]]] = []
     if source.kind == "zenodo_pdmx":
-        candidates.extend(iter_pdmx_midi(root))
+        registry_filters = source.raw.get("filters")
+        if isinstance(registry_filters, list) and registry_filters:
+            candidates.extend(iter_pdmx_midi(root, filters=tuple(registry_filters)))
+        else:
+            candidates.extend(iter_pdmx_midi(root))
     else:
         seen: set[Path] = set()
         for suffix in _MIDI_SUFFIXES:

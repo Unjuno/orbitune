@@ -32,6 +32,14 @@ def _md5(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()  # noqa: S324 - upstream integrity checksum, not security use
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def _download(url: str, target: Path, *, expected_size: int | None = None, md5: str | None = None) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and (expected_size is None or target.stat().st_size == expected_size) and (md5 is None or _md5(target) == md5):
@@ -64,6 +72,87 @@ def _safe_extract_tar(archive: Path, target: Path) -> None:
                 raise RuntimeError(f"unsupported tar member type: {member.name}")
         for member in tar.getmembers():
             tar.extract(member, target)  # noqa: S202 - path/type checks above make this portable and bounded
+
+
+def _safe_extract_zip(archive: Path, target: Path) -> None:
+    """Extract a zip archive, rejecting path traversal and symlink members."""
+    import zipfile
+
+    target.mkdir(parents=True, exist_ok=True)
+    root = target.resolve()
+    with zipfile.ZipFile(archive) as zf:
+        for info in zf.infolist():
+            name = info.filename
+            # Reject absolute paths, drive letters, and traversal.
+            if name.startswith("/") or name.startswith("\\") or re.match(r"^[A-Za-z]:[\\/]", name):
+                raise RuntimeError(f"unsafe zip member path: {name}")
+            if ".." in Path(name).parts:
+                raise RuntimeError(f"unsafe zip member path: {name}")
+            resolved = (target / name).resolve()
+            if root != resolved and root not in resolved.parents:
+                raise RuntimeError(f"unsafe zip member path: {name}")
+            # Reject symlink members: zip can carry Unix symlink attributes.
+            mode = (info.external_attr >> 16) & 0xFFFF
+            if (mode & 0o170000) == 0o120000:
+                raise RuntimeError(f"unsupported zip member type: {name}")
+        zf.extractall(target)  # noqa: S202 - path/type checks above make this bounded
+
+
+def install_remote_archive(raw: Mapping[str, object], target: Path) -> dict[str, object]:
+    """Download a remote archive, verify its checksum, and safe-extract it.
+
+    The caller (``main()``) does not pass an expected size: only a
+    checksum is required. Extraction refuses absolute, traversal, or
+    symlink members. The function fails closed if the post-extract
+    ``expected_file_globs`` match zero files.
+    """
+    url = str(raw["url"])
+    archive_type = str(raw["archive_type"])
+    if archive_type not in {"zip", "tar.gz"}:
+        raise SystemExit(f"unsupported archive_type: {archive_type}")
+    checksum_algorithm = str(raw.get("checksum_algorithm", "")).lower()
+    if checksum_algorithm not in {"md5", "sha256"}:
+        raise SystemExit(f"unsupported checksum_algorithm: {checksum_algorithm!r}")
+    expected_checksum = str(raw["checksum"]).lower()
+    expected_globs = [str(g) for g in raw.get("expected_file_globs", [])]
+
+    target.mkdir(parents=True, exist_ok=True)
+    ext = ".zip" if archive_type == "zip" else ".tar.gz"
+    archive_path = target / f"archive{ext}"
+    _download(url, archive_path, expected_size=None, md5=None)
+
+    actual_checksum = _md5(archive_path) if checksum_algorithm == "md5" else _sha256(archive_path)
+    if actual_checksum.lower() != expected_checksum:
+        archive_path.unlink(missing_ok=True)
+        raise SystemExit(
+            f"checksum mismatch for {archive_path.name}: expected {expected_checksum}, got {actual_checksum}"
+        )
+
+    if archive_type == "zip":
+        _safe_extract_zip(archive_path, target)
+    else:
+        _safe_extract_tar(archive_path, target)
+
+    if expected_globs:
+        matches: list[str] = []
+        for pattern in expected_globs:
+            matches.extend([str(p.relative_to(target)).replace("\\", "/") for p in target.rglob(pattern)])
+        if not matches:
+            raise SystemExit(
+                f"post-extract check failed: no files matched expected_file_globs {expected_globs!r} in {target}"
+            )
+    else:
+        matches = []
+
+    return {
+        "url": url,
+        "archive_type": archive_type,
+        "checksum_algorithm": checksum_algorithm,
+        "checksum": expected_checksum,
+        "expected_file_globs": expected_globs,
+        "post_extract_matches": matches,
+        "path": str(target),
+    }
 
 
 def install_pdmx(target: Path) -> dict[str, object]:
@@ -248,6 +337,53 @@ def install_hf_midi(source: dict[str, object], target: Path) -> dict[str, object
     }
 
 
+def _merge_install_manifest(
+    manifest_path: Path,
+    existing: dict[str, object] | None,
+    installed: dict[str, object],
+    *,
+    registry_name: str,
+) -> dict[str, object]:
+    """Fail-closed merge of an existing install_manifest.json payload with a
+    new partial install result.
+
+    The merge preserves prior source entries not touched by the current
+    invocation and refuses to silently overwrite any prior source entry
+    whose provenance payload differs from the new install. A non-empty
+    existing manifest with a different ``registry_name`` is rejected.
+
+    Returns the merged manifest dict that the caller writes to disk.
+    """
+
+    existing_sources: dict[str, object] = {}
+    if existing is not None:
+        existing_registry_name = str(existing.get("registry_name", ""))
+        if existing_registry_name and existing_registry_name != registry_name:
+            raise SystemExit(
+                f"{manifest_path}: refusing to merge sources across registries "
+                f"({existing_registry_name!r} vs {registry_name!r}); "
+                "remove the file or pass --root for a fresh root"
+            )
+        sources_obj = existing.get("sources")
+        if not isinstance(sources_obj, dict):
+            raise SystemExit(
+                f"{manifest_path}: refusing to merge: 'sources' is not a dict; "
+                "remove the file or pass --root for a fresh root"
+            )
+        existing_sources = dict(sources_obj)
+
+    for sid, payload in installed.items():
+        prior = existing_sources.get(sid)
+        if isinstance(prior, dict) and prior != payload:
+            raise SystemExit(
+                f"{manifest_path}: refusing to overwrite existing source {sid!r} with "
+                "a different provenance payload; remove the file or pass a fresh --root"
+            )
+
+    merged_sources = {**existing_sources, **installed}
+    return {"registry_name": registry_name, "sources": merged_sources}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Install Orbitune commercial-safe Base pretraining corpora.")
     parser.add_argument("--config", default="configs/pretrain_corpus_commercial_v1.json")
@@ -266,6 +402,22 @@ def main() -> None:
 
     root = Path(args.root)
     root.mkdir(parents=True, exist_ok=True)
+    manifest_path = root / "install_manifest.json"
+    existing: dict[str, object] | None = None
+    if manifest_path.exists():
+        try:
+            existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise SystemExit(
+                f"{manifest_path}: refusing to overwrite an unreadable install manifest ({exc}); "
+                "remove the file or pass --root for a fresh root"
+            ) from exc
+        if not isinstance(existing, dict):
+            raise SystemExit(
+                f"{manifest_path}: refusing to overwrite a non-dict install manifest; "
+                "remove the file or pass --root for a fresh root"
+            )
+
     installed: dict[str, object] = {}
     for source in sources:
         target = root / source.id
@@ -280,15 +432,19 @@ def main() -> None:
             installed[source.id] = install_hf_midi(source.raw, target)
         elif source.kind == "huggingface_score_snapshot":
             installed[source.id] = install_hf_score_snapshot(source.raw, target)
+        elif source.kind == "remote_archive":
+            installed[source.id] = install_remote_archive(source.raw, target)
         else:
             raise SystemExit(f"unsupported source kind: {source.kind}")
 
-    manifest = {
-        "registry": str(args.config),
-        "registry_name": registry.get("name"),
-        "sources": installed,
-    }
-    (root / "install_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    manifest = _merge_install_manifest(
+        manifest_path,
+        existing,
+        installed,
+        registry_name=str(registry.get("name", "")),
+    )
+    manifest["registry"] = str(args.config)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(manifest, indent=2))
 
 
