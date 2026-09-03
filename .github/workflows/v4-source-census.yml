@@ -7,6 +7,7 @@ on:
       - "tools/v4_cpdl_census_runner.py"
       - "tools/v4_imslp_exact_runner.py"
       - "tools/v4_coco_note_estimate.py"
+      - "tools/v4_bach_doodle_sample.py"
       - ".github/workflows/v4-source-census.yml"
   workflow_dispatch:
 
@@ -107,33 +108,20 @@ jobs:
           path: cocochorales_40k_estimate.json
           if-no-files-found: warn
 
-  bach-doodle-inspect:
+  bach-doodle-sample:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Inspect one official sharded JSONL payload without retaining dataset bytes
+      - name: Multi-shard Bach Doodle scale and duplication sample
         run: |
-          python - <<'PY'
-          import gzip, json, urllib.request
-          url = 'https://storage.googleapis.com/magentadata/datasets/bach-doodle/bach-doodle.jsonl-00000-of-00192.gz'
-          req = urllib.request.Request(url, headers={'User-Agent':'Orbitune-v4-source-census/1.0'})
-          with urllib.request.urlopen(req, timeout=300) as r:
-              payload = r.read()
-          print('BACH_SHARD_COMPRESSED_BYTES=', len(payload))
-          with gzip.GzipFile(fileobj=__import__('io').BytesIO(payload)) as gz:
-              count = 0
-              for raw in gz:
-                  row = json.loads(raw)
-                  if count < 3:
-                      print('ROW_KEYS=', sorted(row))
-                      for key in ('input_sequence','output_sequence','session_id','feedback','key_sig'):
-                          value = row.get(key)
-                          print('FIELD', key, 'TYPE', type(value).__name__, 'LEN', len(value) if hasattr(value,'__len__') else None)
-                          if key in ('input_sequence','output_sequence'):
-                              print('FIELD_PREFIX', key, repr(value[:160] if isinstance(value, str) else value)[:240])
-                  count += 1
-          print('BACH_SHARD_ROWS=', count)
-          PY
+          python tools/v4_bach_doodle_sample.py --shards 0,24,48,72,96,120,144,168 --output bach_doodle_sample.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bach-doodle-sample
+          path: bach_doodle_sample.json
+          if-no-files-found: warn
