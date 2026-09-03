@@ -155,7 +155,7 @@
       "kind": "remote_archive",
       "license": "cc-by-4.0",
       "commercial_safe": true,
-      "url": "https://huggingface.co/datasets/amazon/groove/resolve/main/data/groove-v1.0.0-midionly.zip",
+      "url": "https://storage.googleapis.com/magentadata/datasets/groove/groove-v1.0.0-midionly.zip",
       "landing_url": "https://magenta.tensorflow.org/datasets/groove",
       "archive_type": "zip",
       "checksum_algorithm": "sha256",
@@ -163,7 +163,7 @@
       "expected_file_globs": ["**/*.mid", "**/*.midi"],
       "quality_weight": 1.0,
       "attribution_required": true,
-      "provenance_note": "Groove MIDI Dataset v1.0.0 midionly.zip (CC BY 4.0). Only the midionly archive is admitted; the E-GMD expansion is not ingested to avoid redundant re-recordings."
+      "provenance_note": "Groove MIDI Dataset v1.0.0 midionly.zip (CC BY 4.0) from the official Magenta Google Cloud Storage mirror (same content as the Hugging Face amazon/groove upload, same pinned SHA256). Only the midionly archive is admitted; the E-GMD expansion is not ingested to avoid redundant re-recordings."
     }
   ],
   "sampling": {
