@@ -1,0 +1,358 @@
+{
+  "registry": "C:\\Users\\junny\\OneDrive\\Desktop\\MIDI-GPT\\orbitune_clone\\configs\\pretrain_corpus_commercial_v4.json",
+  "registry_name": "orbitune-commercial-safe-v4",
+  "musescore_bin": "C:\\ov4\\bin\\musescore.bat",
+  "lilypond_bin": "C:\\ov4\\bin\\lilypond.bat",
+  "hum2mid_bin": "C:\\ov4\\bin\\hum2mid.bat",
+  "sources": {
+    "pdmx": {
+      "accepted_before_cross_dedup": 222817,
+      "events_before_cross_dedup": 207039891,
+      "rejected": 3,
+      "rejected_examples": [
+        {
+          "path": "C:\\ov4\\pdmx\\mid\\1\\46\\QmbuJGQP1LaBK7TPrhB8GeYcyXbP7aQNr8XmxSmhhU6U24.mid",
+          "reason": "ValueError: time signature numerator must be in 1..255"
+        },
+        {
+          "path": "C:\\ov4\\pdmx\\mid\\12\\41\\QmURKCYDckGiewGpzZrSiRr6jiozrVFmiq5885GWsHJ3M8.mid",
+          "reason": "ValueError: time signature numerator must be in 1..255"
+        },
+        {
+          "path": "C:\\ov4\\pdmx\\mid\\13\\20\\QmVFNsTf6NxtbMZ2Co5HhcjZGNQARwoLFUnNeHS6SRTvDX.mid",
+          "reason": "ValueError: time signature numerator must be in 1..255"
+        }
+      ],
+      "conversion": {
+        "score_candidates": 0,
+        "converted": 0,
+        "cached": 0,
+        "failed": []
+      }
+    },
+    "openscore_lieder": {
+      "accepted_before_cross_dedup": 1462,
+      "events_before_cross_dedup": 3114285,
+      "rejected": 0,
+      "rejected_examples": [],
+      "conversion": {
+        "score_candidates": 2814,
+        "converted": 0,
+        "cached": 2814,
+        "failed": []
+      }
+    },
+    "openscore_string_quartets": {
+      "accepted_before_cross_dedup": 122,
+      "events_before_cross_dedup": 13466262,
+      "rejected": 0,
+      "rejected_examples": [],
+      "conversion": {
+        "score_candidates": 122,
+        "converted": 0,
+        "cached": 122,
+        "failed": []
+      }
+    },
+    "openscore_orchestra": {
+      "accepted_before_cross_dedup": 96,
+      "events_before_cross_dedup": 7190907,
+      "rejected": 0,
+      "rejected_examples": [],
+      "conversion": {
+        "score_candidates": 96,
+        "converted": 0,
+        "cached": 96,
+        "failed": []
+      }
+    },
+    "mutopia": {
+      "accepted_before_cross_dedup": 654,
+      "events_before_cross_dedup": 509516,
+      "rejected": 245,
+      "rejected_examples": [
+        {
+          "path": "C:\\ov4\\converted\\mutopia\\ftp\\AlbenizIMF\\O71\\Rumores_de_la-caleta\\Rumores_de_la-caleta.midi",
+          "reason": "mutopia_license_not_in_pd_cc0_ccby_allowlist"
+        },
+        {
+          "path": "C:\\ov4\\converted\\mutopia\\ftp\\AlyabyevA\\alyabyev-cherubic\\alyabyev-cherubic.midi",
+          "reason": "mutopia_license_not_in_pd_cc0_ccby_allowlist"
+        },
+        {
+          "path": "C:\\ov4\\converted\\mutopia\\ftp\\Anonymous\\dundee\\dundee.midi",
+          "reason": "mutopia_license_not_in_pd_cc0_ccby_allowlist"
+        }
+      ],
+      "conversion": {
+        "score_candidates": 981,
+        "converted": 0,
+        "cached": 586,
+        "failed": [
+          {
+            "path": "C:\\ov4\\mutopia\\ftp\\AbtF\\swallows\\swallows.ly",
+            "output": "  \\lyricsto mel  \n                   \\new Lyrics  { \\set stanza = \"1.\" \\textA }\n/mnt/c/ov4/mutopia/ftp/AbtF/swallows/swallows.ly:175:20: error: syntax error, unexpected \\new, expecting \\sequential or \\simultaneous or << or '{'\n    \\lyricsto mel  \n                   \\new Lyrics  { \\set stanza = \"2.\" \\textB }\n/mnt/c/ov4/mutopia/ftp/AbtF/swallows/swallows.ly:176:20: error: syntax error, unexpected \\new, expecting \\sequential or \\simultaneous or << or '{'\n    \\lyricsto mel  \n                   \\new Lyrics  { \\set stanza = \"3.\" \\textC }\n/mnt/c/ov4/mutopia/ftp/AbtF/swallows/swallows.ly:169:3: error: errors found, ignoring music expression\n  \n  <<\n/mnt/c/ov4/mutopia/ftp/AbtF/swallows/swallows.ly:204:2: error: Unfinished main input\n}\n \n\nNote: compilation failed and \\version outdated, did you\nupdate input syntax with convert-ly?\n\n  https://lilypond.org/doc/v2.26/Documentation/usage/updating-files-with-convert_002dly\n\nfatal error: failed files: \"/mnt/c/ov4/mutopia/ftp/AbtF/swallows/swallows.ly\"\n"
+          },
+          {
+            "path": "C:\\ov4\\mutopia\\ftp\\AlbenizIMF\\O71\\Rumores_de_la-caleta\\Rumores_de_la-caleta.ly",
+            "output": "lator: `Output_property_engraver'\nwarning: cannot find: `Output_property_engraver'\n[8][16][24][32][40][48][56][64][72][80][88][96][104][112][120][128][136][144][152][160][168][176][184][192][200][208][216][224][232][240][248][256]\nPreprocessing graphical objects...\nInterpreting music...\nMIDI output to `Rumores_de_la-caleta.midi'...\nFinding the ideal number of pages...\nFitting music on 7 or 8 pages...\nDrawing systems...\nwarning: compressing over-full page by 21.0 staff-spaces\nwarning: page 1 has been compressed\nwarning: compressing over-full page by 36.0 staff-spaces\nwarning: page 2 has been compressed\nwarning: compressing over-full page by 12.9 staff-spaces\nwarning: page 3 has been compressed\nwarning: compressing over-full page by 33.0 staff-spaces\nwarning: page 4 has been compressed\nwarning: compressing over-full page by 30.6 staff-spaces\nwarning: page 5 has been compressed\nfatal error: failed files: \"/mnt/c/ov4/mutopia/ftp/AlbenizIMF/O71/Rumores_de_la-caleta/Rumores_de_la-caleta.ly\"\n"
+          },
+          {
+            "path": "C:\\ov4\\mutopia\\ftp\\AlyabyevA\\alyabyev-cherubic\\alyabyev-cherubic.ly",
+            "output": "failed and \\version outdated, did you\nupdate input syntax with convert-ly?\n\n  https://lilypond.org/doc/v2.26/Documentation/usage/updating-files-with-convert_002dly\n\nInterpreting music...\nwarning: the property 'tempoWholesPerMinute' must be of type 'positive exact rational or +inf.0', ignoring invalid value '#<Mom 16>'\n[8][16][24][32]\nwarning: the property 'tempoWholesPerMinute' must be of type 'positive exact rational or +inf.0', ignoring invalid value '#<Mom 55/2>'\n[40][48][56]\nPreprocessing graphical objects...\nInterpreting music...\nwarning: the property 'tempoWholesPerMinute' must be of type 'positive exact rational or +inf.0', ignoring invalid value '#<Mom 16>'\nwarning: the property 'tempoWholesPerMinute' must be of type 'positive exact rational or +inf.0', ignoring invalid value '#<Mom 55/2>'\nMIDI output to `alyabyev-cherubic.midi'...\nFitting music on 3 pages...\nDrawing systems...\nfatal error: failed files: \"/mnt/c/ov4/mutopia/ftp/AlyabyevA/alyabyev-cherubic/alyabyev-cherubic.ly\"\n"
+          }
+        ]
+      }
+    },
+    "imslp_midi_cc0": {
+      "accepted_before_cross_dedup": 1113,
+      "events_before_cross_dedup": 3071204,
+      "rejected": 0,
+      "rejected_examples": [],
+      "conversion": {
+        "score_candidates": 0,
+        "converted": 0,
+        "cached": 0,
+        "failed": []
+      }
+    },
+    "florence_price_art_songs": {
+      "accepted_before_cross_dedup": 110,
+      "events_before_cross_dedup": 106399,
+      "rejected": 0,
+      "rejected_examples": [],
+      "conversion": {
+        "score_candidates": 1,
+        "converted": 0,
+        "cached": 1,
+        "failed": []
+      }
+    },
+    "muse_omr_benchmark": {
+      "accepted_before_cross_dedup": 1076,
+      "events_before_cross_dedup": 7245921,
+      "rejected": 0,
+      "rejected_examples": [],
+      "conversion": {
+        "score_candidates": 1077,
+        "converted": 0,
+        "cached": 1076,
+        "failed": [
+          {
+            "path": "C:\\ov4\\muse_omr_benchmark\\mscz\\score_file_403.mscz",
+            "output": "/opt/squashfs-root/usr/bin/mscore4portable: /opt/squashfs-root/usr/lib/libpcre2-8.so.0: no version information available (required by /usr/lib/libglib-2.0.so.0)\n"
+          }
+        ]
+      }
+    },
+    "nifc_polish_scores": {
+      "accepted_before_cross_dedup": 8916,
+      "events_before_cross_dedup": 12998875,
+      "rejected": 0,
+      "rejected_examples": [],
+      "conversion": {
+        "score_candidates": 8918,
+        "converted": 0,
+        "cached": 8916,
+        "failed": [
+          {
+            "path": "C:\\ov4\\nifc_polish_scores\\pl-cz\\kern\\pl-cz--iii-696--001-003_volckmer-augustin--missa-in-es-credo.krn",
+            "output": "Error on line: 242: problem with rhythm in **kern spine 4\nLine min duration is measured to be: -1/4\nDurations on this line: \n\t1\t1/2\t1/4\t0\t3/2\t3/2\t3/2\t3/2\t1/2\t1/2\t1/2\t1\t1\t3\t3\nRunning total of durations from previous rhythm: \n\t1/4\t1/4\t0\t1/4\t5/4\t5/4\t5/4\t5/4\t1/4\t1/4\t1/4\t1/4\t1/4\t5/4\t5/4\nLine of data that failed:\n.\t.\t.\t.\t.\t16e-/\t.\t./\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\t.\n"
+          },
+          {
+            "path": "C:\\ov4\\nifc_polish_scores\\pl-kk\\kern\\pl-kk--kk-i-1--003-001_anonim--missa-kyrie.krn",
+            "output": "Error on line: 627: problem with rhythm in **kern spine 3\nLine min duration is measured to be: -1\nDurations on this line: \n\t3\t8\t0\t2\nRunning total of durations from previous rhythm: \n\t0\t1\t1\t1\nLine of data that failed:\n.\t.\t.\t.\t8q,\t.\t.\t.\n"
+          }
+        ]
+      }
+    },
+    "nifc_chopin_first_editions": {
+      "accepted_before_cross_dedup": 512,
+      "events_before_cross_dedup": 1100663,
+      "rejected": 0,
+      "rejected_examples": [],
+      "conversion": {
+        "score_candidates": 512,
+        "converted": 0,
+        "cached": 512,
+        "failed": []
+      }
+    },
+    "nrg_cp": {
+      "accepted_before_cross_dedup": 30943,
+      "events_before_cross_dedup": 4745305,
+      "rejected": 0,
+      "rejected_examples": [],
+      "conversion": {
+        "score_candidates": 0,
+        "converted": 0,
+        "cached": 0,
+        "failed": []
+      }
+    },
+    "groove_midi_dataset": {
+      "accepted_before_cross_dedup": 1150,
+      "events_before_cross_dedup": 968436,
+      "rejected": 0,
+      "rejected_examples": [],
+      "conversion": {
+        "score_candidates": 0,
+        "converted": 0,
+        "cached": 0,
+        "failed": []
+      }
+    }
+  },
+  "accepted_before_cross_dedup": 268971,
+  "accepted_after_cross_dedup": 229476,
+  "cross_source_duplicates_removed": 39495,
+  "manifest": "C:\\ov4\\manifest.jsonl",
+  "manifest_report": {
+    "files": {
+      "train": 215963,
+      "validation": 11272,
+      "test": 2241
+    },
+    "events": {
+      "train": 234904281,
+      "validation": 14882790,
+      "test": 2250394
+    },
+    "compositions": {
+      "train": 209732,
+      "validation": 10953,
+      "test": 2171
+    },
+    "track_bucket_factors": {
+      "solo": 0.637233390435356,
+      "small_ensemble_2_5": 1.5795022240911452,
+      "large_ensemble_6_plus": 1.7943310319089385
+    }
+  },
+  "indexes": {
+    "train": {
+      "schema_version": 1,
+      "format": "orbitune-compound-indexed-v1",
+      "tokenizer_abi": "orbitune-compound-v0-experimental",
+      "record_width": 12,
+      "dtype": "int32-le",
+      "split": "train",
+      "manifest": "C:\\ov4\\manifest.jsonl",
+      "manifest_sha256": "1c582a08a3087952a57a604b5652cae2bef6dd4e6acb2addc5eb49cdfbe58c72",
+      "records_file": "records.i32",
+      "songs_file": "songs.jsonl",
+      "songs": 215963,
+      "events": 234904281,
+      "source_counts": {
+        "pdmx": 172705,
+        "nrg_cp": 29112,
+        "openscore_lieder": 1382,
+        "nifc_polish_scores": 8385,
+        "imslp_midi_cc0": 1037,
+        "muse_omr_benchmark": 886,
+        "mutopia": 591,
+        "groove_midi_dataset": 1078,
+        "openscore_string_quartets": 116,
+        "nifc_chopin_first_editions": 474,
+        "openscore_orchestra": 92,
+        "florence_price_art_songs": 105
+      },
+      "license_counts": {
+        "publicdomain": 141893,
+        "cc-zero": 30812,
+        "cc-by-4.0": 39084,
+        "cc0-1.0": 2489,
+        "public-domain/cc0-1.0": 1037,
+        "public-domain": 550,
+        "cc0-1.0-scores": 92,
+        "cc-by-3.0": 6
+      },
+      "track_bucket_counts": {
+        "solo": 138119,
+        "small_ensemble_2_5": 66768,
+        "large_ensemble_6_plus": 11076
+      }
+    },
+    "validation": {
+      "schema_version": 1,
+      "format": "orbitune-compound-indexed-v1",
+      "tokenizer_abi": "orbitune-compound-v0-experimental",
+      "record_width": 12,
+      "dtype": "int32-le",
+      "split": "validation",
+      "manifest": "C:\\ov4\\manifest.jsonl",
+      "manifest_sha256": "1c582a08a3087952a57a604b5652cae2bef6dd4e6acb2addc5eb49cdfbe58c72",
+      "records_file": "records.i32",
+      "songs_file": "songs.jsonl",
+      "songs": 11272,
+      "events": 14882790,
+      "source_counts": {
+        "nrg_cp": 1535,
+        "pdmx": 8982,
+        "nifc_polish_scores": 447,
+        "muse_omr_benchmark": 39,
+        "openscore_lieder": 69,
+        "groove_midi_dataset": 59,
+        "nifc_chopin_first_editions": 29,
+        "imslp_midi_cc0": 63,
+        "mutopia": 36,
+        "florence_price_art_songs": 3,
+        "openscore_orchestra": 4,
+        "openscore_string_quartets": 6
+      },
+      "license_counts": {
+        "cc-by-4.0": 2071,
+        "publicdomain": 7339,
+        "cc-zero": 1643,
+        "cc0-1.0": 117,
+        "public-domain/cc0-1.0": 63,
+        "public-domain": 35,
+        "cc0-1.0-scores": 4
+      },
+      "track_bucket_counts": {
+        "small_ensemble_2_5": 3519,
+        "solo": 7134,
+        "large_ensemble_6_plus": 619
+      }
+    },
+    "test": {
+      "schema_version": 1,
+      "format": "orbitune-compound-indexed-v1",
+      "tokenizer_abi": "orbitune-compound-v0-experimental",
+      "record_width": 12,
+      "dtype": "int32-le",
+      "split": "test",
+      "manifest": "C:\\ov4\\manifest.jsonl",
+      "manifest_sha256": "1c582a08a3087952a57a604b5652cae2bef6dd4e6acb2addc5eb49cdfbe58c72",
+      "records_file": "records.i32",
+      "songs_file": "songs.jsonl",
+      "songs": 2241,
+      "events": 2250394,
+      "source_counts": {
+        "pdmx": 1816,
+        "groove_midi_dataset": 12,
+        "nifc_polish_scores": 77,
+        "nrg_cp": 296,
+        "imslp_midi_cc0": 12,
+        "muse_omr_benchmark": 9,
+        "florence_price_art_songs": 2,
+        "openscore_lieder": 10,
+        "nifc_chopin_first_editions": 5,
+        "mutopia": 2
+      },
+      "license_counts": {
+        "publicdomain": 1503,
+        "cc-zero": 313,
+        "cc-by-4.0": 390,
+        "public-domain/cc0-1.0": 12,
+        "cc0-1.0": 21,
+        "public-domain": 2
+      },
+      "track_bucket_counts": {
+        "solo": 1451,
+        "small_ensemble_2_5": 668,
+        "large_ensemble_6_plus": 122
+      }
+    }
+  }
+}
