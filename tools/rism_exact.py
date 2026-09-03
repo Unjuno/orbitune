@@ -44,8 +44,8 @@ def _valid_sha256(value: object) -> bool:
     return len(text) == 64 and all(ch in _HEX64 for ch in text)
 
 
-def load_baseline_normalized(manifest: Path) -> tuple[set[str], dict[str, object]]:
-    fingerprints: set[str] = set()
+def load_baseline_normalized(manifest: Path) -> tuple[set[bytes], dict[str, object]]:
+    fingerprints: set[bytes] = set()
     rows = 0
     missing = 0
     invalid = 0
@@ -64,7 +64,7 @@ def load_baseline_normalized(manifest: Path) -> tuple[set[str], dict[str, object
             if not _valid_sha256(value):
                 invalid += 1
                 continue
-            fingerprints.add(str(value).lower())
+            fingerprints.add(bytes.fromhex(str(value).strip()))
     if missing or invalid:
         raise ValueError(
             f"baseline manifest is not suitable for exact normalized dedup: "
@@ -85,7 +85,7 @@ def iter_admitted_unique(
     counters: Counter[str],
     limit: int | None = None,
 ) -> Iterator[dict[str, str]]:
-    seen_pae: set[str] = set()
+    seen_pae: set[bytes] = set()
     yielded = 0
     with gzip.open(archive, "rb") as handle:
         context = ET.iterparse(handle, events=("end",))
@@ -107,10 +107,11 @@ def iter_admitted_unique(
                     continue
                 counters["pd_safe_incipits_pre_dedup"] += 1
                 pae_fingerprint = census._incipit_fingerprint(incipit)
-                if pae_fingerprint in seen_pae:
+                pae_key = bytes.fromhex(pae_fingerprint)
+                if pae_key in seen_pae:
                     counters["pae_duplicates"] += 1
                     continue
-                seen_pae.add(pae_fingerprint)
+                seen_pae.add(pae_key)
                 counters["pae_unique_before_context_gate"] += 1
                 if not incipit["clef"]:
                     counters["rejected_missing_clef"] += 1
@@ -225,8 +226,8 @@ def _convert_one(item: dict[str, str]) -> dict[str, object]:
 def classify_conversion_result(
     result: dict[str, object],
     *,
-    baseline_normalized: set[str],
-    seen_rism_normalized: set[str],
+    baseline_normalized: set[bytes],
+    seen_rism_normalized: set[bytes],
     counters: Counter[str],
 ) -> bool:
     counters["conversion_attempted"] += 1
@@ -244,13 +245,14 @@ def classify_conversion_result(
         counters["conversion_success_with_verovio_log"] += 1
 
     normalized = str(result["normalized_fingerprint"])
-    if normalized in seen_rism_normalized:
+    normalized_key = bytes.fromhex(normalized)
+    if normalized_key in seen_rism_normalized:
         counters["intra_source_duplicates"] += 1
         return False
-    seen_rism_normalized.add(normalized)
+    seen_rism_normalized.add(normalized_key)
     counters["normalized_unique"] += 1
 
-    if normalized in baseline_normalized:
+    if normalized_key in baseline_normalized:
         counters["cross_v4_duplicates"] += 1
         return False
 
@@ -261,7 +263,9 @@ def classify_conversion_result(
     return True
 
 
-def _retained_row(result: dict[str, object], *, source_sha1: str) -> dict[str, object]:
+def _retained_row(
+    result: dict[str, object], *, source_sha1: str, pd_death_cutoff: int
+) -> dict[str, object]:
     return {
         "source_id": "rism",
         "record_id": result.get("record_id", ""),
@@ -281,7 +285,7 @@ def _retained_row(result: dict[str, object], *, source_sha1: str) -> dict[str, o
         "active_events": result["active_events"],
         "verovio_version": result.get("verovio_version", EXPECTED_VEROVIO_VERSION),
         "admission_evidence": {
-            "policy": "bounded MARC 100$d latest year <= 1955; MARC 031$p present; clef present",
+            "policy": f"bounded MARC 100$d latest year <= {pd_death_cutoff}; MARC 031$p present; clef present",
             "person_dates": result.get("person_dates", ""),
         },
     }
@@ -294,8 +298,7 @@ def main() -> None:
     parser.add_argument("--archive", default=".rism_census/source-2026-08-01.xml.gz")
     parser.add_argument("--sha1", default=census.DEFAULT_SHA1)
     parser.add_argument("--baseline-manifest", required=True)
-    parser.add_argument("--pd-death-cutoff", type=int, default=census.DEFAULT_PD_DEATH_CUTOFF)
-    parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
+    parser.add_argument("--workers", type=int, default=min(8, max(1, (os.cpu_count() or 2) - 1)))
     parser.add_argument("--chunksize", type=int, default=16)
     parser.add_argument("--limit", type=int, default=None, help="Development-only cap; any limited run is marked non-exact.")
     parser.add_argument("--report", default="rism_exact_report.json")
@@ -314,16 +317,16 @@ def main() -> None:
     if args.limit is not None and args.limit < 1:
         raise SystemExit("--limit must be >= 1 when supplied")
 
+    pd_death_cutoff = census.DEFAULT_PD_DEATH_CUTOFF
     baseline_normalized, baseline_report = load_baseline_normalized(Path(args.baseline_manifest))
     counters: Counter[str] = Counter()
-    seen_rism_normalized: set[str] = set()
+    seen_rism_normalized: set[bytes] = set()
     failure_examples: list[dict[str, object]] = []
     warning_examples: list[dict[str, object]] = []
-    retained_compositions: set[str] = set()
 
     candidates = iter_admitted_unique(
         archive,
-        pd_death_cutoff=args.pd_death_cutoff,
+        pd_death_cutoff=pd_death_cutoff,
         counters=counters,
         limit=args.limit,
     )
@@ -331,7 +334,7 @@ def main() -> None:
     output_path = Path(args.entries_output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     ctx = mp.get_context("spawn" if os.name == "nt" else "fork")
-    with gzip.open(output_path, "wt", encoding="utf-8", newline="\n") as output_handle:
+    with gzip.open(output_path, "wt", encoding="utf-8", newline="\n", compresslevel=1) as output_handle:
         with ctx.Pool(processes=args.workers, initializer=_worker_init) as pool:
             for result in pool.imap(_convert_one, candidates, chunksize=args.chunksize):
                 retained = classify_conversion_result(
@@ -358,9 +361,12 @@ def main() -> None:
                         }
                     )
                 if retained:
-                    retained_compositions.add(str(result["composition_fingerprint"]))
                     output_handle.write(
-                        json.dumps(_retained_row(result, source_sha1=actual_sha1), separators=(",", ":"), ensure_ascii=False)
+                        json.dumps(
+                            _retained_row(result, source_sha1=actual_sha1, pd_death_cutoff=pd_death_cutoff),
+                            separators=(",", ":"),
+                            ensure_ascii=False,
+                        )
                         + "\n"
                     )
                 attempted = counters["conversion_attempted"]
@@ -388,8 +394,8 @@ def main() -> None:
             "chunksize": args.chunksize,
         },
         "admission_policy": {
-            "pd_death_cutoff": args.pd_death_cutoff,
-            "rule": f"MARC 100$d bounded historical dates with latest year <= {args.pd_death_cutoff}; MARC 031$p present; clef present",
+            "pd_death_cutoff": pd_death_cutoff,
+            "rule": f"MARC 100$d bounded historical dates with latest year <= {pd_death_cutoff}; MARC 031$p present; clef present",
             "unknown_or_birth_only_dates": "reject",
             "anonymous_or_unknown_composer_expansion": "not enabled",
         },
@@ -397,8 +403,10 @@ def main() -> None:
             "RISM_SOURCE_RECORDS": counters["source_records"],
             "RISM_MUSICAL_INCIPITS": counters["musical_incipits"],
             "RISM_PD_SAFE_PRE_DEDUP": counters["pd_safe_incipits_pre_dedup"],
+            "RISM_PAE_UNIQUE_PRE_CONTEXT_GATE": counters["pae_unique_before_context_gate"],
             "RISM_PAE_UNIQUE": counters["pae_unique"],
             "RISM_PAE_DUPLICATES": counters["pae_duplicates"],
+            "RISM_REJECT_PERSON_DATE_POLICY": counters["rejected_person_date_policy"],
             "RISM_REJECT_MISSING_CLEF": counters["rejected_missing_clef"],
             "RISM_CONVERSION_ATTEMPTED": counters["conversion_attempted"],
             "RISM_CONVERSION_SUCCESS": counters["conversion_success"],
@@ -407,7 +415,6 @@ def main() -> None:
             "RISM_INTRA_SOURCE_DUPLICATES": counters["intra_source_duplicates"],
             "RISM_CROSS_V4_DUPLICATES": counters["cross_v4_duplicates"],
             "RISM_RETAINED_AFTER_CROSS_DEDUP": counters["retained_after_cross_dedup"],
-            "RISM_COMPOSITION_UNIQUE_RETAINED": len(retained_compositions),
             "RISM_EXACT_ACTIVE_EVENTS_POST_DEDUP": counters["exact_active_events_post_dedup"],
             "RISM_VEROVIO_LOG_RECORDS": counters["conversion_success_with_verovio_log"]
             + counters["conversion_failures_with_verovio_log"],
