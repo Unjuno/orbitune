@@ -23,6 +23,21 @@ if str(TOOLS_DIR) not in sys.path:
 import rism_census as census  # noqa: E402
 
 EXPECTED_VEROVIO_VERSION = "6.3.0"
+EXPECTED_BASELINE_REGISTRY = "orbitune-commercial-safe-v4"
+EXPECTED_BASELINE_SOURCE_IDS = frozenset({
+    "pdmx",
+    "openscore_lieder",
+    "openscore_string_quartets",
+    "openscore_orchestra",
+    "mutopia",
+    "imslp_midi_cc0",
+    "florence_price_art_songs",
+    "muse_omr_benchmark",
+    "nifc_polish_scores",
+    "nifc_chopin_first_editions",
+    "nrg_cp",
+    "groove_midi_dataset",
+})
 _HEX64 = set("0123456789abcdef")
 
 _WORKER_TOOLKIT: Any = None
@@ -70,11 +85,55 @@ def load_baseline_normalized(manifest: Path) -> tuple[set[bytes], dict[str, obje
             f"baseline manifest is not suitable for exact normalized dedup: "
             f"missing={missing}, invalid={invalid}"
         )
+    if rows == 0:
+        raise ValueError("baseline manifest is empty")
     return fingerprints, {
         "path": str(manifest),
         "rows": rows,
         "unique_normalized_fingerprints": len(fingerprints),
         "sha256": digest.hexdigest(),
+    }
+
+
+def validate_baseline_build_report(
+    report_path: Path, *, manifest_sha256: str, manifest_rows: int
+) -> dict[str, object]:
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    registry_name = str(payload.get("registry_name", ""))
+    if registry_name != EXPECTED_BASELINE_REGISTRY:
+        raise ValueError(
+            f"baseline build report registry mismatch: expected {EXPECTED_BASELINE_REGISTRY}, got {registry_name or '<missing>'}"
+        )
+    source_reports = payload.get("sources")
+    if not isinstance(source_reports, dict):
+        raise ValueError("baseline build report is missing source reports")
+    source_ids = set(str(key) for key in source_reports)
+    if source_ids != EXPECTED_BASELINE_SOURCE_IDS:
+        missing = sorted(EXPECTED_BASELINE_SOURCE_IDS - source_ids)
+        extra = sorted(source_ids - EXPECTED_BASELINE_SOURCE_IDS)
+        raise ValueError(f"baseline build report source set mismatch: missing={missing}, extra={extra}")
+    accepted_after = int(payload.get("accepted_after_cross_dedup", -1))
+    if accepted_after != manifest_rows:
+        raise ValueError(
+            f"baseline build report row-count mismatch: report={accepted_after}, manifest={manifest_rows}"
+        )
+    indexes = payload.get("indexes")
+    if not isinstance(indexes, dict):
+        raise ValueError("baseline build report is missing indexed split metadata")
+    for split in ("train", "validation", "test"):
+        split_meta = indexes.get(split)
+        if not isinstance(split_meta, dict):
+            raise ValueError(f"baseline build report is missing {split} index metadata")
+        index_sha = str(split_meta.get("manifest_sha256", "")).lower()
+        if not _valid_sha256(index_sha) or index_sha != manifest_sha256:
+            raise ValueError(
+                f"baseline {split} index manifest SHA256 mismatch: report={index_sha or '<missing>'}, manifest={manifest_sha256}"
+            )
+    return {
+        "path": str(report_path),
+        "registry_name": registry_name,
+        "source_ids": sorted(source_ids),
+        "accepted_after_cross_dedup": accepted_after,
     }
 
 
@@ -298,6 +357,7 @@ def main() -> None:
     parser.add_argument("--archive", default=".rism_census/source-2026-08-01.xml.gz")
     parser.add_argument("--sha1", default=census.DEFAULT_SHA1)
     parser.add_argument("--baseline-manifest", required=True)
+    parser.add_argument("--baseline-build-report", required=True)
     parser.add_argument("--workers", type=int, default=min(8, max(1, (os.cpu_count() or 2) - 1)))
     parser.add_argument("--chunksize", type=int, default=16)
     parser.add_argument("--limit", type=int, default=None, help="Development-only cap; any limited run is marked non-exact.")
@@ -319,6 +379,11 @@ def main() -> None:
 
     pd_death_cutoff = census.DEFAULT_PD_DEATH_CUTOFF
     baseline_normalized, baseline_report = load_baseline_normalized(Path(args.baseline_manifest))
+    baseline_report["build_report"] = validate_baseline_build_report(
+        Path(args.baseline_build_report),
+        manifest_sha256=str(baseline_report["sha256"]),
+        manifest_rows=int(baseline_report["rows"]),
+    )
     counters: Counter[str] = Counter()
     seen_rism_normalized: set[bytes] = set()
     failure_examples: list[dict[str, object]] = []
