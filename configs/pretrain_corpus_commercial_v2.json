@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "orbitune-commercial-safe-v2",
-  "purpose": "Commercial-safe Base pretraining corpus v2: v1 plus a pinned CC0 Florence Price art-song quality anchor.",
+  "purpose": "Commercial-safe Base pretraining corpus v2: v1 plus a pinned CC0 Florence Price art-song supplement.",
   "license_policy": {
     "allow": ["public-domain", "cc0-1.0", "cc-by-4.0", "cc-by-3.0"],
     "deny_markers": ["-nc", "noncommercial", "unknown", "unclear"],
@@ -80,7 +80,7 @@
     },
     {
       "id": "florence_price_art_songs",
-      "tier": "quality-anchor",
+      "tier": "direct-midi-supplement",
       "kind": "git_scores",
       "license": "cc0-1.0",
       "commercial_safe": true,
