@@ -14,11 +14,17 @@ This pass must run only after the clean commercial-v4 baseline has been built fr
 - missing/unknown dates and birth-only open-ended dates fail closed
 - anonymous/unknown-composer broadening is not enabled
 
-The 1955 rule is the same conservative audit predicate used by the feasibility census. It is not silently broadened by the exact pass.
+The 1955 rule is the same conservative audit predicate used by the feasibility census. It is pinned by the exact runner and cannot be widened with a command-line option.
 
 ## Required baseline
 
-Build the current GREEN v4 first and keep its final `manifest.jsonl`. The exact runner refuses to perform cross-source dedup without an explicit baseline manifest.
+Build the current GREEN v4 first and keep both its final `manifest.jsonl` and `build_report.json`. The exact runner refuses to perform cross-source dedup unless all of the following agree:
+
+- registry name is exactly `orbitune-commercial-safe-v4`;
+- build report contains exactly the v4 source set;
+- `accepted_after_cross_dedup` equals the manifest row count;
+- train/validation/test index metadata all carry the same SHA256 as the supplied manifest;
+- every manifest row has a valid normalized fingerprint.
 
 Typical Windows layout:
 
@@ -45,12 +51,13 @@ Reuse the already pinned RISM archive when possible. Do not materialize 1.45M pe
 & $PY tools\rism_exact.py `
   --archive "C:\ov4\audit\rism\source-2026-08-01.xml.gz" `
   --baseline-manifest "C:\ov4\manifest.jsonl" `
+  --baseline-build-report "C:\ov4\build_report.json" `
   --workers 8 `
   --report "C:\ov4\audit\rism\rism_exact_report.json" `
   --entries-output "C:\ov4\audit\rism\rism_exact_retained.jsonl.gz"
 ```
 
-Each worker owns its own Verovio toolkit and temporary MIDI path. Temporary MIDI is discarded when the worker exits. The retained JSONL is provenance/fingerprint metadata, not a MIDI corpus.
+Each worker owns its own Verovio toolkit and temporary MIDI path. Temporary MIDI is discarded when the worker exits. The retained JSONL is provenance/fingerprint metadata, not a MIDI corpus. SHA-256 dedup keys are held as 32-byte digests rather than hexadecimal strings to keep the full 1.45M-candidate pass memory-bounded; retained provenance remains human-readable hex. The compressed provenance stream uses low gzip compression so compression does not dominate conversion time.
 
 For a smoke run only:
 
@@ -58,6 +65,7 @@ For a smoke run only:
 & $PY tools\rism_exact.py `
   --archive "C:\ov4\audit\rism\source-2026-08-01.xml.gz" `
   --baseline-manifest "C:\ov4\manifest.jsonl" `
+  --baseline-build-report "C:\ov4\build_report.json" `
   --workers 4 `
   --limit 1000
 ```
@@ -90,7 +98,7 @@ The exact report includes at least:
 - `RISM_RETAINED_AFTER_CROSS_DEDUP`
 - `RISM_EXACT_ACTIVE_EVENTS_POST_DEDUP`
 - Verovio warning/log counts and bounded diagnostic examples
-- baseline manifest SHA256
+- baseline manifest SHA256 and validated v4 build-report identity
 - retained provenance JSONL SHA256
 
 Retained rows carry RISM record id, person-date admission evidence, PAE fingerprint, rendered-MIDI SHA256, normalized fingerprint, composition fingerprint, active event count, source export SHA1, license, and Verovio version.
