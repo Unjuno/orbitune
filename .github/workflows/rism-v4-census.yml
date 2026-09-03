@@ -1,9 +1,6 @@
 name: rism-v4-census
 
 on:
-  push:
-    branches:
-      - audit/rism-v4-census
   workflow_dispatch:
 
 jobs:
