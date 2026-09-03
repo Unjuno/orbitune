@@ -256,8 +256,10 @@ def parse_sample(samples: list[dict[str, str]]) -> dict[str, Any]:
     from orbitune.compound_midi import read_compound_midi
     from orbitune.tokenizer.compound_event import CompoundEventTokenizer
 
+    verovio.enableLogToBuffer(True)
+    verovio.enableLog(verovio.LOG_WARNING)
     toolkit = verovio.toolkit()
-    toolkit.setOptions({"inputFrom": "pae", "breaks": "none", "logLevel": "off"})
+    toolkit.setOptions({"inputFrom": "pae", "breaks": "none"})
     tokenizer = CompoundEventTokenizer()
     active_counts: list[int] = []
     failure_examples: list[dict[str, str]] = []
@@ -266,6 +268,7 @@ def parse_sample(samples: list[dict[str, str]]) -> dict[str, Any]:
         midi_path = Path(tmp) / "incipit.mid"
         for item in samples:
             try:
+                toolkit.getLog()  # clear diagnostics from the preceding item
                 payload = _pae_payload(item)
                 loaded = toolkit.loadData(payload)
                 if loaded is False:
