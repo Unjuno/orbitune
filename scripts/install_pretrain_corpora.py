@@ -75,7 +75,10 @@ def _safe_extract_tar(archive: Path, target: Path) -> None:
 
 
 def _safe_extract_zip(archive: Path, target: Path) -> None:
-    """Extract a zip archive, rejecting path traversal and symlink members."""
+    """Extract a zip archive, rejecting path traversal, symlink members, and
+    member names with control characters (e.g. macOS ``Icon\\r`` resource
+    forks that would otherwise be silently stored as invalid Windows paths).
+    """
     import zipfile
 
     target.mkdir(parents=True, exist_ok=True)
@@ -85,17 +88,23 @@ def _safe_extract_zip(archive: Path, target: Path) -> None:
             name = info.filename
             # Reject absolute paths, drive letters, and traversal.
             if name.startswith("/") or name.startswith("\\") or re.match(r"^[A-Za-z]:[\\/]", name):
-                raise RuntimeError(f"unsafe zip member path: {name}")
+                raise RuntimeError(f"unsafe zip member path: {name!r}")
             if ".." in Path(name).parts:
-                raise RuntimeError(f"unsafe zip member path: {name}")
+                raise RuntimeError(f"unsafe zip member path: {name!r}")
+            # Skip any member name with control characters. The Magenta GMD
+            # zip carries macOS ``Icon\r`` resource forks that would raise
+            # OSError [Errno 22] on Windows extract. We drop them silently:
+            # they are not part of the dataset and have no MIDI content.
+            if any(ord(c) < 0x20 or ord(c) == 0x7F for c in name):
+                continue
             resolved = (target / name).resolve()
             if root != resolved and root not in resolved.parents:
-                raise RuntimeError(f"unsafe zip member path: {name}")
+                raise RuntimeError(f"unsafe zip member path: {name!r}")
             # Reject symlink members: zip can carry Unix symlink attributes.
             mode = (info.external_attr >> 16) & 0xFFFF
             if (mode & 0o170000) == 0o120000:
-                raise RuntimeError(f"unsupported zip member type: {name}")
-        zf.extractall(target)  # noqa: S202 - path/type checks above make this bounded
+                raise RuntimeError(f"unsupported zip member type: {name!r}")
+            zf.extract(info, target)  # noqa: S202 - path/type checks above make this bounded
 
 
 def install_remote_archive(raw: Mapping[str, object], target: Path) -> dict[str, object]:
