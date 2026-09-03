@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+
+import pytest
 
 from orbitune.pretrain_corpus import commercial_safe_sources, load_registry
 from scripts import build_pretrain_corpus as build
+from scripts import install_pretrain_corpora as install
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,16 +17,107 @@ V2 = ROOT / "configs" / "pretrain_corpus_commercial_v2.json"
 V3 = ROOT / "configs" / "pretrain_corpus_commercial_v3.json"
 
 
-def test_commercial_v3_extends_v2_with_only_pinned_nifc_sources() -> None:
+def test_commercial_v3_extends_v2_with_muse_omr_and_pinned_nifc_sources() -> None:
     v2 = load_registry(V2)
     v3 = load_registry(V3)
     v2_ids = [source.id for source in commercial_safe_sources(v2)]
     v3_ids = [source.id for source in commercial_safe_sources(v3)]
 
     assert v3["name"] == "orbitune-commercial-safe-v3"
-    assert v3_ids[:-2] == v2_ids
-    assert v3_ids[-2:] == ["nifc_polish_scores", "nifc_chopin_first_editions"]
+    assert v3_ids[:-3] == v2_ids
+    assert v3_ids[-3:] == ["muse_omr_benchmark", "nifc_polish_scores", "nifc_chopin_first_editions"]
     assert v3["split"]["seed"] == v2["split"]["seed"]
+
+
+def test_muse_omr_is_cc0_score_only_and_resolved_to_exact_install_lock() -> None:
+    registry = load_registry(V3)
+    source = next(item for item in registry["sources"] if item["id"] == "muse_omr_benchmark")
+
+    assert source["commercial_safe"] is True
+    assert source["license"] == "cc0-1.0"
+    assert source["kind"] == "huggingface_score_snapshot"
+    assert source["repo_id"] == "musegroup/omr_benchmark"
+    assert source["revision_policy"] == "resolve-exact-at-install"
+    assert source["score_globs"] == ["*.mscz", "**/*.mscz"]
+    assert all(".pdf" not in pattern.lower() for pattern in source["allow_patterns"])
+    assert "benchmark_dataset.json" in source["allow_patterns"]
+
+
+def test_hf_score_snapshot_resolves_once_then_reuses_exact_locked_sha(tmp_path, monkeypatch) -> None:
+    target = tmp_path / "muse_omr"
+    resolved_sha = "0123456789abcdef0123456789abcdef01234567"
+    api_calls: list[str] = []
+    download_calls: list[dict[str, object]] = []
+
+    fake_hf = ModuleType("huggingface_hub")
+
+    class FakeApi:
+        def dataset_info(self, repo_id: str):
+            api_calls.append(repo_id)
+            return SimpleNamespace(sha=resolved_sha)
+
+    def fake_snapshot_download(**kwargs):
+        download_calls.append(dict(kwargs))
+        root = Path(str(kwargs["local_dir"]))
+        score = root / "data" / "score_0001.mscz"
+        score.parent.mkdir(parents=True, exist_ok=True)
+        score.write_bytes(b"fake-score")
+        (root / "benchmark_dataset.json").write_text("{}\n", encoding="utf-8")
+        return str(root)
+
+    fake_hf.HfApi = FakeApi
+    fake_hf.snapshot_download = fake_snapshot_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+    source = {
+        "repo_id": "musegroup/omr_benchmark",
+        "revision_policy": "resolve-exact-at-install",
+        "allow_patterns": ["*.mscz", "**/*.mscz", "benchmark_dataset.json"],
+        "score_globs": ["*.mscz", "**/*.mscz"],
+    }
+
+    first = install.install_hf_score_snapshot(source, target)
+    assert api_calls == ["musegroup/omr_benchmark"]
+    assert first["revision"] == resolved_sha
+    assert first["score_files"] == 1
+    assert download_calls[-1]["revision"] == resolved_sha
+    assert download_calls[-1]["repo_type"] == "dataset"
+    assert all(".pdf" not in pattern.lower() for pattern in download_calls[-1]["allow_patterns"])
+
+    lock = json.loads((target / ".orbitune_source_lock.json").read_text(encoding="utf-8"))
+    assert lock["revision"] == resolved_sha
+    assert lock["repo_id"] == "musegroup/omr_benchmark"
+
+    class MustNotResolveAgain:
+        def dataset_info(self, repo_id: str):
+            raise AssertionError("locked snapshot must not resolve moving Hub state again")
+
+    fake_hf.HfApi = MustNotResolveAgain
+    second = install.install_hf_score_snapshot(source, target)
+    assert second["revision"] == resolved_sha
+    assert download_calls[-1]["revision"] == resolved_sha
+
+
+def test_hf_score_snapshot_rejects_unlocked_nonempty_target(tmp_path, monkeypatch) -> None:
+    fake_hf = ModuleType("huggingface_hub")
+    fake_hf.HfApi = object
+    fake_hf.snapshot_download = lambda **kwargs: None
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+    target = tmp_path / "muse_omr"
+    target.mkdir()
+    (target / "unknown.mscz").write_bytes(b"unprovenanced")
+
+    with pytest.raises(RuntimeError, match="non-empty target has no"):
+        install.install_hf_score_snapshot(
+            {
+                "repo_id": "musegroup/omr_benchmark",
+                "revision_policy": "resolve-exact-at-install",
+                "allow_patterns": ["**/*.mscz"],
+                "score_globs": ["**/*.mscz"],
+            },
+            target,
+        )
 
 
 def test_nifc_sources_are_immutable_ccby4_humdrum_inputs() -> None:
