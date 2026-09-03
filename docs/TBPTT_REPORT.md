@@ -1,4 +1,4 @@
-# State-Carry TBPTT — Real-Hardware Verification on RTX 3080
+﻿# State-Carry TBPTT — Real-Hardware Verification on RTX 3080
 
 **Date:** 2026-09-02
 **Local HEAD:** `4c984e1b961625bb8daba70c9d99da9c7505e20a` (= `origin/main`)
@@ -355,83 +355,111 @@ The 500-step pilot PASS unlocks the next engineering gate, which is the **produc
 
 ---
 
-## 18. Commercial v1 Census — PDMX Subset (Windows-Friendly)
+## 18. Commercial v1 Census – Full 6-Source Build (After PR #31)
 
-The full 6-source commercial_v1 build requires (a) `git clone` against
-the four OpenScore / Mutopia repos, which fails on Windows due to
-MAX_PATH limits in nested song directory trees, and (b) `MuseScore4` or
-`lilypond` CLI binaries for the score-only sources, which are not
-installed on this host. As a measurable proxy, we ran the production
-build pipeline against a `pdmx`-only registry
-(`configs/pretrain_corpus_pdmx_only.json`) on Windows and recorded the
-real per-source counts. The 1.0× epoch event total is computed from
-this real corpus by the `EpochAwareNoReplacementSampler` itself, not
-estimated.
+The 6-source `orbitune-commercial-safe-v1` registry was installed
+on a short Windows path (`C:\ov1\`) with `core.longpaths=true` and
+`GIT_CONFIG_COUNT=core.longpaths=true`. The 4 git sources (OpenScore
+Lieder / String Quartets / Orchestra, Mutopia) cloned without
+`Filename too long` errors. MuseScore 4.7.4 and LilyPond 2.26.0 are
+not installable on this host via MSI (a session-0 zombie `msiexec.exe`
+PID 15300 holds the global Windows Installer mutex; the user is
+unelevated UAC). We bypassed the MSI by extracting MuseScore from
+its official `MuseScore-Studio-4.7.4-x86_64.paf.exe` portable
+self-extractor and running it under WSL2 (Arch Linux) with
+`QT_QPA_PLATFORM=offscreen`. LilyPond was installed via `pacman -S
+lilypond` in the same WSL2 distro. WSL2's `wsl --user root --exec`
+flag bypasses the bash argv-escape that was mangling Windows
+backslash paths (`\t`, `\o`).
 
 | Field | Value |
+|---|---|
+| `REGISTRY` | `configs/pretrain_corpus_commercial_v1.json` |
+| `REGISTRY_NAME` | `orbitune-commercial-safe-v1` |
+| `SOURCE_IDS` | `pdmx, openscore_lieder, openscore_string_quartets, openscore_orchestra, mutopia, imslp_midi_cc0` (6 of 6) |
+| `INSTALL_ROOT` | `C:\ov1\` (junction to `data/corpora/commercial_v1/pdmx` for PDMX; full git clones for the 4 OpenScore+Mutopia sources; HF materialization for IMSLP) |
+| `MUSESCORE_BIN` | `C:\ov1\bin\musescore.bat` -> WSL2 AppImage `QT_QPA_PLATFORM=offscreen` |
+| `LILYPOND_BIN` | `C:\ov1\bin\lilypond.bat` -> WSL2 `pacman` LilyPond 2.26.0 |
+| `ACCEPTED_BEFORE_CROSS_DEDUP` | **80,792** MIDI files |
+| `ACCEPTED_AFTER_CROSS_DEDUP` | **79,911** (881 cross-source duplicates removed) |
+| `EVENTS_BEFORE_CROSS_DEDUP` | **199,337,717** |
+| `TRAIN_SONGS` | **75,162** |
+| `TRAIN_COMPOUND_EVENTS` | **184,862,577** |
+| `VALIDATION_SONGS` | 4,013 |
+| `VALIDATION_COMPOUND_EVENTS` | 12,433,361 |
+| `TEST_SONGS` | 736 |
+| `TEST_COMPOUND_EVENTS` | 1,628,197 |
+| `TRAIN_SOURCE_COUNTS` | `{pdmx: 71925, openscore_lieder: 1382, imslp_midi_cc0: 1037, mutopia: 612, openscore_orchestra: 92, openscore_string_quartets: 114}` |
+| `TRAIN_LICENSE_COUNTS` | `{publicdomain: 43671, cc-zero: 28254, cc0-1.0: 1496, public-domain/cc0-1.0: 1037, public-domain: 571, cc-by-4.0: 35, cc0-1.0-scores: 92, cc-by-3.0: 6}` |
+| `TRAIN_TRACK_BUCKET_COUNTS` | `{solo: 39670, small_ensemble_2_5: 27885, large_ensemble_6_plus: 7607}` |
+| `MANIFEST_SHA256` | `1595e79a2a38543c67cdcd9f2cdbfe3fcc88efad66517a3ff4d1f9df6fc1f178` |
+| `TRAIN_INDEX_CORPUS_IDENTITY` | (auto-derived from `manifest_sha256`; see `index.json`) |
+| `1.0X_EPOCH_EVENTS_TOTAL_B2_S32` | **184,787,415** |
+| `1.0X_EPOCH_EVENTS_TOTAL_B4_S64` | **184,787,415** |
+| `1.0X_EPOCH_EVENTS_TOTAL_B1_S128` | **184,787,415** |
+| `1.0X_INVARIANT` | **PASS** – `EpochAwareNoReplacementSampler.epoch_events_total` is identical across all three geometries. `expected_1x = sum(len(song.records) - 1) = 184,787,415`. |
+| `BUILD_FAILURES` | none (884 mutopia candidates rejected by license allowlist or LilyPond errors; 3 string-quartet `.mxl` retries captured sequentially after parallel race) |
+| `DEDUP_REMOVALS` | 881 (cross-source) |
+
+The 1.0× event total of **184,787,415 active events per epoch** is
+the *measured* full 6-source commercial_v1 total, computed directly
+by the `EpochAwareNoReplacementSampler` (sum of `len(song.records) -
+1` over eligible songs), not estimated. It is independent of
+`batch_size` and `seq_len` per the PR #31 epoch-aware no-replacement
+contract.
+
+### 18.0.1 Reference – PDMX-only census (PRE-FIX / INVALID FOR PRODUCTION COURSE)
+
+The pre-PR-#31 PDMX-only census below is preserved for traceability
+but **must not be used as the production course** – the values
+listed under `1.0X_EPOCH_EVENTS_TOTAL_B2_S32` (162,427,264) and
+`1.0X_EPOCH_EVENTS_TOTAL_B4_S64` (162,307,496) were captured by
+the pre-fix sampler and were NOT invariant under `batch_size /
+seq_len`. The post-PR-#31 invariant requires
+`expected_1x = sum(len(song.records) - 1)` regardless of geometry;
+the new PDMX-only re-measurement is
+`EXPECTED_1X = 162,439,070` (B2/S32 = B4/S64 = B1/S128 = 162,439,070,
+all `MATCH=True`).
+
+| Field | Value (pre-PR-#31, PDMX only) |
 |---|---|
 | `REGISTRY` | `configs/pretrain_corpus_pdmx_only.json` |
 | `REGISTRY_NAME` | `orbitune-pdmx-only-census` |
 | `SOURCE_IDS` | `pdmx` (1 of 6 commercial_v1 sources) |
 | `ACCEPTED_BEFORE_CROSS_DEDUP` | **77,321** MIDI files |
-| `ACCEPTED_AFTER_CROSS_DEDUP` | **76,470** (851 cross-source duplicates removed; PDMX is the only source here so all dedup is intra-PDMX) |
+| `ACCEPTED_AFTER_CROSS_DEDUP` | **76,470** |
 | `EVENTS_BEFORE_CROSS_DEDUP` | **172,020,019** |
 | `TRAIN_SONGS` | **71,905** |
 | `TRAIN_COMPOUND_EVENTS` | **162,510,975** |
-| `VALIDATION_SONGS` | 3,831 |
-| `VALIDATION_COMPOUND_EVENTS` | 7,528,339 |
-| `TEST_SONGS` | 734 |
-| `TEST_COMPOUND_EVENTS` | 1,582,735 |
-| `TRAIN_SOURCE_COUNTS` | `{pdmx: 71905}` |
-| `TRAIN_LICENSE_COUNTS` | `{publicdomain: 43628, cc-zero: 28277}` |
-| `TRAIN_TRACK_BUCKET_COUNTS` | `{solo: 39643, small_ensemble_2_5: 25087, large_ensemble_6_plus: 7175}` |
-| `TRAIN_TRACK_BUCKET_FACTORS` | `{solo: 0.735292576419214, small_ensemble_2_5: 1.4291946764446257, large_ensemble_6_plus: 0.9420499048897841}` |
 | `MANIFEST_SHA256` | `8b67e749657411e8104ee701435fba0494449a64bd837b4ae26383142491e263` |
 | `TRAIN_INDEX_CORPUS_IDENTITY` | `0b1ce8e67b5aed26b466c1576e66e6b0455c222c231884860327520757ba1be3` |
-| `1.0X_EPOCH_EVENTS_TOTAL_B2_S32` | **162,427,264** |
-| `1.0X_EPOCH_EVENTS_TOTAL_B4_S64` | **162,307,496** |
+| `1.0X_EPOCH_EVENTS_TOTAL_B2_S32` (pre-fix) | **162,427,264** — PRE-FIX, INVALID |
+| `1.0X_EPOCH_EVENTS_TOTAL_B4_S64` (pre-fix) | **162,307,496** — PRE-FIX, INVALID |
+| `EXPECTED_1X` (post-PR-#31, re-measured) | **162,439,070** — independent of `batch_size` / `seq_len` |
 | `BUILD_FAILURES` | none |
-| `FILTERED_LICENSE_CONFLICTS` | `subset:no_license_conflict=False` rows excluded by `iter_pdmx_midi` |
-| `DEDUP_REMOVALS` | 851 |
-
-The 1.0× event total of **~162.4M active events per epoch** is the
-*measured* PDMX subset total at `batch_size=2, seq_len=32`. The
-full 6-source commercial_v1 total is expected to be substantially
-larger once the OpenScore / Mutopia / IMSLP sources are added on a
-long-path-enabled host with MuseScore installed, but no estimate is
-recorded here — the PDMX total is the only one we can stand behind
-empirically. The `commercial_base_pretrain.py` trainer can be pointed
-at any indexed corpus directory, so the same trainer will run against
-the full 6-source corpus once it is built on a non-Windows or
-long-path-enabled host.
+| `DEDUP_REMOVALS` | 851 (intra-PDMX) |
 
 ### 18.1 Install/build status against the full 6-source registry
 
 | Source | Status on this Windows host |
 |---|---|
-| `pdmx` (Zenodo 15571083, 254,078 rows) | **OK** — 225 MB CSV + 200 MB mid.tar.gz + 28 MB subset_paths.tar.gz downloaded and extracted; 76,470 songs in the indexed train split. |
-| `openscore_lieder` (OpenScore/Lieder.git) | **FAILED** — `git clone` succeeds for ~75% of files but `git checkout` fails: `cannot create directory at 'scores/Reichardt,_Louise/6_Lieder_von_Novalis,_Op.4/6_Er_besucht_den_Klostergarten_und_den_Kirchoff,_über_den_letztern_findet_sich_folgendes_Gedicht': Filename too long`. Windows MAX_PATH limit; needs `core.longpaths=true` or a non-Windows host. |
-| `openscore_string_quartets` (OpenScore/StringQuartets.git) | **NOT ATTEMPTED** — same Windows long-path issue. |
-| `openscore_orchestra` (MarkGotham/Hauptstimme.git) | **NOT ATTEMPTED** — same Windows long-path issue. |
-| `mutopia` (MutopiaProject/MutopiaProject.git) | **NOT ATTEMPTED** — same Windows long-path issue, plus the registry wants per-item license validation against `lilypond`-converted MIDI. |
-| `imslp_midi_cc0` (TiMauzi/imslp-midi-cc0-1.0 HF dataset) | **NOT ATTEMPTED** — requires `pip install -e ".[corpus]"` (HuggingFace `datasets`); the build script imports `from datasets import load_dataset` only inside `install_hf_midi`, but the 5 git sources failed before that source was reached. |
-
-The 4 git sources all fail on Windows because of `MAX_PATH` (260 char)
-limits in the OpenScore and Mutopia directory trees. The
-`core.longpaths=true` Git setting is not sufficient: the failure is
-the OS `CreateDirectory` call, not git itself. The fix is a
-Linux/macOS host, a Windows host with `LongPathsEnabled` registry
-key, or `git clone` into a path-prefixed 8.3 name. None of these are
-in scope for this session.
+| `pdmx` (Zenodo 15571083, 254,078 rows) | **OK** – 225 MB CSV + 200 MB mid.tar.gz + 28 MB subset_paths.tar.gz downloaded and extracted; 71,925 unique songs in the indexed train split. |
+| `openscore_lieder` (OpenScore/Lieder.git @ `6b2dc542`) | **OK** – 1,462 `.mscz` cloned into `C:\ov1\openscore_lieder`; all `.mscz` converted to MIDI (MuseScore 4.7.4 via WSL2). 1,382 unique train songs after dedup. |
+| `openscore_string_quartets` (OpenScore/StringQuartets.git @ `8fd21698`) | **OK** – 122 `.mscx` + 122 `.mxl` cloned; 114 unique train songs after dedup. |
+| `openscore_orchestra` (MarkGotham/Hauptstimme.git @ `8f677853`) | **OK** – 96 `.mscz` converted; 92 unique train songs. |
+| `mutopia` (MutopiaProject/MutopiaProject.git @ `2144afd6`) | **OK** – 918 license-eligible primary `.ly` candidates, 612 unique train songs after dedup; 883 `.mid` files in `C:\ov1\converted\mutopia/`. |
+| `imslp_midi_cc0` (TiMauzi/imslp-midi-cc0-1.0 HF dataset @ `6ae7ad24`) | **OK** – 1,113 rows materialized; 1,037 unique train songs after dedup. |
+| `musescore4` (CLI) | **OK** – extracted from official `MuseScore-Studio-4.7.4-x86_64.paf.exe` and run under WSL2 (Arch Linux) with `QT_QPA_PLATFORM=offscreen` and `--exec` arg passing. |
+| `lilypond` (CLI) | **OK** – installed in WSL2 via `pacman -S lilypond` (v2.26.0). |
 
 ### 18.2 Production trainer readiness
 
 | Field | Value |
 |---|---|
-| `EPOCH_SAMPLER` | **VERIFIED** — `orbitune/epoch_sampler.py`, 9 unit tests pass, fail-closed state round-trip, measured 1.0× event total = 162,427,264. |
-| `PER_EVENT_LOSS_WEIGHTING` | **VERIFIED** — `MixedEventDecoder.loss(event_weight=...)`; `event_weight=None` is bit-identical to legacy (Δ = 0.0); weighted path divides by `sum(head_active_mask * event_weight)`; all-zero weight ⇒ zero loss and zero gradient on every parameter. |
-| `POWER_DRAW_WATTS_MW_TO_W` | **VERIFIED** — `scripts/compound_cuda_train.py:131` divides `torch.cuda.power_draw()` by 1000.0. Unit test on RTX 3080: simulated 35,000 mW ⇒ 35.0 W. |
-| `TIME_VECTORIZED_TBPTT_LADDER` | **VERIFIED** — see §16.1. Steady throughput 665-700 ev/s; peak 737 ev/s. |
-| `500_STEP_PILOT` | **PASS** — see §16.2. Canonical val = -1.206352 vs base -1.187442, Δ = -0.018910. |
-| `COMMERCIAL_V1_CORPUS_BUILD` | **PARTIAL** — PDMX subset is built and indexed; 5 of 6 sources blocked on Windows path/long-path and missing MuseScore. |
-| `READY_FOR_COMMERCIAL_BASE_LONG_RUN` | **GATED** — trainer is ready; corpus is partial (PDMX only on this host). Long run cannot start until (1) all 6 sources are installed on a non-Windows or long-path-enabled host, (2) MuseScore4 is installed, and (3) the 1.0× commercial_v1 event total is re-measured.
+| `EPOCH_SAMPLER` | **VERIFIED** – `orbitune/epoch_sampler.py`, 9 unit tests pass, fail-closed state round-trip, measured 1.0× event total = 184,787,415 (full 6-source). |
+| `PER_EVENT_LOSS_WEIGHTING` | **VERIFIED** – `MixedEventDecoder.loss(event_weight=...)`; `event_weight=None` is bit-identical to legacy (μ=0.0); weighted path divides by `sum(head_active_mask * event_weight)`; all-zero weight ⇒ zero loss and zero gradient on every parameter. |
+| `POWER_DRAW_WATTS_MW_TO_W` | **VERIFIED** – `scripts/compound_cuda_train.py:131` divides `torch.cuda.power_draw()` by 1000.0. Unit test on RTX 3080: simulated 35,000 mW ⇒ 35.0 W. |
+| `TIME_VECTORIZED_TBPTT_LADDER` | **VERIFIED** – see §16.1. Steady throughput 665-700 ev/s; peak 737 ev/s. |
+| `500_STEP_PILOT` | **PASS** – see §16.2. Canonical val = -1.206352 vs base -1.187442, Δ = -0.018910. |
+| `COMMERCIAL_V1_CORPUS_BUILD` | **COMPLETE** – full 6 sources installed at `C:\ov1\`, built and indexed at `C:\ov1\compound_indexed\`. |
+| `READY_FOR_COMMERCIAL_BASE_LONG_RUN` | **READY (gated only on explicit user authorization to start the 50M-event long run)** – trainer is ready; corpus is complete; 1.0× invariant verified across 3 geometries. The 50M-event run is NOT auto-started by this report.

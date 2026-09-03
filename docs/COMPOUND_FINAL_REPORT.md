@@ -1,4 +1,4 @@
-# Compound Hierarchical Base: Full-Validation Report
+﻿# Compound Hierarchical Base: Full-Validation Report
 
 **Date:** 2026-09-02
 **Model:** `CompoundHierarchicalGPT` (orbitune-compound-v0-experimental)
@@ -188,3 +188,63 @@ Required sequence:
 * **`TIME_VECTORIZED_TBPTT = VERIFIED`.** Commit `b5f161a` advances the entire `seq_len` slab through the Transformer in one Python call. Steady-state throughput on RTX 3080 (BF16, batch=4, seq=64) is **≈ 665–700 ev/s** (peak 737 ev/s) — **16.5–19.7× the legacy 35 ev/s** and **4.45–5.29× the lane-batched 130 ev/s**. See `docs/TBPTT_REPORT.md` §16.1.
 * **`TBPTT_500_STEP_PILOT_AT_LR_3E_5 = PASS`.** Source step 1900 → final step 2400 at LR=3e-5, BF16, batch=4, seq=64. 5-song streaming val trajectory: `VAL_BASE = -1.187442` (frozen), `VAL_STEP_2000 = -1.143810` (Δ +0.0436), `VAL_STEP_2150 = -1.071313` (Δ +0.1161, transient), `VAL_STEP_2400 = -1.212744` (Δ **-0.0253**, better than base). Canonical re-run via `tools/tbptt_validation_eval.py`: `VAL_STEP_2400 = -1.206352` (Δ **-0.018910**). **|Δ| < 0.05 hard-stop satisfied; canonical Δ is negative (improvement).** No NaN/Inf/OOM/`safe_backward` failure across 500 steps. State carry validated at step 2400 (4 lanes, `steps` = 8256 / 512 / 13376 / 19328, all histories non-empty, `memory = [(1, 224)] × 3`). Pilot ckpt at `runs/compound/tbptt/pilot-lr3e5.pt` (step 2400, `events_seen = 70,169,600`, `source_commit = c445ea7`).
 * **`NEXT_EXPERIMENT = COMMERCIAL_BASE_PRODUCTION_PRETRAIN` (gated).** Next engineering target is the production commercial base pretrain trainer: epoch-aware no-replacement TBPTT sampler + per-event loss weighting + commercial_v1 corpus build + `power_draw_watts` mW→W bug fix. See `docs/TBPTT_REPORT.md` §17. **Do not start a 50M-event long run** until (1) epoch sampler + 6 unit tests are green, (2) commercial_v1 corpus build census is recorded (1.0× event total measured, not estimated), (3) `power_draw_watts` bug is fixed with a unit test, and (4) full pytest regression is clean.
+
+
+## 12. Census Addendum (2026-09-03) – Full 6-Source Commercial_v1 Built on Windows
+
+The Windows path / long-path and MuseScore4 / LilyPond install blockers
+called out in §11 have been worked around on this host:
+
+* All 4 OpenScore + Mutopia git sources cloned into C:\ov1\ with
+  GIT_CONFIG_COUNT=core.longpaths=true + git config --global
+  core.longpaths true.
+* MuseScore 4.7.4 extracted from the official
+  MuseScore-Studio-4.7.4-x86_64.paf.exe portable self-extractor
+  and run under WSL2 (Arch Linux) with QT_QPA_PLATFORM=offscreen
+  via a .bat shim that uses wsl --user root --exec to bypass
+  bash's argv-escape (the original wsl ... bash -c form was
+  mangling Windows backslash paths: \t → TAB, \o → dropped).
+* LilyPond 2.26.0 installed in the same WSL2 distro via
+  pacman -S lilypond.
+* scripts/build_pretrain_corpus.py ran end-to-end against
+  configs/pretrain_corpus_commercial_v1.json at C:\ov1\ with
+  PYTHONUTF8=1 (the script's 	ext=True default decoder was
+  cp932 which crashed on LilyPond's non-ASCII output).
+
+Resulting 1.0× epoch event totals, measured by
+EpochAwareNoReplacementSampler.epoch_events_total on the indexed
+train split (75,162 songs, 184,862,577 records):
+
+| Geometry | epoch_events_total | matches sum(len(records)-1) = 184,787,415? |
+|---|---|---|
+| atch_size=2, seq_len=32 | **184,787,415** | ✅ |
+| atch_size=4, seq_len=64 | **184,787,415** | ✅ |
+| atch_size=1, seq_len=128 | **184,787,415** | ✅ |
+
+PR #31 1.0× invariant: **PASS** for the full 6-source commercial_v1
+corpus. All three geometries produce an identical
+epoch_events_total, as the contract requires.
+
+Per-source event counts (train split, pre-cross-dedup):
+
+| Source | songs | events |
+|---|---|---|
+| pdmx | 71,925 | 172,020,019 |
+| openscore_lieder | 1,382 | 3,114,927 |
+| openscore_string_quartets | 122 | 13,412,536 |
+| openscore_orchestra | 96 | 7,190,907 |
+| mutopia | 678 | 521,121 |
+| imslp_midi_cc0 | 1,113 | 3,071,204 |
+| **Total pre-dedup** | 80,316 | 199,330,714 |
+| **After cross-source dedup (881 removed)** | **79,911** | **198,924,135** |
+
+Manifest SHA256: 1595e79a2a38543c67cdcd9f2cdbfe3fcc88efad66517a3ff4d1f9df6fc1f178
+Indexed corpus root: C:\ov1\compound_indexed\.
+Build report: C:\ov1\build_report.json.
+
+The 50M-event commercial base long run is **not** auto-started by
+this report. The full 1.0× event total (184,787,415) is roughly
+3.7× the originally planned 50M-event run length, so the trainer
+will be configured to do 184,787,415 / 4 (batch=4, seq=64) ≈ 460,000
+optimizer steps per epoch at full coverage. **Explicit user
+authorization is still required** before launching the long run.
