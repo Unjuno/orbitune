@@ -25,8 +25,10 @@ conversion candidate is `price_songs_main/Thou'rt My Loved One/*.mscz`, which
 upstream documents as a complete song supplied without a MIDI file. The
 `price_incomplete/` tree is not a conversion candidate.
 
-The source is a small high-quality anchor (`quality_weight = 2.0`), not a scale
-replacement for PDMX.
+The source is a small high-quality direct-MIDI supplement with
+`quality_weight = 2.0`, not a scale replacement for PDMX. It deliberately does
+not use the `quality-anchor` tier because the current v1 telemetry maps that
+tier to the OpenScore-specific `openscore_verified` flag.
 
 ## Split compatibility
 
