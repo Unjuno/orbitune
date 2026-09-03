@@ -305,7 +305,7 @@ def main() -> None:
             )
         conversion: dict[str, object] = {"score_candidates": 0, "converted": 0, "cached": 0, "failed": []}
         converted_root: Path | None = None
-        if source.kind == "git_scores":
+        if source.kind in {"git_scores", "huggingface_score_snapshot"}:
             converted_root = converted_base / source.id
             if not args.skip_score_conversion:
                 if source.id == "mutopia":
