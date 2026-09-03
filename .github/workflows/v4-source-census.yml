@@ -1,0 +1,117 @@
+name: commercial-v4-source-census
+
+on:
+  pull_request:
+    paths:
+      - "tools/v4_source_census.py"
+      - ".github/workflows/v4-source-census.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nrg-cp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal Orbitune census dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy
+          python -m pip install -e . --no-deps
+      - name: Exact NRG-CP Compound census
+        run: |
+          python tools/v4_source_census.py nrg-cp --workers 4 --output nrg_cp_census.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nrg-cp-census
+          path: nrg_cp_census.json
+          if-no-files-found: warn
+
+  cpdl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal Orbitune census dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy
+          python -m pip install -e . --no-deps
+      - name: CPDL fail-closed edition metadata census
+        run: |
+          python tools/v4_source_census.py cpdl --workers 8 --output cpdl_census.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpdl-census
+          path: cpdl_census.json
+          if-no-files-found: warn
+
+  imslp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal Orbitune and DuckDB dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy duckdb
+          python -m pip install -e . --no-deps
+      - name: IMSLP CC-BY 3/4 metadata extraction
+        run: |
+          python tools/v4_source_census.py imslp --output imslp_ccby_census.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: imslp-ccby-census
+          path: imslp_ccby_census.json
+          if-no-files-found: warn
+
+  cocochorales-midi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal Orbitune and Google Drive dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy gdown
+          python -m pip install -e . --no-deps
+      - name: Download official chunked CocoChorales MIDI-only payload
+        run: |
+          gdown --fuzzy "https://drive.google.com/file/d/1yhCJgrY1rP01hYqif_lgITSophB3eRaW/view?usp=sharing" -O cocochorales_midi.archive
+          ls -lh cocochorales_midi.archive
+          file cocochorales_midi.archive
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('cocochorales_midi.archive')
+          size = p.stat().st_size
+          print(f'COCO_ARCHIVE_BYTES={size}')
+          if size > 8 * 1024**3:
+              raise SystemExit('MIDI-only archive exceeds 8 GiB CI safety limit')
+          PY
+      - name: Exact CocoChorales MIDI Compound census
+        run: |
+          python tools/v4_source_census.py scan-archive --input cocochorales_midi.archive --source-name cocochorales --workers 4 --output cocochorales_census.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cocochorales-midi-census
+          path: cocochorales_census.json
+          if-no-files-found: warn
