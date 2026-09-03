@@ -63,7 +63,7 @@ def test_load_baseline_normalized_is_fail_closed(tmp_path: Path) -> None:
     manifest = tmp_path / "manifest.jsonl"
     manifest.write_text(json.dumps({"normalized_fingerprint": a}) + "\n" + json.dumps({"normalized_fingerprint": b}) + "\n", encoding="utf-8")
     values, report = MOD.load_baseline_normalized(manifest)
-    assert values == {a, b}
+    assert values == {bytes.fromhex(a), bytes.fromhex(b)}
     assert report["rows"] == 2
     assert len(report["sha256"]) == 64
 
@@ -78,8 +78,8 @@ def test_load_baseline_normalized_is_fail_closed(tmp_path: Path) -> None:
 
 
 def test_classify_conversion_result_uses_normalized_not_composition_for_dedup() -> None:
-    baseline = {"b" * 64}
-    seen: set[str] = set()
+    baseline = {bytes.fromhex("b" * 64)}
+    seen: set[bytes] = set()
     counters: Counter[str] = Counter()
 
     retained = {
