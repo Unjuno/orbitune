@@ -76,7 +76,7 @@ jobs:
           python -m pip install -e . --no-deps
       - name: Exact IMSLP CC-BY 3/4 MIDI census
         run: |
-          python tools/v4_imslp_exact_runner.py --workers 4 --output imslp_ccby_exact_census.json
+          python tools/v4_imslp_exact_runner.py --workers 1 --output imslp_ccby_exact_census.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
