@@ -1,0 +1,54 @@
+{
+  "policy_revision": "v5-rev3",
+  "delta_source": "OpenScore/StringQuartets",
+  "previous_revision": "8fd2169855a1b27586454b183739573962f9d8ca",
+  "target_revision": "a3b3813477b06c2c48887f1055f8567dae0c2232",
+  "axes": {
+    "SOURCE_PINNED": "PASS",
+    "LICENSE_GATE": "PASS",
+    "UNDERLYING_RIGHTS_GATE": "PASS",
+    "EDITION_ENCODING_GATE": "PASS",
+    "ACQUISITION_GATE": "PASS",
+    "PATH_GATE": "PASS",
+    "PARSE_CONVERSION_GATE": "PASS",
+    "INTRA_SOURCE_DEDUP_GATE": "PASS",
+    "FULL_V4_NORMALIZED_DEDUP_GATE": "PASS",
+    "PROVENANCE_EVIDENCE_IMMUTABLE": "PASS"
+  },
+  "evidence_files": {
+    "delta_census": "tools/openscore_string_quartets_v5_delta_census.json",
+    "delta_census_sha256": "947640eb913f15b8259bccd542ef46b290d46f81653159b427ab3b59ebf2d6ca",
+    "delta_rights": "tools/openscore_string_quartets_v5_delta_rights.json",
+    "delta_cross_v4_dedup": "tools/openscore_string_quartets_v5_cross_v4_dedup.json",
+    "v4_manifest_fingerprint_index": "tools/v4_manifest_fingerprint_index.json",
+    "v5_registry": "configs/pretrain_corpus_commercial_v5.json",
+    "v5_installer": "scripts/install_pretrain_corpora_v5.py",
+    "v5_midi_generation": "tools/generate_v5_delta_midi.py"
+  },
+  "summary": {
+    "delta_input_artifacts": 41,
+    "delta_parse_ok": 41,
+    "delta_parse_failures": 0,
+    "delta_intra_source_duplicates_removed": 0,
+    "full_v4_fingerprints_indexed": 229476,
+    "full_v4_normalized_matches": 0,
+    "full_v4_composition_matches": 0,
+    "full_v4_dedup_removed": 0,
+    "delta_accepted": 41,
+    "delta_post_dedup_active_events": 560680,
+    "rights_artifacts_pd": 41,
+    "rights_artifacts_not_yet_pd": 0
+  },
+  "source_green": "YES",
+  "integration_started": "YES (this attestation is the source-GREEN attestation)",
+  "prerequisites_for_integration": [
+    "delta_census.json written and SHA-recorded",
+    "delta_rights.json written with PD verdicts",
+    "full-v4 cross-dedup PASS",
+    "v5 registry created with single-pin update",
+    "v5 install wrapper (scripts/install_pretrain_corpora_v5.py) refuses ov3/ov4 paths",
+    "C:\\ov5 source material assembled (11 sources copied from v4; openscore_string_quartets at v5 rev; groove_midi_dataset via junction to v4; delta 41 MIDI files generated in C:\\ov5\\converted\\openscore_string_quartets\\scores)",
+    "v5 build (scripts/build_pretrain_corpus.py --config v5) executed against C:\\ov5 (in progress; output C:\\ov5\\manifest.jsonl, C:\\ov5\\build_report.json, C:\\ov5\\compound_indexed\\...)",
+    "sampler invariant B2/S32, B4/S64, B1/S128 must agree on V5_ONE_X_ACTIVE_EVENTS (computed from build_report.json)"
+  ]
+}
