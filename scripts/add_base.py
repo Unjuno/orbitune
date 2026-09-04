@@ -54,6 +54,10 @@ def main() -> int:
         raise SystemExit("refusing to stage Base without explicit --rights-confirmed")
     if bool(args.parent_base_id) != bool(args.parent_checkpoint_sha256):
         raise SystemExit("parent-base-id and parent-checkpoint-sha256 must be supplied together")
+    if args.distribution_scope == "internal-only" or args.license_policy == "restricted":
+        raise SystemExit(
+            "refusing to stage restricted/internal-only Base in the public repository path; use a separate internal artifact store"
+        )
 
     checkpoint = Path(args.checkpoint)
     onnx = Path(args.web_onnx)
