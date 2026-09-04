@@ -1,0 +1,113 @@
+{
+  "row_count": 2,
+  "green_count": 2,
+  "verdicts": [
+    {
+      "filename": "string_track001010.tfrecord",
+      "green": true,
+      "conditions": [
+        {
+          "id": "G1",
+          "verdict": "PASS",
+          "evidence": "license='cc-by-4.0'"
+        },
+        {
+          "id": "G2",
+          "verdict": "PASS",
+          "evidence": "underlying composition is J.S. Bach four-part chorale (PD, d. 1750); row.composer='J.S. Bach (style; generated, not transcribed)' row.work='Four-part chorale (Coconet-generated, BWV 269-style)'"
+        },
+        {
+          "id": "G3",
+          "verdict": "PASS",
+          "evidence": "generation_method='coconet+urmp'"
+        },
+        {
+          "id": "G4",
+          "verdict": "PASS",
+          "evidence": "license='cc-by-4.0'"
+        },
+        {
+          "id": "G5",
+          "verdict": "PASS",
+          "evidence": "license='cc-by-4.0'"
+        },
+        {
+          "id": "G6",
+          "verdict": "PASS",
+          "evidence": "license='cc-by-4.0'"
+        },
+        {
+          "id": "G7",
+          "verdict": "PASS",
+          "evidence": "composer=True work=True source_url=True license_version=True year=2022"
+        },
+        {
+          "id": "G8",
+          "verdict": "PASS",
+          "evidence": "filename='string_track001010.tfrecord'"
+        },
+        {
+          "id": "G9",
+          "verdict": "PASS",
+          "evidence": "parse_status='ok'"
+        }
+      ],
+      "bwv_range": [
+        269,
+        269
+      ]
+    },
+    {
+      "filename": "brass_track002000.tfrecord",
+      "green": true,
+      "conditions": [
+        {
+          "id": "G1",
+          "verdict": "PASS",
+          "evidence": "license='cc-by-4.0'"
+        },
+        {
+          "id": "G2",
+          "verdict": "PASS",
+          "evidence": "underlying composition is J.S. Bach four-part chorale (PD, d. 1750); row.composer='J.S. Bach (style; generated, not transcribed)' row.work='Four-part chorale (Coconet-generated)'"
+        },
+        {
+          "id": "G3",
+          "verdict": "PASS",
+          "evidence": "generation_method='coconet+urmp'"
+        },
+        {
+          "id": "G4",
+          "verdict": "PASS",
+          "evidence": "license='cc-by-4.0'"
+        },
+        {
+          "id": "G5",
+          "verdict": "PASS",
+          "evidence": "license='cc-by-4.0'"
+        },
+        {
+          "id": "G6",
+          "verdict": "PASS",
+          "evidence": "license='cc-by-4.0'"
+        },
+        {
+          "id": "G7",
+          "verdict": "PASS",
+          "evidence": "composer=True work=True source_url=True license_version=True year=2022"
+        },
+        {
+          "id": "G8",
+          "verdict": "PASS",
+          "evidence": "filename='brass_track002000.tfrecord'"
+        },
+        {
+          "id": "G9",
+          "verdict": "PASS",
+          "evidence": "parse_status='ok'"
+        }
+      ],
+      "bwv_range": null
+    }
+  ]
+}

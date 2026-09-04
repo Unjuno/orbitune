@@ -57,11 +57,27 @@ Until those five conditions are met, this source remains YELLOW / HOLD. No regis
 
 ### `cocochorales`
 
-**Status: YELLOW / HOLD FOR GENERATOR-TRAINING PROVENANCE CONSISTENCY (unchanged from v4)**
+**Status: YELLOW / HOLD FOR GENERATOR-TRAINING PROVENANCE CONSISTENCY (under v5 re-evaluation)**
 
 CocoChorales is CC BY 4.0 and contains 240,000 generated four-part chorale examples. The released symbolic material is generated rather than scraped directly from third-party compositions, but the Coconet model that produced it was trained on the J.S. Bach Chorales Dataset. Orbitune's stricter generator-training provenance check (the same one applied to `js_fake_chorales`) is therefore owed to CocoChorales before promotion.
 
-The previous measurement on a 40,000-piece sample projected approximately `23,803,560` active events for the full 240k. v5 does not have a new measurement to override that figure. The CocoChorales status is unchanged.
+The previous measurement on a 40,000-piece sample projected approximately `23,803,560` active events for the full 240k. v5 does not have a new measurement to override that figure.
+
+v5 re-evaluation tool: `tools/cocochorales_train_corpus_provenance.py` (this audit branch only). It applies the 9-condition v5 GREEN gate against the documented upstream chain:
+
+- `G1` license_is_cc_by_3_or_4: **PASS** — wrapper is CC BY 4.0 (Yusong Wu, Magenta official).
+- `G2` underlying_composition_admissible: **PASS** — the J.S. Bach four-part chorales are public-domain in the US, EU, and Canada (Bach d. 1750).
+- `G3` edition_encoding_rights_admissible: **PASS** — CocoChorales is Coconet-generated, not a transcription of any specific third-party recording or score; v4 audit measured 0 note-signature duplicates in a 40k sample.
+- `G4` not_nd: **PASS** — wrapper is CC BY 4.0 only, no ND.
+- `G5` not_imnsf: **PASS** — the underlying work is in the public domain, not in IMNSF, not in-copyright.
+- `G6` not_non_public_domain: **PASS** — underlying work is PD; wrapper is CC BY 4.0.
+- `G7` attribution_recoverable: **PASS** — five attribution lines recorded: Yusong Wu (CC BY 4.0), Coconet (Apache-2.0, Magenta team), J.S. Bach (public-domain), JSB Chorales Dataset (czhuang, no LICENSE file but underlying music is PD), music21 corpus (BSD-3-Clause code with Margaret Greentree attribution).
+- `G8` pathname_policy: **PASS_PENDING_INSTALL_CHECK** — CocoChorales tiny subset uses standard filenames; the actual Windows-illegal-character check is performed at install time, not at audit time.
+- `G9` parse_conversion_succeeds: **PASS** — v4 audit: 0 parse failures in 40k sample, 3,777,260 non-rest note rows, 0 note-signature duplicates.
+
+v5 re-evaluation result: the static chain passes all 9 conditions, with G8 deferred to install time. The 40k signature-duplicate-zero measurement is the empirical evidence that condition G3 (edition/encoding rights admissible) holds: the generated chorales are not verbatim transcriptions of any specific Bach chorale.
+
+A production GREEN promotion for CocoChorales is still **not** granted by this audit commit. The next step is the installer-side per-row census against the official Magenta tiny symbolic subset, which produces a real per-row verdicts file rather than the 2-row synthetic fixture used by the audit tool. Only after that real per-row census passes the gate is CocoChorales eligible to write a v5 registry entry on `main`.
 
 ### `js_fake_chorales`
 
