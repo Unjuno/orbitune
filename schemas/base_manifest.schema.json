@@ -4,7 +4,7 @@
   "title": "Orbitune Base Manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["artifact_type", "id", "display_name", "architecture", "tokenizer", "parameter_count", "checkpoint", "web_onnx", "license", "training_data", "tags"],
+  "required": ["artifact_type", "id", "display_name", "architecture", "tokenizer", "parameter_count", "checkpoint", "web_onnx", "license", "training_data", "lineage", "tags"],
   "properties": {
     "artifact_type": {"const": "orbitune_base"},
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
@@ -26,6 +26,38 @@
         "license": {"type": "string", "minLength": 1},
         "rights_confirmed": {"const": true},
         "notes": {"type": "string"}
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parent_checkpoint", "commercial_eligible", "distribution_scope", "license_policy", "corpus_registry", "corpus_manifest_sha256", "restricted_source_ids", "rights_summary"],
+      "properties": {
+        "parent_checkpoint": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "sha256"],
+              "properties": {
+                "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+                "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+              }
+            }
+          ]
+        },
+        "commercial_eligible": {"type": "boolean"},
+        "distribution_scope": {"enum": ["commercial", "noncommercial", "internal-only"]},
+        "license_policy": {"enum": ["prod-only", "research-nc", "restricted"]},
+        "corpus_registry": {"type": "string", "minLength": 1},
+        "corpus_manifest_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+        "restricted_source_ids": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "rights_summary": {"type": "string", "minLength": 1}
       }
     },
     "tags": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
