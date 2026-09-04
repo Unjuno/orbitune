@@ -4,7 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from orbitune.base_registry import _reference_web_shape, build_base_registry, validate_base_manifest
+from orbitune.base_registry import (
+    _reference_web_shape,
+    _validate_registry_lineage,
+    build_base_registry,
+    validate_base_manifest,
+)
 from orbitune.compat import (
     ARCHITECTURE_ABI,
     REFERENCE_MAX_SEQ_LEN,
@@ -46,6 +51,14 @@ def _manifest() -> dict[str, object]:
         },
         "tags": [],
     }
+
+
+def _with_identity(manifest: dict[str, object], base_id: str, checkpoint_sha: str) -> dict[str, object]:
+    copied = json.loads(json.dumps(manifest))
+    copied["id"] = base_id
+    copied["display_name"] = base_id
+    copied["checkpoint"]["sha256"] = checkpoint_sha
+    return copied
 
 
 def test_base_manifest_rejects_artifact_path_traversal() -> None:
@@ -109,6 +122,69 @@ def test_lineage_parent_checkpoint_requires_exact_sha() -> None:
     assert any("parent_checkpoint.sha256" in error for error in errors)
 
 
+def test_registry_lineage_allows_commercial_to_research_fork() -> None:
+    parent = _with_identity(_manifest(), "commercial-v1", "a" * 64)
+    child = _with_identity(_manifest(), "research-v1", "b" * 64)
+    child["lineage"] = {
+        "parent_checkpoint": {"id": "commercial-v1", "sha256": "a" * 64},
+        "commercial_eligible": False,
+        "distribution_scope": "noncommercial",
+        "license_policy": "research-nc",
+        "corpus_registry": "configs/research.json",
+        "corpus_manifest_sha256": "4" * 64,
+        "restricted_source_ids": ["gigamidi"],
+        "rights_summary": "Research-only child",
+    }
+    _validate_registry_lineage([parent, child])
+
+
+def test_registry_lineage_rejects_noncommercial_to_commercial_backflow() -> None:
+    parent = _with_identity(_manifest(), "research-v1", "a" * 64)
+    parent["lineage"] = {
+        "parent_checkpoint": None,
+        "commercial_eligible": False,
+        "distribution_scope": "noncommercial",
+        "license_policy": "research-nc",
+        "corpus_registry": "configs/research.json",
+        "corpus_manifest_sha256": "4" * 64,
+        "restricted_source_ids": ["gigamidi"],
+        "rights_summary": "Research-only parent",
+    }
+    child = _with_identity(_manifest(), "commercial-v2", "b" * 64)
+    child["lineage"]["parent_checkpoint"] = {"id": "research-v1", "sha256": "a" * 64}
+    with pytest.raises(ValueError, match="may not relax parent license policy|may not descend"):
+        _validate_registry_lineage([parent, child])
+
+
+def test_registry_lineage_rejects_unknown_or_wrong_parent_sha() -> None:
+    parent = _with_identity(_manifest(), "commercial-v1", "a" * 64)
+    child = _with_identity(_manifest(), "research-v1", "b" * 64)
+    child["lineage"] = {
+        "parent_checkpoint": {"id": "commercial-v1", "sha256": "c" * 64},
+        "commercial_eligible": False,
+        "distribution_scope": "noncommercial",
+        "license_policy": "research-nc",
+        "corpus_registry": "configs/research.json",
+        "corpus_manifest_sha256": "4" * 64,
+        "restricted_source_ids": ["gigamidi"],
+        "rights_summary": "Research-only child",
+    }
+    with pytest.raises(ValueError, match="parent checkpoint SHA"):
+        _validate_registry_lineage([parent, child])
+    child["lineage"]["parent_checkpoint"] = {"id": "missing-base", "sha256": "c" * 64}
+    with pytest.raises(ValueError, match="unknown parent Base"):
+        _validate_registry_lineage([parent, child])
+
+
+def test_registry_lineage_rejects_cycles() -> None:
+    first = _with_identity(_manifest(), "first", "a" * 64)
+    second = _with_identity(_manifest(), "second", "b" * 64)
+    first["lineage"]["parent_checkpoint"] = {"id": "second", "sha256": "b" * 64}
+    second["lineage"]["parent_checkpoint"] = {"id": "first", "sha256": "a" * 64}
+    with pytest.raises(ValueError, match="cycle"):
+        _validate_registry_lineage([first, second])
+
+
 def _write_tiny_current_abi_base(root: Path) -> tuple[Path, dict[str, object]]:
     base = root / "test-base"
     base.mkdir(parents=True)
@@ -164,8 +240,6 @@ def test_registry_exposes_checkpoint_lineage_rights() -> None:
         "restricted_source_ids": ["gigamidi"],
         "rights_summary": "Research-only checkpoint lineage",
     }
-    # The shape is validated here; build_base_registry coverage is exercised by
-    # the directory-backed tests above.
     assert validate_base_manifest(manifest) == []
 
 
