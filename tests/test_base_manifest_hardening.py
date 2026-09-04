@@ -3,8 +3,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from jsonschema import Draft202012Validator
 
-from orbitune.base_registry import _reference_web_shape, build_base_registry, validate_base_manifest
+from orbitune.base_registry import (
+    _reference_web_shape,
+    _validate_registry_lineage,
+    build_base_registry,
+    validate_base_manifest,
+)
 from orbitune.compat import (
     ARCHITECTURE_ABI,
     REFERENCE_MAX_SEQ_LEN,
@@ -34,8 +40,45 @@ def _manifest() -> dict[str, object]:
             "license": "CC0-1.0",
             "rights_confirmed": True,
         },
+        "lineage": {
+            "parent_checkpoint": None,
+            "commercial_eligible": True,
+            "distribution_scope": "commercial",
+            "license_policy": "prod-only",
+            "corpus_registry": "configs/test.json",
+            "corpus_manifest_sha256": "2" * 64,
+            "restricted_source_ids": [],
+            "rights_summary": "PROD-only test corpus",
+        },
         "tags": [],
     }
+
+
+def _with_identity(manifest: dict[str, object], base_id: str, checkpoint_sha: str) -> dict[str, object]:
+    copied = json.loads(json.dumps(manifest))
+    copied["id"] = base_id
+    copied["display_name"] = base_id
+    copied["checkpoint"]["sha256"] = checkpoint_sha
+    return copied
+
+
+def _set_research_nc(manifest: dict[str, object], *, parent_id: str = "commercial-v1", parent_sha: str = "3" * 64) -> None:
+    manifest["license"] = "CC-BY-NC-SA-4.0"
+    manifest["lineage"] = {
+        "parent_checkpoint": {"id": parent_id, "sha256": parent_sha},
+        "commercial_eligible": False,
+        "distribution_scope": "noncommercial",
+        "license_policy": "research-nc",
+        "corpus_registry": "configs/research.json",
+        "corpus_manifest_sha256": "2" * 64,
+        "restricted_source_ids": ["gigamidi"],
+        "rights_summary": "Research-only checkpoint lineage",
+    }
+
+
+def _schema_errors(manifest: dict[str, object]) -> list[object]:
+    schema = json.loads(Path("schemas/base_manifest.schema.json").read_text(encoding="utf-8"))
+    return list(Draft202012Validator(schema).iter_errors(manifest))
 
 
 def test_base_manifest_rejects_artifact_path_traversal() -> None:
@@ -53,6 +96,122 @@ def test_base_manifest_requires_training_provenance_fields_and_unique_tags() -> 
     assert any("source_type" in error for error in errors)
     assert any("license" in error for error in errors)
     assert any("duplicates" in error for error in errors)
+
+
+def test_commercial_base_rejects_research_nc_lineage() -> None:
+    manifest = _manifest()
+    manifest["lineage"] = {
+        "parent_checkpoint": None,
+        "commercial_eligible": True,
+        "distribution_scope": "noncommercial",
+        "license_policy": "research-nc",
+        "corpus_registry": "configs/research.json",
+        "corpus_manifest_sha256": "2" * 64,
+        "restricted_source_ids": ["gigamidi"],
+        "rights_summary": "Contains CC-BY-NC research data",
+    }
+    errors = validate_base_manifest(manifest)
+    assert any("license_policy=prod-only" in error for error in errors)
+    assert any("distribution_scope=commercial" in error for error in errors)
+    assert any("must not list restricted_source_ids" in error for error in errors)
+
+
+def test_research_nc_base_must_be_noncommercial() -> None:
+    manifest = _manifest()
+    _set_research_nc(manifest)
+    assert validate_base_manifest(manifest) == []
+
+    manifest["lineage"]["distribution_scope"] = "commercial"
+    errors = validate_base_manifest(manifest)
+    assert any("must not use lineage.distribution_scope=commercial" in error for error in errors)
+
+
+def test_noncommercial_base_rejects_commercial_use_checkpoint_license() -> None:
+    manifest = _manifest()
+    _set_research_nc(manifest)
+    manifest["license"] = "Apache-2.0"
+    errors = validate_base_manifest(manifest)
+    assert any("permits commercial use" in error for error in errors)
+
+
+def test_commercial_base_rejects_nc_checkpoint_license() -> None:
+    manifest = _manifest()
+    manifest["license"] = "CC-BY-NC-SA-4.0"
+    errors = validate_base_manifest(manifest)
+    assert any("noncommercial restriction" in error for error in errors)
+
+
+def test_json_schema_mirrors_lineage_cross_field_guards() -> None:
+    valid_research = _manifest()
+    _set_research_nc(valid_research)
+    assert _schema_errors(valid_research) == []
+
+    invalid_commercial = _manifest()
+    invalid_commercial["lineage"]["license_policy"] = "research-nc"
+    assert _schema_errors(invalid_commercial)
+
+    invalid_research_license = _manifest()
+    _set_research_nc(invalid_research_license)
+    invalid_research_license["license"] = "Apache-2.0"
+    assert _schema_errors(invalid_research_license)
+
+    invalid_restricted = _manifest()
+    invalid_restricted["license"] = "Orbitune-Internal-Only"
+    invalid_restricted["lineage"] = {
+        "parent_checkpoint": None,
+        "commercial_eligible": False,
+        "distribution_scope": "noncommercial",
+        "license_policy": "restricted",
+        "corpus_registry": "configs/restricted.json",
+        "corpus_manifest_sha256": "2" * 64,
+        "restricted_source_ids": ["hold-source"],
+        "rights_summary": "Internal only",
+    }
+    assert _schema_errors(invalid_restricted)
+
+
+def test_lineage_parent_checkpoint_requires_exact_sha() -> None:
+    manifest = _manifest()
+    manifest["lineage"]["parent_checkpoint"] = {"id": "commercial-v1", "sha256": "short"}
+    errors = validate_base_manifest(manifest)
+    assert any("parent_checkpoint.sha256" in error for error in errors)
+
+
+def test_registry_lineage_allows_commercial_to_research_fork() -> None:
+    parent = _with_identity(_manifest(), "commercial-v1", "a" * 64)
+    child = _with_identity(_manifest(), "research-v1", "b" * 64)
+    _set_research_nc(child, parent_id="commercial-v1", parent_sha="a" * 64)
+    _validate_registry_lineage([parent, child])
+
+
+def test_registry_lineage_rejects_noncommercial_to_commercial_backflow() -> None:
+    parent = _with_identity(_manifest(), "research-v1", "a" * 64)
+    _set_research_nc(parent, parent_id="commercial-v0", parent_sha="f" * 64)
+    parent["lineage"]["parent_checkpoint"] = None
+    child = _with_identity(_manifest(), "commercial-v2", "b" * 64)
+    child["lineage"]["parent_checkpoint"] = {"id": "research-v1", "sha256": "a" * 64}
+    with pytest.raises(ValueError, match="may not relax parent license policy|may not descend"):
+        _validate_registry_lineage([parent, child])
+
+
+def test_registry_lineage_rejects_unknown_or_wrong_parent_sha() -> None:
+    parent = _with_identity(_manifest(), "commercial-v1", "a" * 64)
+    child = _with_identity(_manifest(), "research-v1", "b" * 64)
+    _set_research_nc(child, parent_id="commercial-v1", parent_sha="c" * 64)
+    with pytest.raises(ValueError, match="parent checkpoint SHA"):
+        _validate_registry_lineage([parent, child])
+    child["lineage"]["parent_checkpoint"] = {"id": "missing-base", "sha256": "c" * 64}
+    with pytest.raises(ValueError, match="unknown parent Base"):
+        _validate_registry_lineage([parent, child])
+
+
+def test_registry_lineage_rejects_cycles() -> None:
+    first = _with_identity(_manifest(), "first", "a" * 64)
+    second = _with_identity(_manifest(), "second", "b" * 64)
+    first["lineage"]["parent_checkpoint"] = {"id": "second", "sha256": "b" * 64}
+    second["lineage"]["parent_checkpoint"] = {"id": "first", "sha256": "a" * 64}
+    with pytest.raises(ValueError, match="cycle"):
+        _validate_registry_lineage([first, second])
 
 
 def _write_tiny_current_abi_base(root: Path) -> tuple[Path, dict[str, object]]:
@@ -91,11 +250,36 @@ def test_registry_rejects_manifest_parameter_count_that_disagrees_with_checkpoin
         build_base_registry(root)
 
 
+def test_public_registry_rejects_internal_only_base(tmp_path: Path) -> None:
+    root = tmp_path / "bases"
+    base, manifest = _write_tiny_current_abi_base(root)
+    manifest["license"] = "Orbitune-Internal-Only"
+    manifest["lineage"] = {
+        "parent_checkpoint": None,
+        "commercial_eligible": False,
+        "distribution_scope": "internal-only",
+        "license_policy": "restricted",
+        "corpus_registry": "configs/restricted.json",
+        "corpus_manifest_sha256": "2" * 64,
+        "restricted_source_ids": ["hold-source"],
+        "rights_summary": "Internal only",
+    }
+    (base / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="may not be published through the public Base registry"):
+        build_base_registry(root)
+
+
 def test_registry_does_not_mark_nonreference_shape_as_web_compatible(tmp_path: Path) -> None:
     root = tmp_path / "bases"
     _write_tiny_current_abi_base(root)
     registry = build_base_registry(root)
     assert registry["bases"][0]["web_runtime_compatible"] is False
+
+
+def test_registry_exposes_checkpoint_lineage_rights() -> None:
+    manifest = _manifest()
+    _set_research_nc(manifest)
+    assert validate_base_manifest(manifest) == []
 
 
 def test_reference_web_shape_requires_exact_reference_contract() -> None:
