@@ -2,7 +2,7 @@
 
 ## Objective
 
-Build a research-only Orbitune lineage that can reach roughly **1 billion post-dedup active next-event pairs** without weakening the commercial-safe lineage.
+Build a research-only Orbitune lineage that can reach roughly **1 billion post-dedup train active next-event pairs** without weakening the commercial-safe lineage.
 
 The commercial checkpoint remains the clean ancestor. Research/non-commercial data may only enter descendants that are explicitly marked non-commercial.
 
@@ -35,13 +35,15 @@ Commercial v5 source admission continues independently. The OpenScore StringQuar
 
 The commercial-safe corpus does **not** need to reach 1B before training. Its purpose is to provide a clean, auditable ancestor checkpoint.
 
-## 1B metric
+## Exact 1B metric
 
-The 1B target refers to:
+The final 1B completion gate is:
 
 ```text
-POST_DEDUP_ACTIVE_NEXT_EVENT_PAIRS
+RESEARCH_TRAIN_1X_ACTIVE_EVENTS >= 1,000,000,000
 ```
+
+This is the **train split** 1x sampler measurement after conversion, filtering, normalized-event deduplication and composition-grouped splitting. A source-level or pre-split count is planning evidence only.
 
 Do not substitute any of the following:
 
@@ -49,9 +51,20 @@ Do not substitute any of the following:
 - source-reported note events;
 - file count;
 - `TRAIN_RECORDS`;
-- pre-dedup Compound-event count.
+- pre-dedup Compound-event count;
+- source-level retained events before train/validation/test assignment.
 
-Every source must be converted through the production Orbitune representation and measured after the applicable quality gates and normalized-event deduplication.
+The exact research build must also preserve the current count semantics and sampler invariants where applicable:
+
+```text
+TRAIN_RECORDS - TRAIN_SONGS == RESEARCH_TRAIN_1X_ACTIVE_EVENTS
+
+B2/S32 == B4/S64 == B1/S128 == RESEARCH_TRAIN_1X_ACTIVE_EVENTS
+```
+
+If representation semantics change before the research build, document and test the replacement invariant rather than forcing the old equation.
+
+`1B` is a training-corpus target, not a source-admission gate. Rights, provenance and quality gates do not weaken to hit the number.
 
 ## Source classes
 
@@ -83,9 +96,11 @@ Allowed policies:
 
 - `prod-only`: only PROD ancestry; commercial eligibility may be true;
 - `research-nc`: contains RESEARCH_NC ancestry; commercial eligibility must be false;
-- `restricted`: internal/restricted use only; commercial eligibility must be false.
+- `restricted`: internal/restricted use only; commercial eligibility must be false and the checkpoint must remain outside the public `bases/` path.
 
 No research-NC or restricted checkpoint may become the parent of a `commercial_eligible=true` Base.
+
+The checkpoint license must agree with its declared distribution/use boundary. In particular, a research-NC Base may not be published under a standard license that grants commercial use while simultaneously declaring `distribution_scope=noncommercial`.
 
 ## Phase 0 — freeze the commercial ancestor
 
@@ -106,19 +121,52 @@ Training and source expansion are separate decisions. Additional PROD sources ma
 
 GigaMIDI is the first research-NC volume candidate. Do not ingest the entire corpus before measuring it in Orbitune.
 
-Pin an exact dataset revision/release and record the access terms in evidence. Then run deterministic sample censuses, preferably at 10k and 50k files, measuring:
+Pin an exact dataset revision/release and record the access terms in evidence. Use deterministic nested samples so the 10k sample is a subset of the 50k sample. Prefer a stable hash ordering derived from immutable source identity rather than filesystem order.
+
+Run at least 10k and 50k censuses measuring:
 
 - parse success rate;
 - rejected/corrupt rate;
 - active events per file distribution;
+- median, mean, p05, p50, p95 and p99 active events per accepted file;
 - track/instrument distribution;
 - duration and event-count outliers;
 - intra-source normalized-event duplicates;
 - cross-commercial normalized-event overlap;
 - retained active events after quality filters;
-- estimated full-corpus active events with uncertainty bounds.
+- source-level projected retained active events;
+- uncertainty bounds for the projection;
+- projected final **train** 1x active events after applying the current split policy.
+
+Report both sample results independently. If the 10k and 50k projections materially disagree, do not extrapolate from the smaller sample.
 
 A source-reported MIDI note count is planning evidence only. It is not the Orbitune 1B metric.
+
+### Feasibility report contract
+
+The census report should freeze at least:
+
+```text
+SOURCE_REVISION=
+SOURCE_LICENSE=
+SOURCE_CLASS=RESEARCH_NC
+SAMPLE_SELECTION_METHOD=
+SAMPLE_10K_SHA256=
+SAMPLE_50K_SHA256=
+
+SAMPLE_10K_PARSE_RATE=
+SAMPLE_50K_PARSE_RATE=
+SAMPLE_10K_POST_DEDUP_ACTIVE_EVENTS=
+SAMPLE_50K_POST_DEDUP_ACTIVE_EVENTS=
+
+PROJECTED_SOURCE_POST_DEDUP_ACTIVE_EVENTS=
+PROJECTED_RESEARCH_TRAIN_1X_ACTIVE_EVENTS=
+PROJECTION_INTERVAL=
+
+PROCEED_TO_EXACT_BUILD=YES/NO
+```
+
+No full-source build is authorized solely because a raw/source note count exceeds 1B.
 
 ## Phase 2 — exact GigaMIDI research corpus
 
@@ -130,12 +178,35 @@ If the feasibility census supports proceeding and the research-use evidence rema
 4. run intra-source normalized-event dedup;
 5. run cross-commercial normalized-event dedup;
 6. freeze a manifest and corpus identity;
-7. measure exact post-dedup active events.
+7. perform composition-grouped train/validation/test splitting;
+8. measure exact train/validation/test counts;
+9. run the 1x sampler invariant;
+10. calculate the exact remaining deficit to 1B.
 
-The first target is approximately:
+The exact build, not the source-level projection, determines whether GigaMIDI alone reaches the target.
+
+Required exact report fields:
 
 ```text
-commercial-clean contribution + retained research-NC contribution >= 1,000,000,000 active events
+RESEARCH_MANIFEST_SHA256=
+RESEARCH_TRAIN_CORPUS_IDENTITY=
+
+RESEARCH_TRAIN_SONGS=
+RESEARCH_TRAIN_RECORDS=
+RESEARCH_VAL_SONGS=
+RESEARCH_VAL_RECORDS=
+RESEARCH_TEST_SONGS=
+RESEARCH_TEST_RECORDS=
+
+SAMPLER_B2_S32=
+SAMPLER_B4_S64=
+SAMPLER_B1_S128=
+RESEARCH_TRAIN_1X_ACTIVE_EVENTS=
+SAMPLER_INVARIANT=PASS/FAIL
+RECORD_EVENT_RELATION=PASS/FAIL
+
+DEFICIT_TO_1B=max(0, 1,000,000,000 - RESEARCH_TRAIN_1X_ACTIVE_EVENTS)
+ONE_B_TARGET_REACHED=YES/NO
 ```
 
 Do not ingest extra data merely to exceed the number if quality measurements deteriorate.
@@ -146,7 +217,9 @@ Aria-MIDI is a second research-NC candidate, primarily for expressive solo-piano
 
 Use the official pruned/deduplicated generative-model subset rather than the unfiltered full set unless measurements justify otherwise. Before admission, measure cross-overlap with both the commercial corpus and GigaMIDI.
 
-Aria-MIDI is not required if GigaMIDI already supplies sufficient high-quality volume and the desired instrumentation balance. It may still be useful as a controlled expressive-piano mixture.
+Aria-MIDI is not required if the exact GigaMIDI research build already supplies sufficient high-quality volume and the desired instrumentation balance. It may still be useful as a controlled expressive-piano mixture, but adding it becomes a quality/coverage decision rather than a 1B volume requirement.
+
+Any Aria addition must recompute the exact combined train split and sampler measurement. Do not add its source-level events arithmetically to the previous train total.
 
 ## Phase 4 — mixture and quality gate
 
@@ -165,6 +238,8 @@ Evaluate at least:
 
 Treat mixture weights as empirical hyperparameters, not rights classifications.
 
+A larger raw corpus is not automatically better. If a source dominates the mixture, cap or down-weight it rather than weakening quality filters.
+
 ## Phase 5 — research-NC Base training
 
 The research Base must descend from the frozen commercial-clean checkpoint and carry:
@@ -172,11 +247,14 @@ The research Base must descend from the frozen commercial-clean checkpoint and c
 ```text
 commercial_eligible=false
 license_policy=research-nc
+distribution_scope=noncommercial
 ```
 
 Its manifest must pin the parent checkpoint SHA-256 and the exact research corpus manifest SHA-256.
 
 Do not copy, merge, distill, backport, or otherwise transfer research-NC weights into a commercial-eligible lineage.
+
+Training authorization remains separate from corpus authorization. Reaching 1B does not itself start LR calibration or training.
 
 ## Distribution rule
 
@@ -185,8 +263,10 @@ Dataset permission to train does not automatically establish permission to distr
 `distribution_scope` must therefore be set independently of `commercial_eligible`:
 
 - `commercial`: checkpoint distribution is compatible with the commercial lineage policy;
-- `noncommercial`: distribution, if performed, is explicitly non-commercial;
+- `noncommercial`: public distribution, if performed, is explicitly non-commercial and the checkpoint license/terms must be compatible with that restriction;
 - `internal-only`: no public checkpoint distribution until the relevant rights/terms are resolved.
+
+`internal-only` and `restricted` Bases are not accepted by the public repository Base registry or `scripts/add_base.py`. They must stay in a separate private artifact store.
 
 For an NC-trained checkpoint, default conservatively to `noncommercial` or `internal-only` according to the source-specific evidence. Do not infer commercial checkpoint rights from third-party model releases trained on similar data.
 
@@ -211,4 +291,4 @@ After the commercial v5 integration PR is closed, the next research task is:
 GIGAMIDI_EXACT_REVISION_AND_10K_50K_ORBITUNE_CENSUS
 ```
 
-Output must include the measured active-event retention rate and a projected post-dedup contribution to the 1B target before any full GigaMIDI build is authorized.
+Its output must include measured active-event retention, uncertainty, projected final train contribution and a `PROCEED_TO_EXACT_BUILD` decision before any full GigaMIDI build is authorized.
