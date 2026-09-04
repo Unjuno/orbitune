@@ -20,5 +20,8 @@ Rules:
 - Each individual checkpoint/ONNX file must remain below 95 MiB in the current repository policy.
 - The current legacy/reference rank-4 LoRA ABI supports Bases implementing `orbitune-midi-gpt-v0` / `theory-remi-v0` with the 4x448 model shape. The experimental Compound production direction is not yet a frozen Base/Adapter ABI. Other Base architectures may be registered, but require a compatible Adapter ABI and runtime implementation before adapters are accepted or browser inference is enabled.
 - `manifest.json` records exact checkpoint and web ONNX SHA-256 values.
+- `manifest.json` also records immutable corpus/checkpoint rights lineage: parent checkpoint identity, corpus registry and manifest SHA-256, commercial eligibility, distribution scope, license policy, restricted source ids, and a rights summary.
+- `commercial_eligible=true` is only valid for `license_policy=prod-only` with `distribution_scope=commercial` and no restricted source ids.
+- A Base containing `research-nc` or `restricted` ancestry must remain `commercial_eligible=false`; those weights must not be backported, merged, or distilled into a commercial-eligible lineage.
 
 `registry/bases.json` is generated from these directories; do not hand-edit generated registry entries.
