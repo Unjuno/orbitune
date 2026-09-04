@@ -20,12 +20,24 @@ from orbitune.compat import (
 BASE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 REQUIRED_FIELDS = {
     "artifact_type", "id", "display_name", "architecture", "tokenizer",
-    "parameter_count", "checkpoint", "web_onnx", "license", "training_data", "tags",
+    "parameter_count", "checkpoint", "web_onnx", "license", "training_data", "lineage", "tags",
 }
 OPTIONAL_FIELDS = {"description", "author"}
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
 MAX_BASE_FILE_BYTES = 95 * 1024 * 1024
 TRAINING_DATA_FIELDS = {"source_type", "license", "rights_confirmed", "notes"}
+LINEAGE_FIELDS = {
+    "parent_checkpoint",
+    "commercial_eligible",
+    "distribution_scope",
+    "license_policy",
+    "corpus_registry",
+    "corpus_manifest_sha256",
+    "restricted_source_ids",
+    "rights_summary",
+}
+LICENSE_POLICIES = {"prod-only", "research-nc", "restricted"}
+DISTRIBUTION_SCOPES = {"commercial", "noncommercial", "internal-only"}
 
 
 def load_base_manifest(path: str | Path) -> dict[str, Any]:
@@ -40,6 +52,88 @@ def _safe_artifact_filename(value: object) -> bool:
         return False
     path = Path(value)
     return path.name == value and value not in {".", ".."}
+
+
+def _validate_parent_checkpoint(value: object, errors: list[str]) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        errors.append("lineage.parent_checkpoint must be null or an object")
+        return
+    if set(value) != {"id", "sha256"}:
+        errors.append("lineage.parent_checkpoint must contain exactly id and sha256")
+        return
+    parent_id = value.get("id")
+    parent_sha = value.get("sha256")
+    if not isinstance(parent_id, str) or not BASE_ID_RE.fullmatch(parent_id):
+        errors.append("lineage.parent_checkpoint.id must match ^[a-z0-9][a-z0-9-]*$")
+    if not isinstance(parent_sha, str) or not validate_sha256(parent_sha):
+        errors.append("lineage.parent_checkpoint.sha256 must be a 64-character SHA-256")
+
+
+def _validate_lineage(lineage: object, errors: list[str]) -> None:
+    if not isinstance(lineage, dict):
+        errors.append("lineage must be an object")
+        return
+    missing = sorted(LINEAGE_FIELDS - lineage.keys())
+    unknown = sorted(lineage.keys() - LINEAGE_FIELDS)
+    if missing:
+        errors.append(f"lineage missing required fields: {', '.join(missing)}")
+    if unknown:
+        errors.append(f"unknown lineage fields: {', '.join(unknown)}")
+
+    _validate_parent_checkpoint(lineage.get("parent_checkpoint"), errors)
+
+    commercial_eligible = lineage.get("commercial_eligible")
+    if not isinstance(commercial_eligible, bool):
+        errors.append("lineage.commercial_eligible must be a boolean")
+
+    distribution_scope = lineage.get("distribution_scope")
+    if distribution_scope not in DISTRIBUTION_SCOPES:
+        errors.append(
+            "lineage.distribution_scope must be one of commercial, noncommercial, internal-only"
+        )
+
+    license_policy = lineage.get("license_policy")
+    if license_policy not in LICENSE_POLICIES:
+        errors.append("lineage.license_policy must be one of prod-only, research-nc, restricted")
+
+    corpus_registry = lineage.get("corpus_registry")
+    if not isinstance(corpus_registry, str) or not corpus_registry.strip():
+        errors.append("lineage.corpus_registry is required")
+
+    corpus_sha = lineage.get("corpus_manifest_sha256")
+    if not isinstance(corpus_sha, str) or not validate_sha256(corpus_sha):
+        errors.append("lineage.corpus_manifest_sha256 must be a 64-character SHA-256")
+
+    restricted_source_ids = lineage.get("restricted_source_ids")
+    if (
+        not isinstance(restricted_source_ids, list)
+        or any(not isinstance(source_id, str) or not source_id for source_id in restricted_source_ids)
+    ):
+        errors.append("lineage.restricted_source_ids must be an array of non-empty strings")
+    elif len(restricted_source_ids) != len(set(restricted_source_ids)):
+        errors.append("lineage.restricted_source_ids must not contain duplicates")
+
+    rights_summary = lineage.get("rights_summary")
+    if not isinstance(rights_summary, str) or not rights_summary.strip():
+        errors.append("lineage.rights_summary is required")
+
+    if commercial_eligible is True:
+        if license_policy != "prod-only":
+            errors.append("commercial-eligible Base must use lineage.license_policy=prod-only")
+        if distribution_scope != "commercial":
+            errors.append("commercial-eligible Base must use lineage.distribution_scope=commercial")
+        if isinstance(restricted_source_ids, list) and restricted_source_ids:
+            errors.append("commercial-eligible Base must not list restricted_source_ids")
+    elif commercial_eligible is False:
+        if license_policy == "prod-only":
+            errors.append("non-commercial Base must not use lineage.license_policy=prod-only")
+        if distribution_scope == "commercial":
+            errors.append("non-commercial Base must not use lineage.distribution_scope=commercial")
+
+    if license_policy == "restricted" and distribution_scope != "internal-only":
+        errors.append("restricted Base must use lineage.distribution_scope=internal-only")
 
 
 def validate_base_manifest(manifest: dict[str, Any]) -> list[str]:
@@ -96,6 +190,7 @@ def validate_base_manifest(manifest: dict[str, Any]) -> list[str]:
             errors.append("training_data.rights_confirmed must be true")
         if "notes" in training and not isinstance(training["notes"], str):
             errors.append("training_data.notes must be a string")
+    _validate_lineage(manifest.get("lineage"), errors)
     tags = manifest.get("tags")
     if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
         errors.append("tags must be an array of strings")
@@ -185,6 +280,7 @@ def build_base_registry(root: str | Path = "bases") -> dict[str, Any]:
         seen.add(base_id)
         model = _validate_current_checkpoint(directory / manifest["checkpoint"]["filename"], manifest)
         web_runtime_compatible = _reference_web_shape(model, manifest)
+        lineage = manifest["lineage"]
         bases.append({
             "id": base_id,
             "display_name": manifest["display_name"],
@@ -198,7 +294,15 @@ def build_base_registry(root: str | Path = "bases") -> dict[str, Any]:
             "web_onnx_url": f"./bases/{base_id}/{manifest['web_onnx']['filename']}",
             "web_runtime_compatible": web_runtime_compatible,
             "license": manifest["license"],
+            "commercial_eligible": lineage["commercial_eligible"],
+            "distribution_scope": lineage["distribution_scope"],
+            "license_policy": lineage["license_policy"],
+            "parent_checkpoint": lineage["parent_checkpoint"],
+            "corpus_registry": lineage["corpus_registry"],
+            "corpus_manifest_sha256": lineage["corpus_manifest_sha256"],
+            "restricted_source_ids": lineage["restricted_source_ids"],
+            "rights_summary": lineage["rights_summary"],
             "tags": manifest.get("tags", []),
         })
     bases.sort(key=lambda item: (item["display_name"].lower(), item["id"]))
-    return {"schema_version": "0.2.0", "bases": bases}
+    return {"schema_version": "0.3.0", "bases": bases}
