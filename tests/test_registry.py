@@ -15,7 +15,7 @@ def _sha(data: bytes) -> str: return hashlib.sha256(data).hexdigest()
 
 def _write_base(root: Path, base_id: str, checkpoint: bytes = b"base-checkpoint") -> str:
     directory=root/base_id; directory.mkdir(parents=True); onnx=b"base-onnx"; (directory/"model.pt").write_bytes(checkpoint); (directory/"web.onnx").write_bytes(onnx); (directory/"README.md").write_text("# test base\n",encoding="utf-8")
-    manifest={"artifact_type":"orbitune_base","id":base_id,"display_name":base_id,"architecture":"orbitune-midi-gpt-v0","tokenizer":"theory-remi-v0","parameter_count":REFERENCE_PARAMETER_COUNT,"checkpoint":{"filename":"model.pt","sha256":_sha(checkpoint),"bytes":len(checkpoint)},"web_onnx":{"filename":"web.onnx","sha256":_sha(onnx),"bytes":len(onnx)},"license":"CC0-1.0","training_data":{"source_type":"synthetic","license":"CC0-1.0","rights_confirmed":True},"tags":["test"]}
+    manifest={"artifact_type":"orbitune_base","id":base_id,"display_name":base_id,"architecture":"orbitune-midi-gpt-v0","tokenizer":"theory-remi-v0","parameter_count":REFERENCE_PARAMETER_COUNT,"checkpoint":{"filename":"model.pt","sha256":_sha(checkpoint),"bytes":len(checkpoint)},"web_onnx":{"filename":"web.onnx","sha256":_sha(onnx),"bytes":len(onnx)},"license":"CC0-1.0","training_data":{"source_type":"synthetic","license":"CC0-1.0","rights_confirmed":True},"lineage":{"parent_checkpoint":None,"commercial_eligible":True,"distribution_scope":"commercial","license_policy":"prod-only","corpus_registry":"configs/test.json","corpus_manifest_sha256":"2"*64,"restricted_source_ids":[],"rights_summary":"PROD-only test corpus"},"tags":["test"]}
     (directory/"manifest.json").write_text(json.dumps(manifest),encoding="utf-8"); return manifest["checkpoint"]["sha256"]
 
 
