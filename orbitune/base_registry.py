@@ -38,6 +38,7 @@ LINEAGE_FIELDS = {
 }
 LICENSE_POLICIES = {"prod-only", "research-nc", "restricted"}
 DISTRIBUTION_SCOPES = {"commercial", "noncommercial", "internal-only"}
+_POLICY_SEVERITY = {"prod-only": 0, "research-nc": 1, "restricted": 2}
 
 
 def load_base_manifest(path: str | Path) -> dict[str, Any]:
@@ -268,16 +269,69 @@ def discover_base_directories(root: str | Path = "bases") -> list[Path]:
     return sorted(path.parent for path in root.glob("*/manifest.json"))
 
 
+def _validate_registry_lineage(manifests: list[dict[str, Any]]) -> None:
+    by_id = {manifest["id"]: manifest for manifest in manifests}
+
+    for manifest in manifests:
+        lineage = manifest["lineage"]
+        parent_spec = lineage["parent_checkpoint"]
+        if parent_spec is None:
+            continue
+        parent = by_id.get(parent_spec["id"])
+        if parent is None:
+            raise ValueError(
+                f"Base {manifest['id']} references unknown parent Base {parent_spec['id']}"
+            )
+        if parent["checkpoint"]["sha256"].lower() != parent_spec["sha256"].lower():
+            raise ValueError(
+                f"Base {manifest['id']} parent checkpoint SHA does not match Base {parent_spec['id']}"
+            )
+        parent_lineage = parent["lineage"]
+        child_severity = _POLICY_SEVERITY[lineage["license_policy"]]
+        parent_severity = _POLICY_SEVERITY[parent_lineage["license_policy"]]
+        if child_severity < parent_severity:
+            raise ValueError(
+                f"Base {manifest['id']} may not relax parent license policy "
+                f"{parent_lineage['license_policy']} to {lineage['license_policy']}"
+            )
+        if lineage["commercial_eligible"] and not parent_lineage["commercial_eligible"]:
+            raise ValueError(
+                f"commercial-eligible Base {manifest['id']} may not descend from non-commercial Base {parent_spec['id']}"
+            )
+
+    for base_id in by_id:
+        path: set[str] = set()
+        current_id = base_id
+        while True:
+            if current_id in path:
+                raise ValueError(f"Base lineage cycle detected at {current_id}")
+            path.add(current_id)
+            parent_spec = by_id[current_id]["lineage"]["parent_checkpoint"]
+            if parent_spec is None:
+                break
+            current_id = parent_spec["id"]
+            if current_id not in by_id:
+                break
+
+
 def build_base_registry(root: str | Path = "bases") -> dict[str, Any]:
     root = Path(root)
-    bases: list[dict[str, Any]] = []
+    directories = discover_base_directories(root)
+    validated: list[tuple[Path, dict[str, Any]]] = []
     seen: set[str] = set()
-    for directory in discover_base_directories(root):
+    for directory in directories:
         manifest = validate_base_directory(directory)
         base_id = manifest["id"]
         if base_id in seen:
             raise ValueError(f"duplicate Base id: {base_id}")
         seen.add(base_id)
+        validated.append((directory, manifest))
+
+    _validate_registry_lineage([manifest for _, manifest in validated])
+
+    bases: list[dict[str, Any]] = []
+    for directory, manifest in validated:
+        base_id = manifest["id"]
         model = _validate_current_checkpoint(directory / manifest["checkpoint"]["filename"], manifest)
         web_runtime_compatible = _reference_web_shape(model, manifest)
         lineage = manifest["lineage"]
