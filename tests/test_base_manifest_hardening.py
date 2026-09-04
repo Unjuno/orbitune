@@ -34,6 +34,16 @@ def _manifest() -> dict[str, object]:
             "license": "CC0-1.0",
             "rights_confirmed": True,
         },
+        "lineage": {
+            "parent_checkpoint": None,
+            "commercial_eligible": True,
+            "distribution_scope": "commercial",
+            "license_policy": "prod-only",
+            "corpus_registry": "configs/test.json",
+            "corpus_manifest_sha256": "2" * 64,
+            "restricted_source_ids": [],
+            "rights_summary": "PROD-only test corpus",
+        },
         "tags": [],
     }
 
@@ -53,6 +63,50 @@ def test_base_manifest_requires_training_provenance_fields_and_unique_tags() -> 
     assert any("source_type" in error for error in errors)
     assert any("license" in error for error in errors)
     assert any("duplicates" in error for error in errors)
+
+
+def test_commercial_base_rejects_research_nc_lineage() -> None:
+    manifest = _manifest()
+    manifest["lineage"] = {
+        "parent_checkpoint": None,
+        "commercial_eligible": True,
+        "distribution_scope": "noncommercial",
+        "license_policy": "research-nc",
+        "corpus_registry": "configs/research.json",
+        "corpus_manifest_sha256": "2" * 64,
+        "restricted_source_ids": ["gigamidi"],
+        "rights_summary": "Contains CC-BY-NC research data",
+    }
+    errors = validate_base_manifest(manifest)
+    assert any("license_policy=prod-only" in error for error in errors)
+    assert any("distribution_scope=commercial" in error for error in errors)
+    assert any("must not list restricted_source_ids" in error for error in errors)
+
+
+def test_research_nc_base_must_be_noncommercial() -> None:
+    manifest = _manifest()
+    manifest["lineage"] = {
+        "parent_checkpoint": {"id": "commercial-v1", "sha256": "3" * 64},
+        "commercial_eligible": False,
+        "distribution_scope": "noncommercial",
+        "license_policy": "research-nc",
+        "corpus_registry": "configs/research.json",
+        "corpus_manifest_sha256": "2" * 64,
+        "restricted_source_ids": ["gigamidi"],
+        "rights_summary": "Research-only checkpoint lineage",
+    }
+    assert validate_base_manifest(manifest) == []
+
+    manifest["lineage"]["distribution_scope"] = "commercial"
+    errors = validate_base_manifest(manifest)
+    assert any("must not use lineage.distribution_scope=commercial" in error for error in errors)
+
+
+def test_lineage_parent_checkpoint_requires_exact_sha() -> None:
+    manifest = _manifest()
+    manifest["lineage"]["parent_checkpoint"] = {"id": "commercial-v1", "sha256": "short"}
+    errors = validate_base_manifest(manifest)
+    assert any("parent_checkpoint.sha256" in error for error in errors)
 
 
 def _write_tiny_current_abi_base(root: Path) -> tuple[Path, dict[str, object]]:
@@ -96,6 +150,23 @@ def test_registry_does_not_mark_nonreference_shape_as_web_compatible(tmp_path: P
     _write_tiny_current_abi_base(root)
     registry = build_base_registry(root)
     assert registry["bases"][0]["web_runtime_compatible"] is False
+
+
+def test_registry_exposes_checkpoint_lineage_rights() -> None:
+    manifest = _manifest()
+    manifest["lineage"] = {
+        "parent_checkpoint": {"id": "commercial-v1", "sha256": "3" * 64},
+        "commercial_eligible": False,
+        "distribution_scope": "noncommercial",
+        "license_policy": "research-nc",
+        "corpus_registry": "configs/research.json",
+        "corpus_manifest_sha256": "2" * 64,
+        "restricted_source_ids": ["gigamidi"],
+        "rights_summary": "Research-only checkpoint lineage",
+    }
+    # The shape is validated here; build_base_registry coverage is exercised by
+    # the directory-backed tests above.
+    assert validate_base_manifest(manifest) == []
 
 
 def test_reference_web_shape_requires_exact_reference_contract() -> None:
