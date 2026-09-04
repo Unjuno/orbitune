@@ -5,6 +5,140 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["artifact_type", "id", "display_name", "architecture", "tokenizer", "parameter_count", "checkpoint", "web_onnx", "license", "training_data", "lineage", "tags"],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "lineage": {
+            "properties": {"commercial_eligible": {"const": true}},
+            "required": ["commercial_eligible"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "lineage": {
+            "properties": {
+              "license_policy": {"const": "prod-only"},
+              "distribution_scope": {"const": "commercial"},
+              "restricted_source_ids": {"maxItems": 0}
+            }
+          },
+          "license": {
+            "not": {
+              "enum": [
+                "CC-BY-NC-3.0",
+                "CC-BY-NC-4.0",
+                "CC-BY-NC-SA-3.0",
+                "CC-BY-NC-SA-4.0"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "lineage": {
+            "properties": {"commercial_eligible": {"const": false}},
+            "required": ["commercial_eligible"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "lineage": {
+            "properties": {
+              "license_policy": {"enum": ["research-nc", "restricted"]},
+              "distribution_scope": {"enum": ["noncommercial", "internal-only"]}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "lineage": {
+            "properties": {"license_policy": {"const": "restricted"}},
+            "required": ["license_policy"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "lineage": {
+            "properties": {
+              "commercial_eligible": {"const": false},
+              "distribution_scope": {"const": "internal-only"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "lineage": {
+            "properties": {"license_policy": {"const": "research-nc"}},
+            "required": ["license_policy"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "lineage": {
+            "properties": {
+              "commercial_eligible": {"const": false},
+              "distribution_scope": {"enum": ["noncommercial", "internal-only"]}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "lineage": {
+            "properties": {"distribution_scope": {"enum": ["noncommercial", "internal-only"]}},
+            "required": ["distribution_scope"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "license": {
+            "not": {
+              "enum": [
+                "Apache-2.0",
+                "MIT",
+                "BSD-2-Clause",
+                "BSD-3-Clause",
+                "ISC",
+                "MPL-2.0",
+                "GPL-2.0",
+                "GPL-2.0-only",
+                "GPL-3.0",
+                "GPL-3.0-only",
+                "AGPL-3.0",
+                "AGPL-3.0-only",
+                "LGPL-2.1",
+                "LGPL-2.1-only",
+                "LGPL-3.0",
+                "LGPL-3.0-only",
+                "CC0-1.0",
+                "CC-BY-3.0",
+                "CC-BY-4.0",
+                "CC-BY-SA-3.0",
+                "CC-BY-SA-4.0"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "artifact_type": {"const": "orbitune_base"},
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
