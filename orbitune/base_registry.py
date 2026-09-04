@@ -40,6 +40,34 @@ LICENSE_POLICIES = {"prod-only", "research-nc", "restricted"}
 DISTRIBUTION_SCOPES = {"commercial", "noncommercial", "internal-only"}
 _POLICY_SEVERITY = {"prod-only": 0, "research-nc": 1, "restricted": 2}
 
+# These common licenses permit commercial use. A Base that is declared
+# noncommercial/internal-only cannot simultaneously publish its checkpoint
+# under one of them. Custom/source-specific terms remain reviewable rather than
+# being guessed here.
+COMMERCIAL_USE_LICENSE_IDS = {
+    "apache-2.0",
+    "mit",
+    "bsd-2-clause",
+    "bsd-3-clause",
+    "isc",
+    "mpl-2.0",
+    "gpl-2.0",
+    "gpl-2.0-only",
+    "gpl-3.0",
+    "gpl-3.0-only",
+    "agpl-3.0",
+    "agpl-3.0-only",
+    "lgpl-2.1",
+    "lgpl-2.1-only",
+    "lgpl-3.0",
+    "lgpl-3.0-only",
+    "cc0-1.0",
+    "cc-by-3.0",
+    "cc-by-4.0",
+    "cc-by-sa-3.0",
+    "cc-by-sa-4.0",
+}
+
 
 def load_base_manifest(path: str | Path) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -137,6 +165,23 @@ def _validate_lineage(lineage: object, errors: list[str]) -> None:
         errors.append("restricted Base must use lineage.distribution_scope=internal-only")
 
 
+def _validate_checkpoint_license_scope(manifest: dict[str, Any], errors: list[str]) -> None:
+    lineage = manifest.get("lineage")
+    checkpoint_license = manifest.get("license")
+    if not isinstance(lineage, dict) or not isinstance(checkpoint_license, str):
+        return
+    scope = lineage.get("distribution_scope")
+    normalized = checkpoint_license.strip().lower()
+    if scope in {"noncommercial", "internal-only"} and normalized in COMMERCIAL_USE_LICENSE_IDS:
+        errors.append(
+            "noncommercial/internal-only Base must not use a standard checkpoint license that permits commercial use"
+        )
+    if scope == "commercial" and (
+        "-nc" in normalized or "noncommercial" in normalized or "non-commercial" in normalized
+    ):
+        errors.append("commercial Base checkpoint license must not contain a noncommercial restriction")
+
+
 def validate_base_manifest(manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     missing = sorted(REQUIRED_FIELDS - manifest.keys())
@@ -192,6 +237,7 @@ def validate_base_manifest(manifest: dict[str, Any]) -> list[str]:
         if "notes" in training and not isinstance(training["notes"], str):
             errors.append("training_data.notes must be a string")
     _validate_lineage(manifest.get("lineage"), errors)
+    _validate_checkpoint_license_scope(manifest, errors)
     tags = manifest.get("tags")
     if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
         errors.append("tags must be an array of strings")
@@ -269,6 +315,14 @@ def discover_base_directories(root: str | Path = "bases") -> list[Path]:
     return sorted(path.parent for path in root.glob("*/manifest.json"))
 
 
+def _validate_public_registry_policy(manifest: dict[str, Any]) -> None:
+    lineage = manifest["lineage"]
+    if lineage["distribution_scope"] == "internal-only" or lineage["license_policy"] == "restricted":
+        raise ValueError(
+            f"Base {manifest['id']} is restricted/internal-only and may not be published through the public Base registry"
+        )
+
+
 def _validate_registry_lineage(manifests: list[dict[str, Any]]) -> None:
     by_id = {manifest["id"]: manifest for manifest in manifests}
 
@@ -325,6 +379,7 @@ def build_base_registry(root: str | Path = "bases") -> dict[str, Any]:
         if base_id in seen:
             raise ValueError(f"duplicate Base id: {base_id}")
         seen.add(base_id)
+        _validate_public_registry_policy(manifest)
         validated.append((directory, manifest))
 
     _validate_registry_lineage([manifest for _, manifest in validated])
