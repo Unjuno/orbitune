@@ -20,6 +20,7 @@ A Base id is an immutable compatibility lineage. Never replace the checkpoint by
 - each Base binary artifact: <= 95 MiB
 - checkpoint and Web artifact must both be committed under the Base directory for the currently supported contribution path
 - exact SHA-256 and byte counts are mandatory in `manifest.json`
+- `bases/` is a **public distribution path**; restricted/internal-only checkpoints must never be staged or committed here
 
 ## ABI status
 
@@ -59,25 +60,29 @@ Required lineage fields are:
 
 `parent_checkpoint`, when present, must contain both a Base id and the exact parent checkpoint SHA-256.
 
-Allowed license policies:
+Allowed lineage policies are:
 
 - `prod-only`: only commercial-safe/PROD ancestry;
 - `research-nc`: includes non-commercial research ancestry;
-- `restricted`: internal/restricted ancestry that must not be publicly distributed until its conditions are resolved.
+- `restricted`: internal/restricted ancestry whose checkpoint must not enter this public repository path.
 
-Allowed distribution scopes:
+Allowed distribution scopes are:
 
 - `commercial`;
 - `noncommercial`;
 - `internal-only`.
 
-The validator enforces the following hard boundaries:
+The manifest validator enforces the following hard boundaries:
 
 - `commercial_eligible=true` requires `license_policy=prod-only`;
 - `commercial_eligible=true` requires `distribution_scope=commercial`;
 - a commercial-eligible Base may not list restricted source ids;
 - `research-nc` and `restricted` Bases must be `commercial_eligible=false`;
-- a `restricted` Base must use `distribution_scope=internal-only`.
+- a `restricted` Base must use `distribution_scope=internal-only`;
+- a noncommercial/internal-only Base may not use a standard checkpoint license such as Apache-2.0, MIT, GPL, CC0 or CC-BY that grants commercial use;
+- a commercial Base may not declare a checkpoint license containing a noncommercial restriction.
+
+The public registry adds a second fail-closed boundary: `restricted` or `internal-only` Base manifests are rejected even if their generic manifest is otherwise structurally valid. Internal checkpoints belong in a separate, non-public artifact store and are not staged with `scripts/add_base.py`.
 
 This metadata does not manufacture rights. It records the result of the source/corpus audit and makes lineage mistakes mechanically visible.
 
@@ -114,7 +119,7 @@ python scripts/add_base.py \
   --display-name "My Research-NC Base" \
   --checkpoint models/my-research.pt \
   --web-onnx my-research-web.onnx \
-  --license Apache-2.0 \
+  --license CC-BY-NC-SA-4.0 \
   --training-license "mixed PROD + NC research" \
   --rights-confirmed \
   --commercial-eligible false \
@@ -128,7 +133,9 @@ python scripts/add_base.py \
   --rights-summary "Research-only descendant; contains non-commercial training data"
 ```
 
-This copies the artifacts into `bases/<id>/`, computes SHA-256 values, validates the rights contract, and creates the manifest/README. `--id` is validated before any output path is created, so Base ids cannot escape the configured output root.
+The research example uses an explicitly noncommercial checkpoint license so the checkpoint license does not contradict `distribution_scope=noncommercial`. A source-specific audit may require different noncommercial/custom terms; do not infer checkpoint licensing from the dataset license alone.
+
+This copies the public-distributable artifacts into `bases/<id>/`, computes SHA-256 values, validates the rights contract, and creates the manifest/README. `--id` is validated before any output path is created, so Base ids cannot escape the configured output root. The staging CLI rejects `restricted` and `internal-only` Bases before it copies any artifacts.
 
 Then regenerate registries:
 
