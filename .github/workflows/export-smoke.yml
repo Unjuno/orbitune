@@ -93,6 +93,12 @@ jobs:
             --training-license test-only \
             --rights-confirmed \
             --source-type synthetic_smoke \
+            --commercial-eligible true \
+            --distribution-scope commercial \
+            --license-policy prod-only \
+            --corpus-registry configs/synthetic-smoke.json \
+            --corpus-manifest-sha256 2222222222222222222222222222222222222222222222222222222222222222 \
+            --rights-summary 'Synthetic PROD-only smoke corpus' \
             --out-root /tmp/orbitune-bases
           python scripts/build_registry.py \
             --bases /tmp/orbitune-bases \
@@ -107,7 +113,12 @@ jobs:
           assert manifest['tokenizer']=='theory-remi-v0'
           assert manifest['parameter_count']==10_200_960
           assert manifest['training_data']['rights_confirmed'] is True
+          assert manifest['lineage']['commercial_eligible'] is True
+          assert manifest['lineage']['license_policy']=='prod-only'
+          assert manifest['lineage']['distribution_scope']=='commercial'
           assert registry['bases'][0]['checkpoint_sha256']==manifest['checkpoint']['sha256']
+          assert registry['bases'][0]['commercial_eligible'] is True
+          assert registry['bases'][0]['license_policy']=='prod-only'
           assert registry['bases'][0]['web_runtime_compatible'] is True
           print('repository Base staging contract PASS')
           PY
