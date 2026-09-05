@@ -322,7 +322,11 @@ def collect_entries(
 
     accepted: list[CorpusEntry] = []
     rejected: list[dict[str, str]] = []
-    for path, meta in candidates:
+    import sys
+    import time
+    t0 = time.time()
+    last_log = t0
+    for idx, (path, meta) in enumerate(candidates):
         license_id = str(meta.get("license") or source.license)
         if source.id == "mutopia":
             detected = mutopia_license_for_midi(path, source_root=root, converted_root=converted_root)
@@ -363,6 +367,16 @@ def collect_entries(
                 quality_flags=tuple(flags),
             )
         )
+        now = time.time()
+        if now - last_log > 10.0:
+            elapsed = now - t0
+            print(
+                f"[collect] source={source.id} processed={idx + 1}/{len(candidates)} "
+                f"accepted={len(accepted)} rejected={len(rejected)} elapsed={elapsed:.1f}s",
+                file=sys.stderr,
+                flush=True,
+            )
+            last_log = now
     return accepted, rejected
 
 

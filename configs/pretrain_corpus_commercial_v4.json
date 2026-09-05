@@ -20,7 +20,7 @@
       "filters": ["no_license_conflict", "midi_available"],
       "quality_weight": 1.0,
       "v3_filters_relaxed": ["deduplicated"],
-      "v4_relaxation_note": "PDMX upstream 'deduplicated' flag is dropped. Replacement dedup is Orbitune's cross-source composition-fingerprint dedup applied at corpus build time. License gate ('no_license_conflict') is preserved."
+      "v4_relaxation_note": "PDMX upstream 'deduplicated' flag is dropped. Replacement production dedup is Orbitune's exact normalized-event fingerprint dedup applied at corpus build time; composition_fingerprint_v1 remains the conservative split-grouping key. License gate ('no_license_conflict') is preserved."
     },
     {
       "id": "openscore_lieder",

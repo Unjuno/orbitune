@@ -37,3 +37,10 @@ def test_reservoir_never_exceeds_limit() -> None:
     for seen in range(1, 101):
         MOD._reservoir_add(reservoir, {"pae": str(seen)}, seen=seen, limit=7, rng=rng)
     assert len(reservoir) == 7
+
+
+def test_verovio_logging_uses_logging_api_not_toolkit_option() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert '"logLevel"' not in source
+    assert "enableLogToBuffer" in source
+    assert "enableLog(verovio.LOG_WARNING)" in source

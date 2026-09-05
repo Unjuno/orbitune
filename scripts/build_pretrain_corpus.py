@@ -4,6 +4,8 @@ import argparse
 import json
 import shutil
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 from orbitune.compound_indexed import build_indexed_compound_dataset
@@ -303,6 +305,8 @@ def main() -> None:
                 f"missing installed source {source.id}: {source_root}. "
                 "Run scripts/install_pretrain_corpora.py first."
             )
+        t0 = time.time()
+        print(f"[build] start source={source.id} kind={source.kind} root={source_root}", flush=True)
         conversion: dict[str, object] = {"score_candidates": 0, "converted": 0, "cached": 0, "failed": []}
         converted_root: Path | None = None
         if source.kind in {"git_scores", "huggingface_score_snapshot"}:
@@ -343,6 +347,8 @@ def main() -> None:
             detail = f" ({blocked})" if blocked else ""
             raise SystemExit(f"source {source.id} produced zero usable MIDI files{detail}")
         all_entries.extend(entries)
+        elapsed = time.time() - t0
+        print(f"[build] end source={source.id} accepted={len(entries)} events={sum(e.events for e in entries)} rejected={len(rejected)} elapsed={elapsed:.1f}s", flush=True)
         source_reports[source.id] = {
             "accepted_before_cross_dedup": len(entries),
             "events_before_cross_dedup": sum(entry.events for entry in entries),

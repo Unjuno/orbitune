@@ -1,0 +1,80 @@
+{
+  "registry_name": "orbitune-commercial-safe-v4",
+  "registry": "configs/pretrain_corpus_commercial_v4.json",
+  "manifest_path": "C:\\\\ov4\\\\manifest.jsonl",
+  "V4_MANIFEST_SHA256": "1c582a08a3087952a57a604b5652cae2bef6dd4e6acb2addc5eb49cdfbe58c72",
+  "V4_TRAIN_SONGS": 215963,
+  "V4_TRAIN_RECORDS": 234904281,
+  "V4_VAL_SONGS": 11272,
+  "V4_VAL_RECORDS": 14882790,
+  "V4_TEST_SONGS": 2241,
+  "V4_TEST_RECORDS": 2250394,
+  "V4_TRAIN_CORPUS_IDENTITY": "61dec03cb00dad05d80f80e01c113f14d7abdc77d52e1d2004ba55f90eee35c6",
+  "V4_SAMPLER_INVARIANT_B2_S32_B4_S64_B1_S128": {
+    "expected_1x": 234688318,
+    "result": "PASS"
+  },
+  "v3_train_songs": 84993,
+  "v3_train_records": 204683325,
+  "V3_MANIFEST_SHA256": "72ca3ee809063eae140f893826957c62ea1eaba6c8988dd08585690ac1eb6fdc",
+  "extra_train_songs": 130970,
+  "extra_train_events": 30220956,
+  "TARGET_1X_EVENTS": 300000000,
+  "HEADROOM_ABOVE_300M": -65095719,
+  "DEFICIT_TO_300M": 65095719,
+  "DECISION": "INSUFFICIENT",
+  "sources_added_vs_v3": [
+    "nrg_cp",
+    "groove_midi_dataset"
+  ],
+  "pdmx_filter_relaxation": {
+    "v3": [
+      "no_license_conflict",
+      "deduplicated",
+      "midi_available"
+    ],
+    "v4": [
+      "no_license_conflict",
+      "midi_available"
+    ],
+    "extra_pdmx_accepted_in_v4_train": 100780
+  },
+  "per_source_train_events": {
+    "pdmx": {
+      "accepted_after_cross_dedup": 172705
+    },
+    "openscore_lieder": {
+      "accepted_after_cross_dedup": 1382
+    },
+    "openscore_string_quartets": {
+      "accepted_after_cross_dedup": 116
+    },
+    "openscore_orchestra": {
+      "accepted_after_cross_dedup": 92
+    },
+    "mutopia": {
+      "accepted_after_cross_dedup": 591
+    },
+    "imslp_midi_cc0": {
+      "accepted_after_cross_dedup": 1037
+    },
+    "florence_price_art_songs": {
+      "accepted_after_cross_dedup": 105
+    },
+    "muse_omr_benchmark": {
+      "accepted_after_cross_dedup": 886
+    },
+    "nifc_polish_scores": {
+      "accepted_after_cross_dedup": 8385
+    },
+    "nifc_chopin_first_editions": {
+      "accepted_after_cross_dedup": 474
+    },
+    "nrg_cp": {
+      "accepted_after_cross_dedup": 29112
+    },
+    "groove_midi_dataset": {
+      "accepted_after_cross_dedup": 1078
+    }
+  }
+}
