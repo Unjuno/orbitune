@@ -58,9 +58,11 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _verify_identity(sid: str) -> None:
-    src_root = OV4 / sid
-    dst_root = OV5 / sid
+def _verify_identity(sid: str, src_root: Path | None = None, dst_root: Path | None = None) -> None:
+    if src_root is None:
+        src_root = OV4 / sid
+    if dst_root is None:
+        dst_root = OV5 / sid
     if not src_root.exists():
         print(f"[verify] {sid}: source {src_root} missing in v4; skipping", flush=True)
         return
