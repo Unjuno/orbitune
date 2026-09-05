@@ -16,6 +16,7 @@ import torch.nn.functional as F
 
 import orbitune.compound_base as compound_base
 from orbitune.compound_base import CompoundBaseConfig, CompoundHierarchicalGPT
+from orbitune.compound_indexed import IndexedCompoundSong, load_indexed_compound_corpus
 from orbitune.compound_training import (
     COMPOUND_CHECKPOINT_SCHEMA_VERSION,
     assert_runtime_compatible,
@@ -27,6 +28,7 @@ from orbitune.compound_training import (
     parse_compound_checkpoint,
     restore_cuda_rng_state,
 )
+from orbitune.indexed_sampling import IndexedTensorSampler
 
 ROOT = Path(__file__).resolve().parents[1]
 _BASE_PATH = ROOT / "scripts" / "compound_cuda_train.py"
@@ -39,6 +41,33 @@ _SPEC.loader.exec_module(base)
 _ORIGINAL_CAUSAL_BIAS = compound_base._causal_bias
 _ORIGINAL_ATTN_FORWARD = compound_base.MultiheadSelfAttention.forward
 _FASTPATH_INSTALLED = False
+
+
+def _is_indexed_corpus(path: str | os.PathLike[str]) -> bool:
+    candidate = Path(path)
+    if candidate.is_dir():
+        return (candidate / "index.json").exists()
+    if candidate.name == "songs.jsonl":
+        return (candidate.parent / "index.json").exists()
+    if candidate.name == "index.json":
+        return candidate.exists()
+    return False
+
+
+def _indexed_index_path(path: str | os.PathLike[str]) -> Path:
+    candidate = Path(path)
+    if candidate.is_dir():
+        return candidate / "index.json"
+    if candidate.name == "songs.jsonl":
+        return candidate.parent / "index.json"
+    return candidate
+
+
+def _load_songs(path: str | os.PathLike[str]):
+    if _is_indexed_corpus(path):
+        corpus = load_indexed_compound_corpus(_indexed_index_path(path))
+        return corpus.songs
+    return load_compound_jsonl(Path(path))
 
 
 def _optimized_attention_forward(self, x: torch.Tensor, attention_bias: torch.Tensor | None) -> torch.Tensor:
@@ -246,7 +275,11 @@ def cfe(args: argparse.Namespace) -> None:
     torch.set_float32_matmul_precision("high")
     base_cfg = base.config_from(args.config)
     heads = candidate_head_counts(base_cfg.d_model, args.head_counts)
-    sampler = base.TensorSampler(load_compound_jsonl(args.train_jsonl))
+    train_songs = _load_songs(args.train_jsonl)
+    if _is_indexed_corpus(args.train_jsonl):
+        sampler = IndexedTensorSampler(train_songs)
+    else:
+        sampler = base.TensorSampler(train_songs)
     results: list[dict[str, Any]] = []
 
     for causal_fastpath in args.fastpaths:
@@ -362,9 +395,12 @@ def train(args: argparse.Namespace) -> None:
                 "Use --allow-synthetic explicitly for benchmark / smoke runs only."
             )
 
-    train_songs = load_compound_jsonl(train_path)
-    validation_songs = load_compound_jsonl(validation_path)
-    train_sampler = base.TensorSampler(train_songs)
+    train_songs = _load_songs(train_path)
+    validation_songs = _load_songs(validation_path)
+    if _is_indexed_corpus(train_path):
+        train_sampler = IndexedTensorSampler(train_songs)
+    else:
+        train_sampler = base.TensorSampler(train_songs)
 
     checkpoint_path = Path(args.checkpoint)
     healthy_path = checkpoint_path.with_name(checkpoint_path.stem + ".healthy.pt")
