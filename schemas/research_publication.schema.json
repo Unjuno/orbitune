@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Orbitune documentation-only research publication record",
+  "description": "Availability metadata, not a Base registry manifest or permission to distribute a checkpoint.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "artifact_type", "id", "publication_status", "public_registry_eligible", "historical_manifest", "historical_manifest_git_blob_sha1", "checkpoint", "lineage", "declared_checkpoint_license", "redistribution_review", "web_export_status", "reported_training", "reported_corpus", "evidence_status", "limitations"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": "1.0.0"},
+    "artifact_type": {"const": "orbitune_research_publication"},
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "publication_status": {"const": "documentation_only"},
+    "public_registry_eligible": {"const": false},
+    "historical_manifest": {"const": "manifest.json"},
+    "historical_manifest_git_blob_sha1": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "checkpoint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sha256", "bytes", "available_in_repository", "download_url", "verification"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "available_in_repository": {"const": false},
+        "download_url": {"type": "null"},
+        "verification": {"const": "reported_local_freeze_not_reverified_by_publication_cleanup"}
+      }
+    },
+    "lineage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["parent_id", "parent_sha256", "commercial_eligible", "license_policy", "use_scope", "restricted_source_ids"],
+      "properties": {
+        "parent_id": {"type": "string", "minLength": 1},
+        "parent_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "commercial_eligible": {"const": false},
+        "license_policy": {"const": "research-nc"},
+        "use_scope": {"const": "noncommercial"},
+        "restricted_source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true, "minItems": 1}
+      }
+    },
+    "declared_checkpoint_license": {"type": "string", "minLength": 1},
+    "redistribution_review": {"const": "not_completed_by_this_cleanup"},
+    "web_export_status": {"const": "not_published"},
+    "reported_training": {
+      "type": "object", "additionalProperties": false,
+      "required": ["global_step", "parent_step", "new_steps", "cumulative_events_seen", "bit_exact_continuation", "unique_event_coverage"],
+      "properties": {
+        "global_step": {"type": "integer", "minimum": 1},
+        "parent_step": {"type": "integer", "minimum": 0},
+        "new_steps": {"type": "integer", "minimum": 1},
+        "cumulative_events_seen": {"type": "integer", "minimum": 0},
+        "bit_exact_continuation": {"const": false},
+        "unique_event_coverage": {"const": "not_established"}
+      }
+    },
+    "reported_corpus": {
+      "type": "object", "additionalProperties": false,
+      "required": ["train_songs", "train_records", "available_active_next_event_pairs", "interpretation", "input_completeness"],
+      "properties": {
+        "train_songs": {"type": "integer", "minimum": 1},
+        "train_records": {"type": "integer", "minimum": 1},
+        "available_active_next_event_pairs": {"type": "integer", "minimum": 0},
+        "interpretation": {"const": "corpus_capacity_not_training_exposure"},
+        "input_completeness": {"const": "not_independently_verified"}
+      }
+    },
+    "evidence_status": {"const": "historical_summary_available_original_local_audits_not_bundled"},
+    "limitations": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true, "minItems": 1}
+  }
+}

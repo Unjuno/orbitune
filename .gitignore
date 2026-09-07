@@ -23,10 +23,36 @@ data/processed/
 data/tokens/
 data/real_midi/
 data/corpora/
+data/compound/
 runs/
 checkpoints/
-outputs/batches/
+outputs/
 wandb/
+raw/
+converted/
+indexes/
+*.i32
+*.u8
+*.parquet
+*.tar
+*.tar.gz
+*.zip
+*.log
+*.log.err
+
+# Credentials and local caches (examples may be reviewed and committed)
+.env
+.env.*
+!.env.example
+.huggingface/
+.cache/
+.hf_token
+hf_token
+cookies.txt
+*.pem
+*.key
+id_rsa
+id_ed25519
 
 # Base model weights: never commit base checkpoints under models/
 models/**/*.pt
@@ -36,7 +62,7 @@ models/**/*.safetensors
 models/**/*.onnx
 models/**/*.bin
 
-# Allow adapter artifacts under adapters/
+# Reviewed legacy Base/Adapter artifacts retain their existing contribution path
 !adapters/**/*.safetensors
 !adapters/**/*.mid
 !adapters/**/manifest.json
@@ -44,5 +70,6 @@ models/**/*.bin
 
 # OS/editor
 .DS_Store
+Thumbs.db
 .idea/
 .vscode/

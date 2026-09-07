@@ -1,0 +1,51 @@
+{
+  "$schema": "../../schemas/research_publication.schema.json",
+  "schema_version": "1.0.0",
+  "artifact_type": "orbitune_research_publication",
+  "id": "research-nc-aria-gigamidi-v1",
+  "publication_status": "documentation_only",
+  "public_registry_eligible": false,
+  "historical_manifest": "manifest.json",
+  "historical_manifest_git_blob_sha1": "0980ada448114bd8028820d16c50aa4ae995fb25",
+  "checkpoint": {
+    "sha256": "8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc",
+    "bytes": 106583212,
+    "available_in_repository": false,
+    "download_url": null,
+    "verification": "reported_local_freeze_not_reverified_by_publication_cleanup"
+  },
+  "lineage": {
+    "parent_id": "research-nc-aria-v1",
+    "parent_sha256": "fb0b86398cd84b0394b323cfe927ca442ac7a93bb3d1d5f1ae0fc4989f1e8369",
+    "commercial_eligible": false,
+    "license_policy": "research-nc",
+    "use_scope": "noncommercial",
+    "restricted_source_ids": ["aria_midi", "gigamidi"]
+  },
+  "declared_checkpoint_license": "CC-BY-NC-SA-4.0",
+  "redistribution_review": "not_completed_by_this_cleanup",
+  "web_export_status": "not_published",
+  "reported_training": {
+    "global_step": 100000,
+    "parent_step": 50000,
+    "new_steps": 50000,
+    "cumulative_events_seen": 409600000,
+    "bit_exact_continuation": false,
+    "unique_event_coverage": "not_established"
+  },
+  "reported_corpus": {
+    "train_songs": 2263855,
+    "train_records": 4071401228,
+    "available_active_next_event_pairs": 4069137373,
+    "interpretation": "corpus_capacity_not_training_exposure",
+    "input_completeness": "not_independently_verified"
+  },
+  "evidence_status": "historical_summary_available_original_local_audits_not_bundled",
+  "limitations": [
+    "historical_sampler_local_rng_not_restored",
+    "known_missing_input_exclusions_not_proven_quality_rejections",
+    "126_song_accounting_discrepancy_not_independently_proven",
+    "uint8_losslessness_and_split_isolation_require_source_evidence",
+    "parse_validity_is_not_musical_quality"
+  ]
+}
