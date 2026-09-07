@@ -416,6 +416,101 @@ def _looks_like_synthetic(path: str | Path) -> bool:
     return any(token in text for token in ("synthetic", "fixture", "cfe/"))
 
 
+def _apply_health_observation(
+    *,
+    step: int,
+    loss_value: float,
+    grad_norm_value: float,
+    loss_history: list[float],
+    grad_history: list[float],
+    spike_events: list[dict[str, Any]],
+    non_finite_loss_count: int,
+    non_finite_grad_count: int,
+    health_history_len: int,
+    spike_min_samples: int,
+    spike_z_threshold: float,
+) -> tuple[int, int]:
+    if not math.isfinite(loss_value):
+        non_finite_loss_count += 1
+    if not math.isfinite(grad_norm_value):
+        non_finite_grad_count += 1
+    loss_history.append(loss_value)
+    grad_history.append(grad_norm_value)
+    if health_history_len > 0 and len(loss_history) > health_history_len:
+        del loss_history[:-health_history_len]
+    if health_history_len > 0 and len(grad_history) > health_history_len:
+        del grad_history[:-health_history_len]
+
+    if len(loss_history) >= spike_min_samples and math.isfinite(loss_value):
+        mean = sum(loss_history) / len(loss_history)
+        var = sum((value - mean) ** 2 for value in loss_history) / len(loss_history)
+        std = math.sqrt(var)
+        if std > 1e-12:
+            zscore = (loss_value - mean) / std
+            if zscore > spike_z_threshold:
+                spike_events.append(
+                    {
+                        "step": step,
+                        "kind": "loss",
+                        "loss": loss_value,
+                        "zscore": float(zscore),
+                        "gradient_norm": grad_norm_value,
+                    }
+                )
+    return non_finite_loss_count, non_finite_grad_count
+
+
+def _flush_health_queue(
+    pending: list[tuple[int, torch.Tensor, torch.Tensor]],
+    *,
+    loss_history: list[float],
+    grad_history: list[float],
+    spike_events: list[dict[str, Any]],
+    non_finite_loss_count: int,
+    non_finite_grad_count: int,
+    health_history_len: int,
+    spike_min_samples: int,
+    spike_z_threshold: float,
+) -> tuple[int, int, float | None, float | None]:
+    """Flush detached loss/grad scalars with one device-to-host transfer.
+
+    CFE training buffers scalar tensors between existing log/eval/checkpoint
+    boundaries so the hot path does not force a CUDA synchronization every
+    optimizer step. Observations are replayed in original step order, which
+    preserves health-history pruning, non-finite counters and spike detection.
+    """
+    if not pending:
+        return non_finite_loss_count, non_finite_grad_count, None, None
+
+    packed = torch.stack(
+        [
+            torch.stack((loss_tensor.detach().float(), grad_tensor.detach().float()))
+            for _, loss_tensor, grad_tensor in pending
+        ]
+    )
+    host_values = packed.cpu().tolist()
+    last_loss: float | None = None
+    last_grad: float | None = None
+    for (step, _, _), (loss_value, grad_value) in zip(pending, host_values):
+        last_loss = float(loss_value)
+        last_grad = float(grad_value)
+        non_finite_loss_count, non_finite_grad_count = _apply_health_observation(
+            step=step,
+            loss_value=last_loss,
+            grad_norm_value=last_grad,
+            loss_history=loss_history,
+            grad_history=grad_history,
+            spike_events=spike_events,
+            non_finite_loss_count=non_finite_loss_count,
+            non_finite_grad_count=non_finite_grad_count,
+            health_history_len=health_history_len,
+            spike_min_samples=spike_min_samples,
+            spike_z_threshold=spike_z_threshold,
+        )
+    pending.clear()
+    return non_finite_loss_count, non_finite_grad_count, last_loss, last_grad
+
+
 def train(args: argparse.Namespace) -> None:
     device = base.require_cuda()
     precision = base.precision_from(args.precision)
@@ -645,50 +740,50 @@ def train(args: argparse.Namespace) -> None:
         )
         atomic_torch_save(ckpt_payload, target)
 
+    pending_health: list[tuple[int, torch.Tensor, torch.Tensor]] = []
+    last_loss_value: float | None = None
+    last_grad_norm_value: float | None = None
+
     for step in range(start_step + 1, args.steps + 1):
         x, y = train_sampler.sample(args.batch_size, args.seq_len, rng, device)
         loss, parts = base.train_step(
             model, optimizer, scaler, x, y, precision, args.grad_clip
         )
-        loss_value = float(loss.detach())
-        grad_norm_tensor = torch.nn.utils.clip_grad_norm_(
-            [p for p in model.parameters() if p.requires_grad],
-            args.grad_clip,
-        )
-        grad_norm_value = float(grad_norm_tensor.detach())
-
-        if not math.isfinite(loss_value):
-            non_finite_loss_count += 1
-        if not math.isfinite(grad_norm_value):
-            non_finite_grad_count += 1
-        loss_history.append(loss_value)
-        grad_history.append(grad_norm_value)
-        if len(loss_history) > args.health_history_len:
-            loss_history = loss_history[-args.health_history_len:]
-        if len(grad_history) > args.health_history_len:
-            grad_history = grad_history[-args.health_history_len:]
-
-        if (
-            len(loss_history) >= args.spike_min_samples
-            and math.isfinite(loss_value)
-        ):
-            mean = sum(loss_history) / len(loss_history)
-            var = sum((v - mean) ** 2 for v in loss_history) / len(loss_history)
-            std = math.sqrt(var)
-            if std > 1e-12:
-                zscore = (loss_value - mean) / std
-                if zscore > args.spike_z_threshold:
-                    spike_events.append(
-                        {
-                            "step": step,
-                            "kind": "loss",
-                            "loss": loss_value,
-                            "zscore": float(zscore),
-                            "gradient_norm": grad_norm_value,
-                        }
-                    )
+        grad_norm_tensor = parts.get("grad_norm")
+        if grad_norm_tensor is None:
+            raise RuntimeError("base.train_step did not return grad_norm telemetry")
+        pending_health.append((step, loss.detach(), grad_norm_tensor.detach()))
 
         should_log = step == start_step + 1 or step % args.log_every == 0 or step == args.steps
+        should_eval = (
+            validation_songs is not None
+            and args.eval_every > 0
+            and (step % args.eval_every == 0 or step == args.steps)
+        )
+        should_checkpoint = step % args.checkpoint_every == 0 or step == args.steps
+
+        if should_log or should_eval or should_checkpoint:
+            (
+                non_finite_loss_count,
+                non_finite_grad_count,
+                flushed_loss,
+                flushed_grad,
+            ) = _flush_health_queue(
+                pending_health,
+                loss_history=loss_history,
+                grad_history=grad_history,
+                spike_events=spike_events,
+                non_finite_loss_count=non_finite_loss_count,
+                non_finite_grad_count=non_finite_grad_count,
+                health_history_len=args.health_history_len,
+                spike_min_samples=args.spike_min_samples,
+                spike_z_threshold=args.spike_z_threshold,
+            )
+            if flushed_loss is not None:
+                last_loss_value = flushed_loss
+            if flushed_grad is not None:
+                last_grad_norm_value = flushed_grad
+
         if should_log:
             torch.cuda.synchronize()
             now = time.perf_counter()
@@ -697,8 +792,9 @@ def train(args: argparse.Namespace) -> None:
             stats = base.cuda_stats()
             message: dict[str, Any] = {
                 "step": step,
-                "loss": loss_value,
-                "components": {k: float(v) for k, v in parts.items()},
+                "loss": last_loss_value,
+                "components": {k: float(v) for k, v in parts.items() if k != "grad_norm"},
+                "grad_norm": last_grad_norm_value,
                 "events_per_sec": n * args.batch_size * args.seq_len / elapsed,
                 "runtime": runtime,
                 "cuda": stats,
@@ -714,11 +810,7 @@ def train(args: argparse.Namespace) -> None:
             interval_step = step
             torch.cuda.reset_peak_memory_stats()
 
-        if (
-            validation_songs is not None
-            and args.eval_every > 0
-            and (step % args.eval_every == 0 or step == args.steps)
-        ):
+        if should_eval:
             torch.cuda.synchronize()
             value, telemetry = validation_loss(
                 model,
@@ -748,7 +840,7 @@ def train(args: argparse.Namespace) -> None:
             interval_step = step
             torch.cuda.reset_peak_memory_stats()
 
-        if step % args.checkpoint_every == 0 or step == args.steps:
+        if should_checkpoint:
             events_seen = start_events + (step - start_step) * args.batch_size * args.seq_len
             last_healthy_step = step
             last_healthy_events_seen = events_seen
