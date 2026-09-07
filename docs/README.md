@@ -9,10 +9,12 @@
 - [Training-data accounting](../models/research_nc_aria_gigamidi_v1/training_data.md)
 - [Reproducibility and known limitations](../models/research_nc_aria_gigamidi_v1/reproducibility.md)
 - [Publication status and release checklist](PUBLICATION.md)
+- [Compound browser runtime status](COMPOUND_WEB_RUNTIME.md)
 
 ## Developer entry points
 
 - [Compound runtime and architecture](COMPOUND_BASE.md)
+- [Compound browser runtime](COMPOUND_WEB_RUNTIME.md)
 - [Contributing](../CONTRIBUTING.md)
 - [Legacy Base contribution contract](../CONTRIBUTING_BASES.md)
 - [Legacy Adapter contribution contract](../CONTRIBUTING_ADAPTERS.md)
