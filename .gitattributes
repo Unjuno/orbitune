@@ -1,0 +1,2 @@
+# Enforce LF for JSON files to prevent SHA256 mismatches from CRLF/LF conversion
+*.json text eol=lf

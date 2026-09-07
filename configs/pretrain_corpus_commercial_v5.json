@@ -46,7 +46,7 @@
       "score_globs": ["scores/**/*.mscz", "scores/**/*.mscx"],
       "quality_weight": 2.0,
       "v5_delta_census": "tools/openscore_string_quartets_v5_delta_census.json",
-      "v5_delta_census_sha256": "947640eb913f15b8259bccd542ef46b290d46f81653159b427ab3b59ebf2d6ca",
+      "v5_delta_census_sha256": "63f00ff212163344f858f7101b8cf15523c254c17e88dda50d580dd5e2ee2d17",
       "v5_delta_rights": "tools/openscore_string_quartets_v5_delta_rights.json",
       "v5_delta_cross_v4_dedup": "tools/openscore_string_quartets_v5_cross_v4_dedup.json",
       "delta_input_artifacts": 41,
