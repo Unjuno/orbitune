@@ -6,7 +6,10 @@ export function midiPitchToFrequency(pitch) { return 440 * 2 ** ((pitch - 69) / 
 export function buildPreviewSchedule(events, { defaultBpm = 120 } = {}) {
   if (!(defaultBpm > 0)) throw new Error('defaultBpm must be positive');
   const canonical = canonicalizeCompoundEvents(events);
-  const tempoEvents = canonical.filter((event) => event.type === CompoundEventType.TEMPO).sort((a, b) => a.step - b.step);
+  // Python's MIDI writer sorts same-tick TEMPO meta messages by encoded bytes.
+  // Faster tempos (smaller microseconds/qn) come first, so the slowest BPM is
+  // the final effective tempo at that tick. Mirror that for preview timing.
+  const tempoEvents = canonical.filter((event) => event.type === CompoundEventType.TEMPO).sort((a, b) => a.step - b.step || b.a1 - a.a1);
   const segments = [{ step: 0, seconds: 0, bpm: defaultBpm }];
   for (const tempo of tempoEvents) {
     const previous = segments.at(-1);
