@@ -62,7 +62,7 @@ A local checkpoint from a trusted source is required for Python generation. The 
 
 **Compound Transformer:** factorized Compound event embeddings, local/medium/global attention, routed fast/medium/slow recurrent memory, an intra-event Transformer and mixed discrete/continuous heads. A serialized Compound record has 12 fields. Architecture details are in [COMPOUND_BASE.md](docs/COMPOUND_BASE.md); the separate browser ABI is in [COMPOUND_WEB_RUNTIME.md](docs/COMPOUND_WEB_RUNTIME.md).
 
-**Compound LoRA:** Base pretraining remains full-parameter training. LoRA is a post-Base adaptation stage against an immutable checkpoint. The public Compound Adapter ABI is not frozen yet, so target modules/rank must not be copied from the legacy stack. The initial Web strategy is a separately validated pre-merged variant. See [COMPOUND_LORA_POLICY.md](docs/COMPOUND_LORA_POLICY.md).
+**Compound LoRA:** Base pretraining remains full-parameter training. LoRA is a post-Base adaptation stage against an immutable checkpoint. The public Compound Adapter ABI is not frozen yet, so target modules/rank must not be copied from the legacy stack. The planned initial Web strategy is a pre-merged variant, but each future merged artifact must pass native/Web parity on its own exact bytes before publication. See [COMPOUND_LORA_POLICY.md](docs/COMPOUND_LORA_POLICY.md).
 
 **Theory-REMI reference:** a separate legacy path for the `orbitune` CLI, Base/Adapter registry, rank-4 LoRA and its original ONNX/browser tooling. Its `orbitune-lora-v0` ABI is not interchangeable with Compound.
 
