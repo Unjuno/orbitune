@@ -74,7 +74,7 @@ These semantics matter for export and Adapter work. A wrapper that teacher-force
 
 ## Compound browser ABI
 
-The validated browser architecture is a two-graph V2 interface:
+The validated **Base** browser architecture is a two-graph V2 interface:
 
 ```text
 stream.onnx
@@ -124,7 +124,7 @@ The existing legacy `orbitune-lora-v0` ABI is **not** the Compound Adapter ABI. 
 
 Until that is done, public Compound Adapter binaries are not accepted as production-compatible artifacts. Experimental LoRA code and bounded target/rank studies are allowed when clearly labeled. See [COMPOUND_LORA_POLICY.md](COMPOUND_LORA_POLICY.md).
 
-For browser deployment, the initial supported Compound LoRA strategy is a pre-merged variant: merge a validated Adapter against the exact Base locally, export a matched V2 stream/decoder pair, repeat parity validation, then publish that pair only after the release/rights gates are closed.
+For browser deployment, the **planned initial** Compound LoRA strategy is a pre-merged variant: merge a validated Adapter against the exact Base locally, export a matched V2 stream/decoder pair, repeat native/Web parity on those exact merged bytes, and only then publish that pair after the release/rights gates are closed. No LoRA-specific merged Compound artifact is currently validated by the Base V2 parity result.
 
 ## Theory-REMI legacy/reference ABI
 
@@ -157,7 +157,7 @@ rights/provenance-reviewed MIDI
 → optional model artifact release
 → Compound Adapter ABI experiments/freeze
 → LoRA training against one immutable Base
-→ optional pre-merged Web variants
+→ optional pre-merged Web variants after exact merged-artifact parity
 ```
 
 Source publication, model publication and Adapter publication are separate gates.
@@ -175,7 +175,7 @@ Available publicly:
 - Python/runtime source;
 - Compound architecture/training code;
 - model documentation and hashes;
-- V2 browser-runtime source and tests;
+- V2 Base browser-runtime source and tests;
 - publication and Compound LoRA policies.
 
 Not currently distributed by this repository:
@@ -183,6 +183,7 @@ Not currently distributed by this repository:
 - the documented research `model.pt`;
 - Compound `stream.onnx` / `decoder_prefix.onnx` binaries;
 - public Compound model variants;
-- production Compound Adapter binaries.
+- production Compound Adapter binaries;
+- any validated LoRA-merged Compound Web artifact.
 
 See [PUBLICATION.md](PUBLICATION.md) for the release checklist and current availability.
