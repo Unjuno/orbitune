@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "orbitune"
 version = "0.1.0"
-description = "Small MIDI generation framework with LoRA adapters for local BGM creation."
+description = "Local-first symbolic MIDI generation with a hierarchical Compound model and a legacy LoRA runtime."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"

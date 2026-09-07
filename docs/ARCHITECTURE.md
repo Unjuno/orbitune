@@ -1,123 +1,189 @@
-# Orbitune Architecture
+# Orbitune architecture
 
-Orbitune is a MIDI-only generation system with repository-managed compact Base models and small LoRA Adapters.
+This document describes the **current repository architecture**. Older audit/design files are historical snapshots and may describe pre-implementation states.
 
-## Compatibility graph
+Orbitune has two intentionally separate model/runtime families:
 
-```text
-Base A (id=base-a, checkpoint SHA=A)
-  ├── Adapter A1 (base_model=base-a, base_sha256=A)
-  └── Adapter A2 (base_model=base-a, base_sha256=A)
+1. **Compound Transformer** — the current research model and new training/generation path.
+2. **Theory-REMI reference** — the older operational Base/LoRA/ONNX path retained for compatibility and tests.
 
-Base B (id=base-b, checkpoint SHA=B)
-  └── Adapter B1 (base_model=base-b, base_sha256=B)
-```
+Their tokenizer, checkpoint, Adapter and browser ABIs are not interchangeable.
 
-A Base id is immutable after Adapters depend on it. Changing checkpoint bytes means introducing a new Base id. Existing Base/Adapter lineages remain valid.
+## Compound model
 
-Protocol identifiers are separate from Base identity. In particular, the current legacy/reference stack and the experimental production-candidate Compound stack must not be conflated.
-
-## Legacy/reference ABI
-
-The existing operational reference path is:
-
-- architecture ABI: `orbitune-midi-gpt-v0`
-- tokenizer ABI: `theory-remi-v0`
-- reference configuration: 4 layers, hidden size 448, 7 heads, context 1024
-- current 204-token vocabulary parameter count: about 10.2M
-- LoRA targets: `q_proj`, `v_proj`
-- LoRA rank: 4
-- Adapter format ABI: `orbitune-lora-v0`
-
-This path remains available for tests, existing training/export infrastructure and browser reference work. It is **not** the frozen production architecture for future Compound Bases.
-
-The historical 4-layer/240-wide ~3M configuration remains under `configs/base_3m.json` as an experiment/legacy configuration only. It is not the current reference Base size.
-
-## Production-candidate Compound architecture
-
-Current direction:
+One serialized Compound MIDI event is one temporal model step. The current architecture is `orbitune-compound-hierarchical-gpt-v1` with tokenizer ABI `orbitune-compound-v0-experimental`.
 
 ```text
-MIDI type 0/1
-→ Compound MIDI parser + deterministic canonicalization
-→ one Compound Event per Transformer step
-→ factorized field embeddings
-→ causal decoder-only Transformer (~10M reference target)
-→ event-type prediction
-→ lightweight intra-event autoregressive attribute cascade
-→ factorized timing / continuous-value heads
-→ Compound Event
-→ MIDI
+CompoundRecord (12 fields)
+        ↓
+factorized event embedding
+        ↓
+local causal Transformer ────────────────┐
+        ↓                                │
+medium summary Transformer ──────────────┤
+        ↓                                ├─ context fusion
+ global summary Transformer ─────────────┤
+        ↓                                │
+fast / medium / slow recurrent memory ───┘
+        ↓
+intra-event Transformer
+        ↓
+discrete + bounded continuous heads
+        ↓
+next CompoundRecord
 ```
 
-Current experimental tokenizer ABI: `orbitune-compound-v0-experimental`.
+The persistent generation state is bounded. It carries recent local records, bounded medium/global summary histories and fixed-size fast/medium/slow recurrent state instead of growing a full-history KV cache indefinitely.
 
-Reference candidates under validation:
+The documented research checkpoint `research-nc-aria-gigamidi-v1` has 8,857,250 parameters and is frozen at global step 100,000. The checkpoint itself is not distributed by this repository; see the [model card](../models/research_nc_aria_gigamidi_v1/README.md) and [publication status](PUBLICATION.md).
 
-- 96 steps per quarter note;
-- DELTA and DURATION: 7 coarse ranges + 16 residual levels;
-- continuous controls: coarse + residual factorization;
-- recent dense context + deterministic historical anchors for long generation;
-- ControlField as a separate extension boundary;
-- packed ternary as a deployment candidate, with INT8 and FP16 fallbacks.
+## Compound event representation
 
-See `docs/DESIGN_STATUS.md` for acceptance status and `docs/HANDOFF.md` for the current implementation critical path.
+The current event types are:
 
-## Stable extension boundaries
+```text
+NOTE
+CC
+PROGRAM
+BANK
+TEMPO
+PEDAL
+PITCH_BEND
+CHANNEL_PRESSURE
+POLY_PRESSURE
+TIME_SIGNATURE
+```
 
-The architecture should preserve separate interfaces for:
+A serialized record contains 12 integer fields. Timing uses the current 96-steps-per-quarter representation with factorized coarse/residual values; continuous MIDI controls use factorized unsigned coarse/residual values. Event-specific masks and unused-field zeroing are part of native generation semantics.
 
-- `LinearBackend` — dense/reference today; ternary is a candidate implementation;
-- `ControlField` — null/default versus experimental musical-time control;
-- `MemoryPolicy` — sliding/reference versus anchored/dilated long-history selection.
+The tokenizer ABI name still contains `experimental` for compatibility with the trained checkpoint. Renaming it would be an ABI change; documentation status must not be inferred from the string alone.
 
-Concrete experimental implementations must not silently redefine the Base/Tokenizer ABI.
+## Native generation state
+
+Native Compound generation is streaming rather than stateless fixed-window recomputation. The model advances a carried state containing:
+
+- local records;
+- medium buffer/history;
+- global buffer/history;
+- fast/medium/slow recurrent memory;
+- generation step count.
+
+The intra-event decoder is also autoregressive: event type, channel, delta, attributes, velocity, duration and control are sampled in sequence, with each sampled prefix value conditioning later slots.
+
+These semantics matter for export and Adapter work. A wrapper that teacher-forces a full record or reconstructs only the last 64 records is not equivalent to native generation.
+
+## Compound browser ABI
+
+The validated **Base** browser architecture is a two-graph V2 interface:
+
+```text
+stream.onnx
+previous tensorized stream state + accepted record
+→ context + updated stream state
+
+        +
+
+decoder_prefix.onnx
+context + sampled intra-event prefix
+→ decoder heads for the eight slot stages
+```
+
+The browser performs categorical/top-p and Gaussian sampling, masks, quantization, record construction and MIDI serialization outside the graphs. It reproduces Python half-to-even rounding and exact quantization boundary rules.
+
+The source runtime is implemented under `web/`; the ONNX binaries are deliberately not published while redistribution review remains pending. See [COMPOUND_WEB_RUNTIME.md](COMPOUND_WEB_RUNTIME.md).
+
+## Base identity and immutable lineages
+
+A compatibility target is not just an architecture name. A frozen Base identity includes at least:
+
+```text
+model id
+architecture ABI
+tokenizer ABI
+exact checkpoint SHA-256
+rights / distribution scope
+```
+
+If checkpoint bytes change, that is a different compatibility target. Long-running mutable training state must never be used as a public Adapter dependency.
+
+Historical model lineages remain immutable records rather than being overwritten by later continuations.
+
+## Compound pretraining and LoRA
+
+Compound Base pretraining is full-parameter optimization. LoRA is a separate post-Base adaptation stage:
+
+```text
+full-parameter pretraining
+→ checkpoint selection
+→ immutable Base freeze
+→ Compound Adapter ABI freeze
+→ frozen-Base LoRA training
+```
+
+The existing legacy `orbitune-lora-v0` ABI is **not** the Compound Adapter ABI. Compound target modules, ranks, scaling and serialization must be measured and frozen against an exact final Base under a new versioned compatibility identifier.
+
+Until that is done, public Compound Adapter binaries are not accepted as production-compatible artifacts. Experimental LoRA code and bounded target/rank studies are allowed when clearly labeled. See [COMPOUND_LORA_POLICY.md](COMPOUND_LORA_POLICY.md).
+
+For browser deployment, the **planned initial** Compound LoRA strategy is a pre-merged variant: merge a validated Adapter against the exact Base locally, export a matched V2 stream/decoder pair, repeat native/Web parity on those exact merged bytes, and only then publish that pair after the release/rights gates are closed. No LoRA-specific merged Compound artifact is currently validated by the Base V2 parity result.
+
+## Theory-REMI legacy/reference ABI
+
+The separate legacy/reference stack remains:
+
+```text
+architecture ABI   orbitune-midi-gpt-v0
+tokenizer ABI      theory-remi-v0
+Adapter ABI        orbitune-lora-v0
+LoRA targets       q_proj + v_proj
+LoRA rank          4
+reference shape    4 layers / hidden 448 / 7 heads / context 1024
+```
+
+This path continues to support the existing `orbitune` CLI, legacy Base/Adapter registry, LoRA tooling and original browser runtime. It must remain isolated from Compound compatibility metadata.
 
 ## Repository pipeline
 
+Current Compound project flow:
+
 ```text
-licensed/provenance-reviewed MIDI corpus
-→ parse / canonicalize / quality filter / deduplicate
-→ composition-aware train-validation split
-→ Compound encoding
-→ Base candidate training
-→ best held-out checkpoint
-→ runtime/export validation
-→ stage bases/<base-id>/ with exact hashes
-→ Base registry generation
-→ Adapter training against an immutable selected Base
-→ Adapter manifest + artifact Base id/hash binding
-→ dependency validation
-→ browser/local Base/Adapter selection
+rights/provenance-reviewed MIDI
+→ parse / canonicalize / filter / deduplicate
+→ indexed Compound corpus
+→ full-parameter Base training / resume
+→ immutable milestone checkpoint
+→ held-out + generated-MIDI evaluation
+→ native-generation export validation
+→ publication/redistribution review
+→ optional model artifact release
+→ Compound Adapter ABI experiments/freeze
+→ LoRA training against one immutable Base
+→ optional pre-merged Web variants after exact merged-artifact parity
 ```
 
-The current Compound dataset implementation already prevents **exact-byte duplicate** leakage by SHA-256. Near-duplicate/composition-family deduplication is still a production-corpus validation gate and must not be confused with exact-hash grouping.
+Source publication, model publication and Adapter publication are separate gates.
 
-## Browser runtime
+## Rights boundary
 
-GitHub Pages receives generated `bases.json` and `adapters.json`. For the legacy Web path, only Web ONNX artifacts are copied into the static site; training checkpoints remain repository artifacts.
+The Apache-2.0 source license does not grant rights to datasets, Base checkpoints, Adapters or merged derivatives. A downstream Adapter cannot broaden the permissions of its Base.
 
-A future Compound Web ABI must be introduced explicitly. The existing Theory-REMI ONNX graph is not automatically compatible with Compound records.
+For the documented Aria+GigaMIDI research lineage, `commercial_eligible=false` and the project distribution scope remains noncommercial. Any LoRA or pre-merged descendant must preserve that restriction unless it is built from an independently eligible Base lineage.
 
-Before inference the runtime must verify artifact hashes and Adapter/Base compatibility metadata.
+## Current public status
 
-## Repository policy
+Available publicly:
 
-- Base artifacts are committed under `bases/<base-id>/`.
-- Each Base checkpoint and Web artifact is limited to 95 MiB by current CI policy.
-- Base manifests allow at most 100M parameters.
-- Adapters are committed under `adapters/official` or `adapters/community`.
-- Adapter manifests reference Base id + exact checkpoint SHA-256.
-- CI rejects unknown Base ids, hash mismatches, incompatible declared ABIs and oversized artifacts.
+- Python/runtime source;
+- Compound architecture/training code;
+- model documentation and hashes;
+- V2 Base browser-runtime source and tests;
+- publication and Compound LoRA policies.
 
-## Production blockers
+Not currently distributed by this repository:
 
-Before freezing the Compound ABI or publishing an official Compound Base, close at least these gates:
+- the documented research `model.pt`;
+- Compound `stream.onnx` / `decoder_prefix.onnx` binaries;
+- public Compound model variants;
+- production Compound Adapter binaries;
+- any validated LoRA-merged Compound Web artifact.
 
-1. external real-MIDI timing/tokenizer validation;
-2. long-delta/duration representation beyond the current 1536-step experimental range;
-3. explicit field cardinalities, masks, BOS/EOS/start-of-generation behavior and masked losses;
-4. production corpus provenance plus near-duplicate/composition-aware splitting;
-5. real-MIDI 5M/10M/20M scale sweep;
-6. real-device runtime benchmark;
-7. trained-model long-memory and ControlField evaluation.
+See [PUBLICATION.md](PUBLICATION.md) for the release checklist and current availability.

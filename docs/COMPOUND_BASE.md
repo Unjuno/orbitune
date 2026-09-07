@@ -1,6 +1,6 @@
 # Compound Transformer Base
 
-`orbitune-compound` is the local-first training and generation path for Orbitune's Transformer-first Compound MIDI Base. It coexists with the legacy Theory-REMI `orbitune` path; existing checkpoints and adapter tooling are not replaced.
+`orbitune-compound` is the local-first training and generation path for Orbitune's hierarchical Compound MIDI Base. It coexists with the legacy Theory-REMI `orbitune` path; existing legacy checkpoints and Adapter tooling are not replaced.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ One Compound MIDI event is one temporal step. The current Base combines:
 5. **Intra-event Transformer** that autoregressively decodes the attributes of the next Compound event.
 6. **Mixed output heads**: categorical heads for discrete MIDI state and bounded continuous heads for delta time, duration, velocity and continuous controls.
 
-The checked-in `configs/compound_hierarchical_9m.json` is approximately the same model-size class as the previous ~10M reference Base. The 280k models under `experiments/` are research proxies and are not the runnable Base.
+The checked-in `configs/compound_hierarchical_9m.json` is the architecture family used by the documented research model. The frozen `research-nc-aria-gigamidi-v1` checkpoint reports 8,857,250 parameters. The much smaller models under `experiments/` are research proxies and are not the documented trained Base.
 
 ## Clone and install
 
@@ -27,7 +27,7 @@ python -m pip install -U pip
 python -m pip install -e '.[dev]'
 ```
 
-Everything below works on CPU. A GPU is optional and is not required for repository validation.
+Everything below works on CPU for bounded smoke tests. A GPU is optional for repository validation and appropriate for corpus-scale training.
 
 ## 1. Prepare MIDI
 
@@ -37,7 +37,7 @@ Put training MIDI files under a directory such as `midi/`, then run:
 orbitune-compound prepare midi/
 ```
 
-Default outputs are deliberately aligned with the training command:
+Default outputs are aligned with the training command:
 
 ```text
 data/compound/train.jsonl
@@ -45,7 +45,7 @@ data/compound/validation.jsonl
 data/compound/report.json
 ```
 
-The split is song-preserving and groups exact duplicate MIDI bytes by SHA-256 so identical files cannot cross train/validation. Composition-family near-deduplication is still a corpus-quality gate for a production training set.
+The split is song-preserving and groups exact duplicate MIDI bytes by SHA-256 so identical files cannot cross train/validation. Composition-family near-deduplication is a separate corpus-quality requirement and must not be inferred from exact-byte grouping.
 
 Custom paths remain available:
 
@@ -109,6 +109,8 @@ Inspect the saved state with:
 orbitune-compound info --checkpoint models/compound-base.pt
 ```
 
+For a long-running research continuation, preserve immutable milestone checkpoints instead of silently overwriting an Adapter/publication target. A later selected checkpoint receives a new model identity and exact SHA-256.
+
 ## 5. Generate MIDI
 
 ```bash
@@ -132,6 +134,30 @@ orbitune-compound generate \
 
 Generation keeps bounded local/medium/global histories plus fixed-size recurrent memory, so persistent runtime state does not grow with total song length.
 
+## Base pretraining and LoRA
+
+Compound Base pretraining is full-parameter training. LoRA is intentionally a later adaptation stage:
+
+```text
+full-parameter Base training
+→ evaluate checkpoint
+→ freeze Base id + exact checkpoint SHA-256
+→ freeze Compound Adapter ABI
+→ train Adapter with Base weights frozen
+```
+
+Do not use the legacy Theory-REMI `orbitune train-adapter` path as if it were a Compound command. The existing `orbitune-lora-v0` rank-4 `q_proj`/`v_proj` contract belongs to the legacy model and is not a frozen Compound Adapter ABI.
+
+Compound target modules, rank/scaling and Safetensors layout must be measured against the exact selected Base and versioned under a new ABI. Mutable long-run training state is not a public Adapter compatibility target.
+
+See [COMPOUND_LORA_POLICY.md](COMPOUND_LORA_POLICY.md) for the public training, compatibility, rights and release policy.
+
+## Browser runtime
+
+The native Compound browser path is documented separately in [COMPOUND_WEB_RUNTIME.md](COMPOUND_WEB_RUNTIME.md). It uses a two-graph `stream` + `decoder_prefix` ABI rather than the legacy Theory-REMI ONNX graph.
+
+The browser source is public, but the research model/ONNX artifacts remain unpublished while redistribution review is pending.
+
 ## CPU repository smoke
 
 Before spending GPU time:
@@ -140,8 +166,10 @@ Before spending GPU time:
 python -m pytest -q tests/test_compound_base.py tests/test_compound_cli.py
 ```
 
-The tests cover forward/backward, exact checkpoint restoration, bounded stream state, Standard MIDI roundtrip and the actual `prepare -> train -> resume -> info -> generate` CLI path using a tiny CPU model.
+The tests cover forward/backward, checkpoint restoration, bounded stream state, Standard MIDI roundtrip and the actual `prepare -> train -> resume -> info -> generate` CLI path using a tiny CPU model.
 
-## Legacy Base
+## Legacy Base and Adapter path
 
-The previous Theory-REMI Base remains available through the `orbitune` command, including `orbitune train-base` and the existing LoRA/adapter tooling. Do not delete old checkpoints when evaluating this Base; final musical-quality comparison requires converged real-corpus training and generated-MIDI evaluation, not the short architecture-proxy runs.
+The Theory-REMI Base remains available through the `orbitune` command, including `orbitune train-base` and the existing LoRA/Adapter tooling. That legacy ABI is preserved for compatibility and tests, not silently applied to Compound.
+
+See [CONTRIBUTING_ADAPTERS.md](../CONTRIBUTING_ADAPTERS.md) for the explicit legacy/Compound contribution boundary.
