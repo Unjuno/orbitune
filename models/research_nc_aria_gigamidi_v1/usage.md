@@ -1,12 +1,20 @@
 # Usage Guide
 
+This model is part of the orbitune repository. The frozen checkpoint is a large
+binary (~101.6 MiB) and is **not** stored in Git. Obtain the checkpoint at its
+release location and verify its SHA-256 before use:
+
+```
+8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc
+```
+
 ## Generating MIDI
 
 ### Basic generation (CPU)
 
 ```bash
 orbitune-compound generate \
-  --checkpoint "C:\Users\junny\OneDrive\Desktop\MIDI-GPT\orbitune_clone\runs\research_nc_aria_gigamidi_v1\model.pt" \
+  --checkpoint path/to/research_nc_aria_gigamidi_v1/model.pt \
   --out generated.mid \
   --events 512 \
   --device cpu \
@@ -18,7 +26,7 @@ orbitune-compound generate \
 
 ```bash
 orbitune-compound generate \
-  --checkpoint "C:\Users\junny\OneDrive\Desktop\MIDI-GPT\orbitune_clone\runs\research_nc_aria_gigamidi_v1\model.pt" \
+  --checkpoint path/to/research_nc_aria_gigamidi_v1/model.pt \
   --primer-midi prompt.mid \
   --out continuation.mid \
   --events 512 \
@@ -31,7 +39,7 @@ orbitune-compound generate \
 
 ```bash
 orbitune-compound generate \
-  --checkpoint "C:\Users\junny\OneDrive\Desktop\MIDI-GPT\orbitune_clone\runs\research_nc_aria_gigamidi_v1\model.pt" \
+  --checkpoint path/to/research_nc_aria_gigamidi_v1/model.pt \
   --out generated.mid \
   --events 2048 \
   --device cuda \
@@ -48,8 +56,7 @@ from orbitune.compound_training import parse_compound_checkpoint
 
 # Load checkpoint (Compound schema v2)
 ckpt = torch.load(
-    "C:\\Users\\junny\\OneDrive\\Desktop\\MIDI-GPT\\orbitune_clone\\runs"
-    "\\research_nc_aria_gigamidi_v1\\model.pt",
+    "path/to/research_nc_aria_gigamidi_v1/model.pt",
     map_location="cpu",
     weights_only=False,
 )
@@ -71,7 +78,7 @@ model.eval()
 
 ```bash
 orbitune-compound resume \
-  --checkpoint "C:\path\to\model.pt" \
+  --checkpoint path/to/research_nc_aria_gigamidi_v1/model.pt \
   --steps 50000 \
   --device cuda \
   --allow-runtime-change

@@ -11,7 +11,8 @@
     "filename": "model.pt",
     "sha256": "8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc",
     "bytes": 106583212,
-    "path": "C:\\Users\\junny\\OneDrive\\Desktop\\MIDI-GPT\\orbitune_clone\\runs\\research_nc_aria_gigamidi_v1\\model.pt"
+    "path": "runs/research_nc_aria_gigamidi_v1/model.pt",
+    "path_note": "Relative to the orbitune_clone worktree root. The actual frozen checkpoint is a large binary (~101.6 MiB) and is not included in Git. Verify SHA-256 matches before use.",
   },
   "web_onnx": {
     "filename": "web.onnx",
@@ -34,7 +35,7 @@
     "commercial_eligible": false,
     "distribution_scope": "noncommercial",
     "license_policy": "research-nc",
-    "corpus_registry": "C:\\orbitune-research-nc\\manifests\\aria_gigamidi_manifest.jsonl",
+    "corpus_registry": "ORBITUNE_RESEARCH_NC/manifests/aria_gigamidi_manifest.jsonl",
     "corpus_manifest_sha256": "3dbfdf7f4c2266ac9c880d199d718fa1abb86eb5ff6ba0ef1a88638893f17ee1",
     "restricted_source_ids": ["gigamidi"],
     "rights_summary": "Aria-MIDI: CC-BY-NC-SA-4.0. GigaMIDI: research use only. Combined corpus is noncommercial. Commercial use prohibited."
@@ -61,7 +62,7 @@
     "rng_seed_expression": "random.Random(seed=3 + 7919 = 7922)"
   },
   "quality_validation": {
-    "report": "C:\\orbitune-research-nc\\evidence\\quality_validation_3way.json",
+    "report": "evidence/quality_validation_3way.json",
     "timestamp": "2026-09-07T10:24:46Z",
     "seeds": [100, 200, 300, 400, 500],
     "total_files_generated": 30,
