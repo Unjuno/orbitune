@@ -21,7 +21,7 @@ full-parameter Base pretraining
 → publish only after rights + compatibility review
 ```
 
-LoRA is **not** used to finish or replace the current full-parameter Base pretraining run. A mutable continuation checkpoint is training state, not a public Adapter compatibility target.
+LoRA is **not** used to finish or replace full-parameter Base pretraining. A mutable continuation checkpoint is training state, not a public Adapter compatibility target. The repository currently documents a planned longer Base continuation, but does not treat that plan as proof that a run has started or completed.
 
 Intermediate checkpoints may be used for local experiments, but an Adapter trained against one must remain explicitly experimental and bound to that exact checkpoint SHA-256. If the Base changes, the Adapter must be retrained or separately revalidated; compatibility is never inferred from architecture name or parameter count.
 
@@ -89,20 +89,20 @@ Commercial and research-NC Base lineages must remain separate. No Adapter, merge
 
 ## Web deployment policy
 
-The validated Compound browser runtime uses a two-graph native-generation ABI (`stream` + `decoder_prefix`). Dynamic Compound LoRA injection is not currently a validated Web ABI.
+The validated Compound **Base** browser runtime uses a two-graph native-generation ABI (`stream` + `decoder_prefix`). Dynamic Compound LoRA injection is not currently a validated Web ABI.
 
-The first supported Web deployment strategy is therefore:
+The planned initial LoRA Web deployment strategy is:
 
 ```text
 frozen Compound Base
 + validated LoRA Adapter
 → merge locally against the exact Base
 → export a matched stream.onnx + decoder_prefix.onnx pair
-→ validate native/Web parity
-→ publish as kind = "lora-premerged"
+→ validate native/Web parity for those exact merged bytes
+→ only then publish as kind = "lora-premerged"
 ```
 
-Every pre-merged variant remains bound to the exact Base checkpoint SHA and an explicit Adapter identity. The browser runtime must reject mismatched Base, architecture, tokenizer or runtime ABI metadata.
+This is a deployment plan, not evidence that a Compound LoRA merged artifact has already passed parity. Every future pre-merged variant must remain bound to the exact Base checkpoint SHA and an explicit Adapter identity. The browser runtime must reject mismatched Base, architecture, tokenizer or runtime ABI metadata.
 
 Dynamic browser-side LoRA may be added later only as a separate ABI after tensor packing, numerical parity, memory cost and load-time behavior are validated.
 
