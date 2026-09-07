@@ -1,0 +1,17 @@
+{
+  "v4_manifest_sha256": "1c582a08a3087952a57a604b5652cae2bef6dd4e6acb2addc5eb49cdfbe58c72",
+  "v4_manifest_sha256_actual": "1c582a08a3087952a57a604b5652cae2bef6dd4e6acb2addc5eb49cdfbe58c72",
+  "v4_manifest_sha256_match": true,
+  "v4_normalized_fingerprint_index_size": 229476,
+  "v4_composition_fingerprint_index_size": 222856,
+  "delta_input_artifacts": 41,
+  "delta_normalized_matches": 0,
+  "delta_composition_matches": 0,
+  "delta_cross_v4_dedup_removed": 0,
+  "delta_post_dedup_accepted": 41,
+  "delta_post_dedup_active_events": 560680,
+  "production_dedup_key": "normalized_fingerprint",
+  "composition_fingerprint_role": "split_grouping_only (NOT production dedup key)",
+  "full_v4_dedup_gate": "PASS",
+  "match_details": []
+}

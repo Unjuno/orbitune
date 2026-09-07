@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import math
@@ -16,6 +17,12 @@ import torch.nn.functional as F
 
 import orbitune.compound_base as compound_base
 from orbitune.compound_base import CompoundBaseConfig, CompoundHierarchicalGPT
+from orbitune.compound_indexed import (
+    IndexedCompoundSong,
+    load_indexed_compound_corpus,
+    load_sharded_indexed_corpus,
+    SHARDED_INDEX_FORMAT,
+)
 from orbitune.compound_training import (
     COMPOUND_CHECKPOINT_SCHEMA_VERSION,
     assert_runtime_compatible,
@@ -27,6 +34,7 @@ from orbitune.compound_training import (
     parse_compound_checkpoint,
     restore_cuda_rng_state,
 )
+from orbitune.indexed_sampling import IndexedTensorSampler
 
 ROOT = Path(__file__).resolve().parents[1]
 _BASE_PATH = ROOT / "scripts" / "compound_cuda_train.py"
@@ -39,6 +47,66 @@ _SPEC.loader.exec_module(base)
 _ORIGINAL_CAUSAL_BIAS = compound_base._causal_bias
 _ORIGINAL_ATTN_FORWARD = compound_base.MultiheadSelfAttention.forward
 _FASTPATH_INSTALLED = False
+
+
+def _is_indexed_corpus(path: str | os.PathLike[str]) -> bool:
+    candidate = Path(path)
+    if candidate.is_dir():
+        if (candidate / "index.json").exists():
+            return True
+        if (candidate / "index_manifest.json").exists():
+            return True
+    if candidate.name == "songs.jsonl":
+        return (candidate.parent / "index.json").exists()
+    if candidate.name == "index.json":
+        return candidate.exists()
+    if candidate.name == "index_manifest.json":
+        return candidate.exists()
+    return False
+
+
+def _indexed_index_path(path: str | os.PathLike[str]) -> Path:
+    candidate = Path(path)
+    if candidate.is_dir():
+        if (candidate / "index_manifest.json").exists():
+            return candidate / "index_manifest.json"
+        return candidate / "index.json"
+    if candidate.name == "songs.jsonl":
+        return candidate.parent / "index.json"
+    if candidate.name == "index.json":
+        return candidate
+    if candidate.name == "index_manifest.json":
+        return candidate
+    return candidate
+
+
+def _is_sharded_corpus(path: str | os.PathLike[str]) -> bool:
+    candidate = Path(path)
+    if candidate.is_dir():
+        return (candidate / "index_manifest.json").exists()
+    if candidate.name == "index_manifest.json":
+        return candidate.exists()
+    return False
+
+
+def _any_indexed(path: str | os.PathLike[str]) -> bool:
+    return any(_is_indexed_corpus(p.strip()) for p in str(path).split(","))
+
+
+def _load_songs(path: str | os.PathLike[str]):
+    paths = str(path).split(",")
+    all_songs = []
+    for p in paths:
+        p = p.strip()
+        if _is_sharded_corpus(p):
+            corpus = load_sharded_indexed_corpus(_indexed_index_path(p))
+            all_songs.extend(corpus.songs)
+        elif _is_indexed_corpus(p):
+            corpus = load_indexed_compound_corpus(_indexed_index_path(p))
+            all_songs.extend(corpus.songs)
+        else:
+            all_songs.extend(load_compound_jsonl(Path(p)))
+    return all_songs
 
 
 def _optimized_attention_forward(self, x: torch.Tensor, attention_bias: torch.Tensor | None) -> torch.Tensor:
@@ -246,7 +314,11 @@ def cfe(args: argparse.Namespace) -> None:
     torch.set_float32_matmul_precision("high")
     base_cfg = base.config_from(args.config)
     heads = candidate_head_counts(base_cfg.d_model, args.head_counts)
-    sampler = base.TensorSampler(load_compound_jsonl(args.train_jsonl))
+    train_songs = _load_songs(args.train_jsonl)
+    if _any_indexed(args.train_jsonl):
+        sampler = IndexedTensorSampler(train_songs)
+    else:
+        sampler = base.TensorSampler(train_songs)
     results: list[dict[str, Any]] = []
 
     for causal_fastpath in args.fastpaths:
@@ -362,9 +434,16 @@ def train(args: argparse.Namespace) -> None:
                 "Use --allow-synthetic explicitly for benchmark / smoke runs only."
             )
 
-    train_songs = load_compound_jsonl(train_path)
-    validation_songs = load_compound_jsonl(validation_path)
-    train_sampler = base.TensorSampler(train_songs)
+    train_songs = _load_songs(train_path)
+    validation_songs = _load_songs(validation_path)
+    current_val_identity: str | None = None
+    if validation_songs:
+        val_sha_blob = "".join(sorted(getattr(s, "sha256", "") for s in validation_songs if getattr(s, "sha256", "")))
+        current_val_identity = hashlib.sha256(f"valset-v1:{val_sha_blob}".encode()).hexdigest()
+    if _any_indexed(train_path):
+        train_sampler = IndexedTensorSampler(train_songs)
+    else:
+        train_sampler = base.TensorSampler(train_songs)
 
     checkpoint_path = Path(args.checkpoint)
     healthy_path = checkpoint_path.with_name(checkpoint_path.stem + ".healthy.pt")
@@ -384,6 +463,7 @@ def train(args: argparse.Namespace) -> None:
     last_healthy_step: int | None = None
     last_healthy_events_seen: int | None = None
     validation_plan: dict[str, Any] | None = None
+    validation_corpus_identity: str | None = None
 
     if args.resume:
         # Load to CPU so the saved cuda_rng_state_all arrives as CPU uint8
@@ -421,6 +501,13 @@ def train(args: argparse.Namespace) -> None:
         random.setstate(payload["python_rng_state"])
     if payload.get("sampler_rng_state") is not None:
         rng.setstate(payload["sampler_rng_state"])
+    else:
+        print(json.dumps(
+            {"event": "sampler_rng_state_missing", "reason":
+             "checkpoint has no sampler_rng_state; training RNG will not be "
+             "restored on resume (legacy checkpoint). Exact sampler resume "
+             "fidelity is UNAVAILABLE for this run."},
+            sort_keys=True), flush=True)
     if payload.get("cuda_rng_state_all") is not None:
         # No workaround: validate dtype/device and let errors propagate.
         restore_cuda_rng_state(payload["cuda_rng_state_all"])
@@ -442,6 +529,42 @@ def train(args: argparse.Namespace) -> None:
         last_healthy_events_seen = health.get("last_healthy_events_seen")
     validation_history = list(payload.get("validation_history") or [])
     validation_plan = payload.get("validation_plan")
+    validation_corpus_identity = payload.get("validation_corpus_identity")
+
+    if current_val_identity is not None:
+        if validation_corpus_identity is None:
+            validation_corpus_identity = current_val_identity
+        elif validation_corpus_identity != current_val_identity:
+            print(
+                json.dumps(
+                    {
+                        "event": "validation_corpus_identity_changed",
+                        "stored_identity": validation_corpus_identity,
+                        "current_identity": current_val_identity,
+                        "reason": "validation corpus has changed; resetting best_validation_loss and best_step",
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            best_validation_loss = None
+            best_step = None
+            validation_corpus_identity = current_val_identity
+
+    # Discard a stale validation plan when the validation corpus has changed
+    # (e.g. resuming a commercial checkpoint to train on a research-NC corpus).
+    if validation_plan is not None:
+        current_val_shas = {getattr(song, "sha256", "") for song in validation_songs}
+        plan_shas: set[str] = set()
+        for _batch in validation_plan.get("plan", []):
+            for _window in _batch.get("windows", []):
+                plan_shas.add(str(_window.get("song_sha", "")))
+        if plan_shas and not plan_shas.issubset(current_val_shas):
+            print(
+                json.dumps({"event": "validation_plan_discarded", "reason": "validation_corpus_mismatch"}, sort_keys=True),
+                flush=True,
+            )
+            validation_plan = None
 
     if args.compile:
         model.compile(mode=args.compile_mode)
@@ -517,6 +640,7 @@ def train(args: argparse.Namespace) -> None:
             last_healthy_events_seen=last_healthy_events_local,
             validation_history=validation_history_local,
             validation_plan=plan_payload,
+            validation_corpus_identity=validation_corpus_identity,
             source_commit=os.environ.get("ORBITUNE_SOURCE_COMMIT") or os.environ.get("GITHUB_SHA"),
         )
         atomic_torch_save(ckpt_payload, target)

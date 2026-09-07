@@ -1,0 +1,124 @@
+{
+  "artifact_type": "orbitune_base",
+  "id": "research-nc-aria-gigamidi-v1",
+  "display_name": "Orbitune Research-NC Aria+GigaMIDI V1",
+  "description": "Compound Hierarchical GPT model continued from the Aria research-NC checkpoint on the combined Aria + GigaMIDI indexed corpus (frozen at step 100,000).",
+  "architecture": "orbitune-compound-hierarchical-gpt-v1",
+  "tokenizer": "orbitune-compound-v0-experimental",
+  "parameter_count": 8857250,
+  "parameter_count_note": "Compound Hierarchical GPT: 8,857,250 parameters. (The 10,200,960 REFERENCE_PARAMETER_COUNT applies to the legacy OrbituneGPT / Theory-REMI path, not this Compound architecture.)",
+  "checkpoint": {
+    "filename": "model.pt",
+    "sha256": "8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc",
+    "bytes": 106583212,
+    "path": "runs/research_nc_aria_gigamidi_v1/model.pt",
+    "path_note": "Relative to the orbitune_clone worktree root. The actual frozen checkpoint is a large binary (~101.6 MiB) and is not included in Git. Verify SHA-256 matches before use."
+  },
+  "web_onnx": {
+    "filename": "web.onnx",
+    "sha256": null,
+    "bytes": 0,
+    "status": "not_yet_exported"
+  },
+  "license": "CC-BY-NC-SA-4.0",
+  "training_data": {
+    "source_type": "multi_source_indexed",
+    "license": "CC-BY-NC-SA-4.0",
+    "rights_confirmed": true,
+    "notes": "Aria-MIDI (CC-BY-NC-SA-4.0) + GigaMIDI. Combined training corpus: 2,263,855 songs, 4,069,137,373 active training events. 366 shards verified complete with 0 unaccounted. 378,272 GigaMIDI songs rejected (366,056 missing-input + 12,342 parse_failure:OverflowError + 126 dedup-timing discrepancy)."
+  },
+  "lineage": {
+    "parent_checkpoint": {
+      "id": "research-nc-aria-v1",
+      "sha256": "fb0b86398cd84b0394b323cfe927ca442ac7a93bb3d1d5f1ae0fc4989f1e8369"
+    },
+    "commercial_eligible": false,
+    "distribution_scope": "noncommercial",
+    "license_policy": "research-nc",
+    "corpus_registry": "ORBITUNE_RESEARCH_NC/manifests/aria_gigamidi_manifest.jsonl",
+    "corpus_manifest_sha256": "3dbfdf7f4c2266ac9c880d199d718fa1abb86eb5ff6ba0ef1a88638893f17ee1",
+    "restricted_source_ids": ["gigamidi"],
+    "rights_summary": "Aria-MIDI: CC-BY-NC-SA-4.0. GigaMIDI: research use only. Combined corpus is noncommercial. Commercial use prohibited."
+  },
+  "training_metadata": {
+    "training_script": "scripts/compound_cfe_train.py train",
+    "launcher": "launch_aria_gigamidi_training.py",
+    "config": "configs/compound_hierarchical_9m.json",
+    "seed": 3,
+    "steps": 100000,
+    "resumed_from_step": 50000,
+    "new_steps": 50000,
+    "batch_size": 16,
+    "seq_len": 256,
+    "precision": "bf16",
+    "learning_rate": 0.0003,
+    "weight_decay": 0.01,
+    "grad_clip": 1.0,
+    "optimizer": "fused AdamW",
+    "final_train_loss": -1.4204113483428955,
+    "final_validation_loss": -1.1929529458284378,
+    "checkpoint_step": 100000,
+    "events_seen": 409600000,
+    "rng_seed_expression": "random.Random(seed=3 + 7919 = 7922)"
+  },
+  "quality_validation": {
+    "report": "evidence/quality_validation_3way.json",
+    "timestamp": "2026-09-07T10:24:46Z",
+    "seeds": [100, 200, 300, 400, 500],
+    "total_files_generated": 30,
+    "all_parse_valid": true,
+    "per_tier": {
+      "commercial": {
+        "parse_valid": "10/10",
+        "mean_note_count": 258.9,
+        "mean_polyphony": 4.1,
+        "mean_event_count": 498.7,
+        "pitch_range": "33-93"
+      },
+      "aria": {
+        "parse_valid": "10/10",
+        "mean_note_count": 483.5,
+        "mean_polyphony": 8.0,
+        "mean_event_count": 498.8,
+        "pitch_range": "26-93"
+      },
+      "aria_gigamidi": {
+        "parse_valid": "10/10",
+        "mean_note_count": 443.7,
+        "mean_polyphony": 3.8,
+        "mean_event_count": 500.0,
+        "pitch_range": "33-89"
+      }
+    }
+  },
+  "reproducibility": {
+    "validation_corpus_identity": "9b8f61eaa156971ad3988a13945184708edcdbc39293ae9d4ba52c5c87831c2c",
+    "corpus_identity_sha256": "c354afc28617eb344ef9326fdeb2f199c5208ac9c6d3f82a96676d6900b9acc9",
+    "rng_fix_applied": true,
+    "rng_fix_commit": "549578ac574fe602dd3020afdca1761b9f2fcc0f",
+    "rng_fix_description": "sampler_rng_state saved as rng.getstate() and restored on resume via rng.setstate(). python_rng_state saved as random.getstate() (global module). Legacy checkpoints with sampler_rng_state=None handled gracefully.",
+    "bit_exact_continuation_of_frozen_run": false,
+    "sampler_resume_fidelity_of_frozen_run": false,
+    "frozen_checkpoint_immutable": true
+  },
+  "policies": {
+    "GIT_PUSH": "NO",
+    "PR_CREATE": "NO",
+    "AUTO_MERGE": "NO",
+    "COMMERCIAL_BASE_V1_OVERWRITE": "NO",
+    "ARIA_RESEARCH_CHECKPOINT_OVERWRITE": "NO",
+    "RESEARCH_NC_ARIA_GIGAMIDI_V1_OVERWRITE": "NO",
+    "RETRAINING_STARTED": "NO",
+    "SECOND_MULTI_SOURCE_TRAIN_PROCESS": "NO"
+  },
+  "tags": [
+    "compound-transformer",
+    "research-nc",
+    "multi-source",
+    "frozen",
+    "gigamidi",
+    "aria-midi"
+  ],
+  "created_at_utc": "2026-09-07T01:25:45Z",
+  "formalized_at_utc": "2026-09-07T13:55:00Z"
+}

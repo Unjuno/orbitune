@@ -1,0 +1,63 @@
+{
+  "v4_manifest_path": "C:\\ov4\\manifest.jsonl",
+  "v4_manifest_sha256_actual": "1c582a08a3087952a57a604b5652cae2bef6dd4e6acb2addc5eb49cdfbe58c72",
+  "v4_manifest_sha256_frozen": "1c582a08a3087952a57a604b5652cae2bef6dd4e6acb2addc5eb49cdfbe58c72",
+  "v4_manifest_sha256_match": true,
+  "v4_total_records": 229476,
+  "v4_total_active_events_sum": 252037465,
+  "v4_total_songs_train": 215963,
+  "v4_total_normalized_fingerprints_unique": 229476,
+  "v4_total_composition_fingerprints_unique": 222856,
+  "v4_normalized_fingerprint_duplicates": 0,
+  "v4_split_counts": {
+    "validation": 11272,
+    "train": 215963,
+    "test": 2241
+  },
+  "v4_source_counts": {
+    "nrg_cp": 30943,
+    "pdmx": 183503,
+    "openscore_lieder": 1461,
+    "nifc_polish_scores": 8909,
+    "imslp_midi_cc0": 1112,
+    "muse_omr_benchmark": 934,
+    "mutopia": 629,
+    "groove_midi_dataset": 1149,
+    "openscore_string_quartets": 122,
+    "nifc_chopin_first_editions": 508,
+    "openscore_orchestra": 96,
+    "florence_price_art_songs": 110
+  },
+  "v4_source_completeness": {
+    "expected": [
+      "florence_price_art_songs",
+      "groove_midi_dataset",
+      "imslp_midi_cc0",
+      "muse_omr_benchmark",
+      "mutopia",
+      "nifc_chopin_first_editions",
+      "nifc_polish_scores",
+      "nrg_cp",
+      "openscore_lieder",
+      "openscore_orchestra",
+      "openscore_string_quartets",
+      "pdmx"
+    ],
+    "actual": [
+      "florence_price_art_songs",
+      "groove_midi_dataset",
+      "imslp_midi_cc0",
+      "muse_omr_benchmark",
+      "mutopia",
+      "nifc_chopin_first_editions",
+      "nifc_polish_scores",
+      "nrg_cp",
+      "openscore_lieder",
+      "openscore_orchestra",
+      "openscore_string_quartets",
+      "pdmx"
+    ],
+    "missing": [],
+    "extra": []
+  }
+}
