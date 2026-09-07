@@ -2,9 +2,9 @@
 
 ## Scope
 
-The repository is public source code with documentation of a locally trained research model. **Source publication is not weight publication.** The repository may contain browser/runtime code that knows how a future verified model artifact should be loaded, while the model binary itself remains unavailable.
+The repository is public source code with documentation of a locally trained research model. **Source publication is not weight publication.** The repository may contain browser/runtime code and LoRA policy that describe how future verified artifacts should be loaded or adapted while the model binary itself remains unavailable.
 
-The documented research checkpoint is not tracked, no release asset is created by the current runtime work, and no model download URL is invented. Repository/runtime changes must not be interpreted as permission to redistribute the research weights or training data.
+The documented research checkpoint is not tracked, no release asset is created by the current runtime/policy work, and no model download URL is invented. Repository/runtime/Adapter-policy changes must not be interpreted as permission to redistribute the research weights, derived weights or training data.
 
 ## Public artifact contract
 
@@ -13,9 +13,11 @@ The documented research checkpoint is not tracked, no release asset is created b
 | Python/runtime source | Available in the repository under the existing source-code license |
 | Research model documentation | Available under `models/research_nc_aria_gigamidi_v1/` |
 | Compound browser runtime source | Available; separate native-stream V2 ABI with fail-closed publication config |
+| Compound LoRA policy | Available; public compatibility policy, **not** a frozen Compound Adapter ABI |
 | Research checkpoint | Reported as locally frozen; not distributed by this repository |
 | Compound ONNX stream/decoder graphs | Locally validated/referenced by handoff work; **not distributed by this repository** |
 | Compound Web model variants | None configured; generation remains disabled until a separately reviewed release |
+| Production Compound Adapter binaries | Not accepted/published yet; Compound Adapter ABI is not frozen |
 | Training data and memmap indexes | Not redistributed |
 | Local audit JSONs / generated MIDI package | Referenced by historical reports; not bundled public evidence |
 
@@ -25,6 +27,27 @@ The browser code adds another hard gate rather than weakening this boundary: an 
 
 The original research `manifest.json` is retained unchanged as a historical run record. It is not compatible with the strict [legacy Base schema](../schemas/base_manifest.schema.json): its additional fields, absent ONNX hash, zero ONNX bytes, and oversized checkpoint must not be hidden by loosening that production schema.
 
+## Base pretraining and Adapter publication
+
+For Compound, Base pretraining and LoRA adaptation are separate publication stages.
+
+```text
+mutable full-parameter training state
+→ completed/evaluated checkpoint
+→ immutable Base id + SHA-256
+→ versioned Compound Adapter ABI
+→ frozen-Base LoRA training
+→ Adapter / merged-variant evaluation
+→ rights review
+→ optional artifact publication
+```
+
+A mutable continuation checkpoint must not become a public Adapter compatibility target. Intermediate checkpoints may be used for local research, but public compatibility requires an immutable Base identity.
+
+The existing Theory-REMI `orbitune-lora-v0` ABI is not a shortcut around this gate. Compound target modules, rank/scaling and serialization must be frozen under a new ABI after the exact target Base is selected. See [Compound LoRA policy](COMPOUND_LORA_POLICY.md).
+
+An Adapter cannot broaden the distribution rights of its Base. A research-NC Base yields research-NC/noncommercial Adapter/merged descendants at most; permissive Adapter training data does not convert the Base lineage into a commercial one.
+
 ## Corrections made for public readers
 
 - Removed nonexistent `generate --seed` and `resume --allow-runtime-change` usage examples; current CLI arguments are tested.
@@ -32,10 +55,11 @@ The original research `manifest.json` is retained unchanged as a historical run 
 - Preserved the historical sampler-RNG limitation; current fixes do not retroactively repair saved state.
 - Corrected the 126-song discrepancy being added as another rejection category. Missing inputs remain a limitation, not a proved quality exclusion.
 - Marked local evidence as local instead of presenting missing files as public deliverables.
-- Separated the Apache-2.0 code license, the reported NC checkpoint declaration, source terms, and generated-output rights. No license is changed by source/runtime cleanup.
-- Separated the native Compound browser ABI from the legacy Theory-REMI Web/LoRA ABI; Compound LoRA must not silently reuse the legacy adapter contract.
+- Separated the Apache-2.0 code license, the reported NC checkpoint declaration, source terms, Adapter terms and generated-output rights. No license is changed by source/runtime cleanup.
+- Separated the native Compound browser ABI from the legacy Theory-REMI Web/LoRA ABI; Compound LoRA must not silently reuse the legacy Adapter contract.
+- Marked older design/handoff documents as historical through the current documentation index rather than treating their pre-implementation `NEXT` lists as present status.
 
-## Before a weight or ONNX release
+## Before a Base weight or ONNX release
 
 A maintainer should close these gates for the exact bytes being released:
 
@@ -47,7 +71,23 @@ A maintainer should close these gates for the exact bytes being released:
 6. Change `redistribution_review` and `publication_status` only as part of that reviewed release, then add a fully ABI-bound Base or pre-merged-LoRA variant. The current source tree must remain generation-disabled before that point.
 7. Keep the legacy Base/Adapter registry unchanged unless a separately reviewed artifact actually satisfies its different ABI and artifact contract.
 
-Source/runtime development can finish while these artifact-release gates remain open.
+## Before a Compound LoRA / Adapter release
+
+In addition to any applicable Base-release gates:
+
+1. Select one immutable Base model id and exact checkpoint SHA-256.
+2. Freeze a new versioned Compound Adapter ABI; do not use `orbitune-lora-v0`.
+3. Freeze exact target-module names/shapes, rank/alpha/scaling and Safetensors metadata/tensor layout.
+4. Train with Base weights frozen and record enough configuration/source identity to reproduce the Adapter run.
+5. Verify strict rejection of wrong-Base, wrong-ABI, missing and duplicate Adapter tensors.
+6. Record held-out evaluation and generated-MIDI evidence for Base-only versus Adapter behavior.
+7. Review Adapter training-data rights separately and confirm that Adapter terms do not exceed the Base's distribution scope.
+8. If a browser variant is offered, merge only against the exact Base, export the matched V2 graph pair and rerun native/Web parity on those exact merged bytes.
+9. Publish real hashes/URLs and Adapter identity; never use an unversioned mutable training checkpoint as the dependency.
+
+Until these conditions are met, Compound LoRA remains an experimental/local adaptation path rather than a public community Adapter release channel.
+
+Source/runtime/Adapter-policy development can finish while artifact-release gates remain open.
 
 ## Source hygiene and its limits
 
@@ -66,4 +106,4 @@ python -m pytest -q tests/test_publication.py
 node --test web/*.test.mjs
 ```
 
-The publication check performs no dataset processing, weight deserialization, or training. Results apply to the inspected checkout, not to unavailable local training artifacts.
+The publication check performs no dataset processing, weight deserialization, Adapter training or Base training. Results apply to the inspected checkout, not to unavailable local training artifacts.
