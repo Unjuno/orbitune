@@ -1,19 +1,24 @@
 # Contributing Orbitune Adapters
 
-Orbitune accepts small LoRA adapters for compatible immutable Base checkpoints registered under `bases/`.
+Orbitune currently has **two separate model families with different Adapter status**:
 
-## Compatibility rule
+- **Legacy Theory-REMI** — operational LoRA/Adapter ABI; community Adapter contributions may target compatible immutable Bases registered under `bases/`.
+- **Compound Transformer** — trained Base/runtime path exists, but its public Adapter ABI is not frozen yet. See [Compound LoRA policy](docs/COMPOUND_LORA_POLICY.md).
 
-An Adapter is bound to exactly one Base checkpoint by both Base id and SHA-256:
+Do not mix these ABIs.
+
+## Legacy Theory-REMI compatibility rule
+
+A legacy Adapter is bound to exactly one Base checkpoint by both Base id and SHA-256:
 
 ```text
 base_model   <registered Base id>
 base_sha256  <exact checkpoint SHA-256>
 ```
 
-Matching architecture or parameter count alone is not enough. Both `manifest.json` and `adapter.safetensors` metadata must carry the same Base hash. Registry generation, Python loading, and the browser runtime reject mismatches.
+Matching architecture or parameter count alone is not enough. Both `manifest.json` and `adapter.safetensors` metadata must carry the same Base hash. Registry generation, Python loading, and the legacy browser runtime reject mismatches.
 
-## Required layout
+## Legacy required layout
 
 ```text
 adapters/community/<adapter-id>/
@@ -23,7 +28,7 @@ adapters/community/<adapter-id>/
   README.md
 ```
 
-## Current operational Adapter ABI
+## Current operational legacy Adapter ABI
 
 ```text
 architecture     orbitune-midi-gpt-v0
@@ -36,11 +41,26 @@ reference shape  4 layers / hidden 448 / 7 heads / context 1024
 
 The old hidden-240 ~3M configuration is historical and is not the current reference shape.
 
-The Compound production path is still experimental (`orbitune-compound-v0-experimental`). Do not publish community adapters against it until a Compound Base architecture/tokenizer/Adapter ABI is frozen. A future Compound Adapter ABI may use different target modules, packing or rank defaults.
+## Compound Adapter status
 
-## Create and train a current reference Adapter
+The Compound tokenizer/model/runtime use a different architecture and inference contract. The legacy `orbitune-lora-v0` tensor packing, rank and target-module assumptions are **not** a Compound Adapter ABI.
 
-The default scaffold targets `orbitune-base`. For another registered compatible Base, set `base_model` in the manifest to that Base id and use its exact checkpoint SHA-256.
+Current public policy:
+
+- Base pretraining remains full-parameter training.
+- Mutable continuation checkpoints are not public Adapter compatibility targets.
+- A public Compound Adapter must target an immutable Base id + exact checkpoint SHA-256.
+- Compound target modules, rank, scaling and artifact tensor layout must be measured and frozen under a **new Adapter ABI identifier**.
+- The first validated browser strategy is a pre-merged LoRA variant exported as a matched Compound `stream` + `decoder_prefix` graph pair.
+- Community Compound Adapter binaries are not accepted into the production registry until those gates are closed.
+
+Experimental Compound LoRA code, bounded rank/target experiments, tests and ABI proposals are welcome when clearly labeled experimental and when they do not publish restricted Base/model artifacts.
+
+See [docs/COMPOUND_LORA_POLICY.md](docs/COMPOUND_LORA_POLICY.md) for the complete Base-freeze, rights, training and release policy.
+
+## Create and train a current legacy Adapter
+
+The default scaffold targets a compatible registered legacy Base. For another registered compatible Base, set `base_model` in the manifest to that Base id and use its exact checkpoint SHA-256.
 
 ```bash
 orbitune train-adapter \
@@ -53,15 +73,21 @@ orbitune train-adapter \
 
 Training embeds the actual Base checkpoint SHA-256 in the Safetensors metadata. Copy the same value into the Adapter manifest.
 
-## Size policy
+This command belongs to the legacy Theory-REMI path. It must not be presented as Compound LoRA training.
+
+## Legacy Adapter size policy
 
 Recommended: one Adapter directory <= 1 MiB. The hard CI threshold is 5 MiB.
 
+No Compound Adapter size limit is frozen yet; that limit should be selected together with the future Compound Adapter ABI.
+
 ## Rights and quality
 
-Every Adapter must declare its license and training-data rights status. `rights_confirmed` must be true. A non-empty generated `demo.mid` and non-empty `README.md` are mandatory.
+Every public Adapter must declare its license and training-data rights status. `rights_confirmed` must be true for the existing legacy manifest contract. A non-empty generated `demo.mid` and non-empty `README.md` are mandatory for the existing legacy contribution path.
 
-## Pull request checklist
+An Adapter cannot broaden the permissions of its Base. In particular, an Adapter or pre-merged derivative of a research-NC Compound Base remains noncommercial even when the Adapter's own training material is permissively licensed.
+
+## Legacy pull request checklist
 
 - [ ] `base_model` exists in `bases/`
 - [ ] `base_sha256` exactly matches that Base checkpoint
@@ -70,3 +96,5 @@ Every Adapter must declare its license and training-data rights status. `rights_
 - [ ] `demo.mid` is playable and non-empty
 - [ ] README, license, and training-data declaration are complete
 - [ ] Base/Adapter dependency validation CI passes
+
+For Compound LoRA work, use the separate acceptance gates in [Compound LoRA policy](docs/COMPOUND_LORA_POLICY.md); do not force a Compound artifact through this legacy checklist.
