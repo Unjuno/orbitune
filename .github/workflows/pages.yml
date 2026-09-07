@@ -3,37 +3,70 @@ name: pages
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - "web/**"
+      - "bases/**"
+      - "adapters/**"
+      - "orbitune/registry.py"
+      - "orbitune/base_registry.py"
+      - "scripts/build_registry.py"
+      - "pyproject.toml"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0; same pin as test.yml/web-test.yml
         with:
-          python-version: '3.12'
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # validated by web-test.yml
+        with:
+          node-version: "22"
+      - name: Run browser runtime unit tests before packaging
+        run: node --test web/*.test.mjs
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0; same pin as test.yml
+        with:
+          python-version: "3.12"
       - name: Install CPU PyTorch
         run: python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
       - name: Install Orbitune registry dependencies
         run: python -m pip install -e .
-      - uses: actions/configure-pages@v5
       - name: Build Base and Adapter registries and browser assets
         run: python scripts/build_registry.py --bases bases --adapters adapters --web-root web
-      - uses: actions/upload-pages-artifact@v3
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # resolved v3 pin from successful deployment
         with:
           path: web
-      - id: deployment
-        uses: actions/deploy-pages@v4
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # resolved v5 pin from successful deployment
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # resolved v4 pin from successful deployment
