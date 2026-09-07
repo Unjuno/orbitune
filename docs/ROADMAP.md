@@ -58,16 +58,16 @@ Completed:
 - Compound → Standard MIDI conversion
 - Play / Stop WebAudio preview
 - SHA-bound fail-closed model variant loader
-- pre-merged LoRA variant concept
+- pre-merged LoRA variant **concept**
 - GitHub Pages source deployment
 
-The source runtime is public. The actual Compound ONNX model files are not public yet.
+The source runtime is public. The actual Compound ONNX model files are not public yet. The Base V2 parity evidence does not validate a future LoRA-merged artifact; any merged variant must repeat parity on its own exact bytes.
 
-## Milestone E — long-run full-parameter Base continuation — CURRENT MODEL WORK
+## Milestone E — long-run full-parameter Base continuation — PLANNED NEXT MODEL WORK
 
-The next Base-training objective is a normal full-parameter continuation from an immutable parent, with ordinary resumable checkpoints.
+The next Base-training objective is a normal full-parameter continuation from an immutable parent, with ordinary resumable checkpoints. The public repository does **not** claim this planned run has started or completed until actual checkpoint/run evidence is recorded.
 
-A clean round target of 1,000,000 global steps under the current 16 × 256 batch geometry corresponds to approximately:
+A clean round target of 1,000,000 global steps under the planned 16 × 256 batch geometry corresponds to approximately:
 
 ```text
 4,096 event positions / step
@@ -79,9 +79,9 @@ This is approximately one corpus-equivalent amount of sampled exposure relative 
 
 This milestone is not complete until an actual final checkpoint is saved, loaded, hashed, evaluated and documented. A later checkpoint must receive a new model identity; it must not overwrite the 100k historical V1 record.
 
-## Milestone F — final Base selection and evaluation — AFTER LONG-RUN TRAINING
+## Milestone F — final Base selection and evaluation — AFTER A LONG-RUN CANDIDATE EXISTS
 
-For the later Base candidate:
+For a later Base candidate:
 
 - verify exact checkpoint identity and loadability
 - compare held-out loss against earlier milestones
@@ -113,17 +113,17 @@ Community Compound Adapter binaries remain gated until then.
 
 ## Milestone H — Compound LoRA Web deployment — AFTER ADAPTER VALIDATION
 
-Initial deployment strategy:
+Planned initial deployment strategy:
 
 ```text
 frozen Base + validated Adapter
 → local merge
 → export matched V2 stream + decoder graphs
-→ repeat native/Web parity
-→ publish as lora-premerged variant
+→ repeat native/Web parity on the exact merged bytes
+→ only then publish as lora-premerged variant
 ```
 
-Dynamic browser LoRA is optional later work and requires its own validated packing/numerical/runtime contract.
+No LoRA-specific merged Compound Web artifact has been validated or published yet. Dynamic browser LoRA is optional later work and requires its own validated packing/numerical/runtime contract.
 
 ## Milestone I — model / ONNX publication — RIGHTS-GATED
 
@@ -166,14 +166,14 @@ Tracked separately from Base training:
 ## Current critical-path summary
 
 ```text
-DONE  repository/publication safety foundation
-DONE  Compound hierarchical Base implementation
-DONE  Aria+GigaMIDI V1 frozen at step 100k
-DONE  native Compound V2 Web runtime source + Pages deployment
-NOW   long-run full-parameter Base continuation
-THEN  evaluate/freeze next immutable Base candidate
-THEN  freeze and validate Compound LoRA ABI
-THEN  optional Adapter/pre-merged variants
-GATE  redistribution review before public model/ONNX release
-OPTIONAL  SFT/DPO/RL only if Base evaluation demonstrates a need
+DONE     repository/publication safety foundation
+DONE     Compound hierarchical Base implementation
+DONE     Aria+GigaMIDI V1 frozen at step 100k
+DONE     native Compound V2 Web runtime source + Pages deployment
+PLANNED  long-run full-parameter Base continuation
+THEN     evaluate/freeze next immutable Base candidate if produced
+THEN     freeze and validate Compound LoRA ABI
+THEN     optional Adapter/pre-merged variants after their own parity validation
+GATE     redistribution review before public model/ONNX release
+OPTIONAL SFT/DPO/RL only if Base evaluation demonstrates a need
 ```
