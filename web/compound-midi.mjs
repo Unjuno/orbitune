@@ -140,6 +140,10 @@ export function compoundEventsToMidiBytes(events, { division = TEMPORAL_RESOLUTI
       timeline.push({ tick, priority: 3, message: [0xB0 | event.channel, 32, event.a2] });
     } else if (event.type === CompoundEventType.TEMPO) {
       const micros = Math.max(1, bankersRound(60_000_000 / event.a1));
+      // Match Python int.to_bytes(3, "big") semantics: 1–3 BPM cannot be
+      // represented in the three-byte Standard MIDI tempo payload. Do not
+      // silently truncate/wrap those bytes into an unrelated tempo.
+      if (micros > 0xffffff) throw new Error(`TEMPO ${event.a1} BPM exceeds the three-byte MIDI tempo field`);
       timeline.push({ tick, priority: 0, message: [0xff, 0x51, 0x03, Math.floor(micros / 65536) & 0xff, Math.floor(micros / 256) & 0xff, micros & 0xff] });
     } else if (event.type === CompoundEventType.PEDAL) timeline.push({ tick, priority: 5, message: [0xB0 | event.channel, 64, event.a1 ? 127 : 0] });
     else if (event.type === CompoundEventType.PITCH_BEND) timeline.push({ tick, priority: 6, message: [0xE0 | event.channel, event.a1 & 0x7f, Math.floor(event.a1 / 128) & 0x7f] });
