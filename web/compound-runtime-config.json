@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1.0",
+  "runtime_abi": "native-stream-state+decoder-prefix-v2",
+  "publication_status": "runtime_ready_model_unpublished",
+  "model_id": "research-nc-aria-gigamidi-v1",
+  "checkpoint_sha256": "8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc",
+  "architecture": "orbitune-compound-hierarchical-gpt-v1",
+  "tokenizer": "orbitune-compound-v0-experimental",
+  "commercial_eligible": false,
+  "distribution_scope": "noncommercial",
+  "license_policy": "research-nc",
+  "redistribution_review": "pending",
+  "variants": []
+}
