@@ -12,7 +12,7 @@
     "sha256": "8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc",
     "bytes": 106583212,
     "path": "runs/research_nc_aria_gigamidi_v1/model.pt",
-    "path_note": "Relative to the orbitune_clone worktree root. The actual frozen checkpoint is a large binary (~101.6 MiB) and is not included in Git. Verify SHA-256 matches before use.",
+    "path_note": "Relative to the orbitune_clone worktree root. The actual frozen checkpoint is a large binary (~101.6 MiB) and is not included in Git. Verify SHA-256 matches before use."
   },
   "web_onnx": {
     "filename": "web.onnx",
