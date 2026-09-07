@@ -18,12 +18,15 @@ Do not use the old snapshot's `OPEN`, `NEXT`, proxy architecture, or pre-impleme
 Current high-level state:
 
 ```text
-DONE  hierarchical Compound Base implementation
-DONE  frozen Research-NC Aria+GigaMIDI V1 at step 100k
-DONE  native V2 Compound Web runtime source + Pages deployment
-NOW   long-run full-parameter Base continuation / evaluation work
-NEXT  freeze the next selected Base, then define a new Compound Adapter ABI
-GATE  model/ONNX publication remains subject to redistribution review
+DONE     hierarchical Compound Base implementation
+DONE     frozen Research-NC Aria+GigaMIDI V1 at step 100k
+DONE     native V2 Compound Base Web runtime source + Pages deployment
+PLANNED  longer full-parameter Base continuation; not claimed started here
+THEN     freeze/evaluate a later Base candidate if produced
+THEN     define and validate a new Compound Adapter ABI
+GATE     model/ONNX publication remains subject to redistribution review
 ```
+
+The existing V2 parity evidence validates the Base browser ABI described by its handoff; it does not pre-validate a future LoRA-merged artifact.
 
 Historical experiments remain useful as evidence for decisions made at the time; they are not silently converted into evidence for later model versions.
