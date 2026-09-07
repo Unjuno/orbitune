@@ -167,13 +167,14 @@ def train_step(model, optimizer, scaler, inputs, targets, precision: str, grad_c
     if scaler.is_enabled():
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         scaler.step(optimizer)
         scaler.update()
     else:
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
+    parts["grad_norm"] = grad_norm.detach()
     return loss, parts
 
 
@@ -275,9 +276,15 @@ def train(args: argparse.Namespace) -> None:
         loss, parts = train_step(model, optimizer, scaler, x, y, precision, args.grad_clip)
         if step == 1 or step % args.log_every == 0 or step == args.steps:
             torch.cuda.synchronize(); now = time.perf_counter(); n = max(1, step - interval_step); elapsed = max(1e-9, now - interval_start)
+            grad_norm = parts.get("grad_norm")
             stats = cuda_stats(); message = {
-                "step": step, "loss": float(loss), "components": {k: float(v) for k, v in parts.items()},
-                "events_per_sec": n * args.batch_size * args.seq_len / elapsed, "runtime": runtime, "cuda": stats,
+                "step": step,
+                "loss": float(loss),
+                "components": {k: float(v) for k, v in parts.items() if k != "grad_norm"},
+                "grad_norm": None if grad_norm is None else float(grad_norm),
+                "events_per_sec": n * args.batch_size * args.seq_len / elapsed,
+                "runtime": runtime,
+                "cuda": stats,
             }
             if step >= args.low_vram_warn_after and stats["peak_reserved_fraction"] < args.low_vram_fraction:
                 message["warning"] = "low_vram_utilization"
