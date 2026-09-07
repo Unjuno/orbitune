@@ -17,6 +17,11 @@ cuda_train = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cuda_train)
 
 
+class _DisabledScaler:
+    def is_enabled(self) -> bool:
+        return False
+
+
 def _tiny() -> CompoundBaseConfig:
     return CompoundBaseConfig(
         d_model=32,
@@ -56,6 +61,42 @@ def test_fast_loss_matches_reference_loss() -> None:
     reference, _ = model(inputs, targets)
     optimized, _ = cuda_train.fast_loss(model, inputs, targets)
     assert torch.allclose(reference, optimized, atol=1e-6, rtol=1e-6)
+
+
+def test_train_step_reports_true_preclip_grad_norm_and_same_update() -> None:
+    torch.manual_seed(11)
+    model_actual = CompoundHierarchicalGPT(_tiny()).train()
+    model_reference = CompoundHierarchicalGPT(_tiny()).train()
+    model_reference.load_state_dict(model_actual.state_dict())
+    records = torch.tensor([_rows()], dtype=torch.long)
+    inputs, targets = records[:, :-1], records[:, 1:]
+
+    actual_optimizer = torch.optim.SGD(model_actual.parameters(), lr=0.01)
+    reference_optimizer = torch.optim.SGD(model_reference.parameters(), lr=0.01)
+    scaler = _DisabledScaler()
+    grad_clip = 0.05
+
+    actual_loss, parts = cuda_train.train_step(
+        model_actual,
+        actual_optimizer,
+        scaler,
+        inputs,
+        targets,
+        "fp32",
+        grad_clip,
+    )
+
+    reference_optimizer.zero_grad(set_to_none=True)
+    reference_loss, _ = cuda_train.fast_loss(model_reference, inputs, targets)
+    reference_loss.backward()
+    expected_grad_norm = torch.nn.utils.clip_grad_norm_(model_reference.parameters(), grad_clip)
+    reference_optimizer.step()
+
+    torch.testing.assert_close(actual_loss, reference_loss)
+    torch.testing.assert_close(parts["grad_norm"], expected_grad_norm)
+    assert float(expected_grad_norm) > grad_clip
+    for actual, expected in zip(model_actual.parameters(), model_reference.parameters()):
+        torch.testing.assert_close(actual, expected)
 
 
 def test_tensor_sampler_keeps_shift_alignment() -> None:
