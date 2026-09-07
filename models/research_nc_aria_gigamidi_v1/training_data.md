@@ -81,7 +81,7 @@
 | Dedup timing discrepancy | 126 |
 | **Total rejected** | **378,524** |
 
-The 126-song discrepancy between the GigaMIDI manifest's train count (1,826,143) and the shard build's expected input (1,826,269) is attributed to manifest deduplication/version timing — files that entered shard building were not present in the final combined manifest split assignment. This is the leading attribution and below the 0.01% threshold of total corpus songs.
+The 126-song discrepancy between the GigaMIDI manifest's train count (1,826,143) and the shard build's expected input (1,826,269) is a **bounded accounting difference**. Dedup timing is the leading attribution — files that entered shard building were not present in the final combined manifest split assignment — but this is **not independently proven** at the per-song level. The difference is below the 0.01% threshold of total corpus songs and all 378,398 shard-build rejections are fully explained (366,056 missing-input + 12,342 parse_failure). Across 366 shards, unaccounted = 0.
 
 ---
 

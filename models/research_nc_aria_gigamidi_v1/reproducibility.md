@@ -96,7 +96,7 @@ TRAIN_RECORDS (4,071,401,228) − TRAIN_SONGS (2,263,855) = 4,069,137,373
 ```
 
 - 366 GigaMIDI shards: all verified done, all SHA-pass, 0 unaccounted
-- 378,272 GigaMIDI songs rejected: 366,056 missing-input + 12,342 OverflowError + 126 dedup-timing
+- 378,272 GigaMIDI songs lost from manifest to indexed (366,056 missing-input + 12,342 OverflowError = 378,398 shard-build rejections; 126-song bounded accounting difference attributed to dedup timing, not independently proven)
 - Events lost: 645,211,002 (attributable to rejected songs, ~1,705 events/song ≈ census mean)
 - Shard rebuild required: NO
 
