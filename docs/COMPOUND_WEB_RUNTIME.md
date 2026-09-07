@@ -36,6 +36,7 @@ The runtime intentionally mirrors current Python semantics:
 - `web/compound-runtime.mjs` — V2 stream/decoder orchestration and sampling.
 - `web/compound-midi.mjs` — Compound record decode, canonicalization, and Standard MIDI serialization.
 - `web/compound-player.mjs` — lightweight WebAudio note preview.
+- `web/compound-variant.mjs` — fail-closed release, ABI, Base-SHA, URL, and variant validation.
 - `web/compound.html` / `web/compound-app.mjs` — separate Compound UI.
 - `web/compound-runtime-config.json` — publication/variant state. It intentionally contains no model URLs while redistribution remains unresolved.
 
@@ -43,7 +44,29 @@ The legacy `web/orbitune-runtime.mjs` remains Theory-REMI-specific and is not re
 
 ## Model and LoRA variants
 
-The Compound page treats a deployable entry as a **variant** containing a matched stream graph and decoder-prefix graph. Initially, LoRA should use pre-merged model variants rather than the legacy dynamic Theory-REMI adapter ABI. A future variant entry can identify whether it is the Base export or a pre-merged LoRA derivative, but every pair must remain bound to the exact compatible Base/checkpoint identity and applicable rights.
+The Compound page treats a deployable entry as a **variant** containing a matched stream graph and decoder-prefix graph. Initially, LoRA should use pre-merged model variants rather than the legacy dynamic Theory-REMI adapter ABI.
+
+A future available variant must declare at least the following contract:
+
+```json
+{
+  "id": "research-nc-aria-gigamidi-v1-web",
+  "display_name": "Orbitune Research-NC Aria+GigaMIDI V1",
+  "kind": "base",
+  "available": true,
+  "architecture": "orbitune-compound-hierarchical-gpt-v1",
+  "tokenizer": "orbitune-compound-v0-experimental",
+  "runtime_abi": "native-stream-state+decoder-prefix-v2",
+  "base_checkpoint_sha256": "<exact frozen Base checkpoint SHA-256>",
+  "stream": {"url": "https://.../stream.onnx", "sha256": "<64 hex>"},
+  "decoder": {"url": "https://.../decoder_prefix.onnx", "sha256": "<64 hex>"},
+  "execution_providers": ["wasm"]
+}
+```
+
+A `kind: "lora-premerged"` variant additionally requires an `adapter_id`. The runtime rejects a variant whose architecture, tokenizer, runtime ABI, or Base checkpoint SHA does not exactly match the top-level model binding. Executable/insecure URL schemes are rejected; currently the validated execution provider is WASM only.
+
+The release gate is also fail-closed: an `available: true` variant is invalid unless `redistribution_review` is `completed` **and** `publication_status` is `runtime_model_published`. Conversely, the current unpublished status cannot expose an available variant. These are source-level safety gates, not a substitute for the separate legal/rights review itself.
 
 No model variant is configured today. Once redistribution is explicitly approved, a separate release task can add verified URLs and SHA-256 values without committing large ONNX binaries to Git.
 
@@ -64,4 +87,4 @@ The existing Web workflow automatically runs all `web/*.test.mjs` files under No
 node --test web/*.test.mjs
 ```
 
-Model-dependent WASM parity remains an artifact-release gate because the two ONNX files are deliberately absent from Git.
+Tests cover the native numeric/mask/runtime contract, publication-safe empty configuration, variant/Base binding, release-gate behavior, URL scheme restrictions, MIDI conversion, and preview timing. Model-dependent WASM parity remains an artifact-release gate because the two ONNX files are deliberately absent from Git.
