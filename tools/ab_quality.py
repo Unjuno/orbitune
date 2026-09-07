@@ -63,7 +63,12 @@ def run_one(*, n_head: int, train_songs, validation_songs, args, device):
     for step in range(1, args.steps + 1):
         x, y = train_sampler.sample(args.batch_size, args.seq_len, rng, device)
         loss, parts = train_step(model, optimizer, scaler, x, y, args.precision, args.grad_clip)
-        train_history.append({"step": step, "loss": float(loss.detach()), "components": {k: float(v) for k, v in parts.items()}})
+        train_history.append({
+            "step": step,
+            "loss": float(loss.detach()),
+            "components": {k: float(v) for k, v in parts.items() if k != "grad_norm"},
+            "grad_norm": None if parts.get("grad_norm") is None else float(parts["grad_norm"]),
+        })
 
     val_plan = capture_validation_window_plan(
         validation_songs,
