@@ -1,0 +1,80 @@
+{
+  "architecture": "orbitune-compound-hierarchical-gpt-v1",
+  "browser_notes": [
+    "Caller keeps tensorized native stream state between events (no recompute).",
+    "Per event: 1 stream call + 8 decoder-prefix calls (one per slot stage).",
+    "Sampling (argmax/top-p + gaussian) + masks + quantize run outside the graph in JavaScript.",
+    "JavaScript must replicate Python round() half-to-even semantics and the exact quantize_time/quantize_unsigned rules."
+  ],
+  "compound_fields": ["event_type", "channel", "delta_coarse", "delta_residual", "a1", "a2", "a3", "a4", "duration_coarse", "duration_residual", "continuous_coarse", "continuous_residual"],
+  "decoder_prefix": {
+    "dtypes": {"float_inputs": "float32", "int_inputs": "int64", "outputs": "float32"},
+    "inputs": [
+      {"dtype": "float32", "name": "ctx", "shape": [1, 224]},
+      {"dtype": "int64", "name": "et", "shape": []},
+      {"dtype": "int64", "name": "ch", "shape": []},
+      {"dtype": "float32", "name": "dn", "shape": []},
+      {"dtype": "int64", "name": "a1", "shape": []},
+      {"dtype": "int64", "name": "a2", "shape": []},
+      {"dtype": "float32", "name": "vn", "shape": []},
+      {"dtype": "float32", "name": "dur", "shape": []}
+    ],
+    "outputs": [
+      {"dtype": "float32", "name": "event_type_logits", "shape": [1, 8, 10]},
+      {"dtype": "float32", "name": "channel_logits", "shape": [1, 8, 16]},
+      {"dtype": "float32", "name": "delta_mean", "shape": [1, 8]},
+      {"dtype": "float32", "name": "delta_log_scale", "shape": [1, 8]},
+      {"dtype": "float32", "name": "a1_logits", "shape": [1, 8, 1024]},
+      {"dtype": "float32", "name": "a2_logits", "shape": [1, 8, 1024]},
+      {"dtype": "float32", "name": "velocity_mean", "shape": [1, 8]},
+      {"dtype": "float32", "name": "velocity_log_scale", "shape": [1, 8]},
+      {"dtype": "float32", "name": "duration_mean", "shape": [1, 8]},
+      {"dtype": "float32", "name": "duration_log_scale", "shape": [1, 8]},
+      {"dtype": "float32", "name": "control_mean", "shape": [1, 8]},
+      {"dtype": "float32", "name": "control_log_scale", "shape": [1, 8]}
+    ],
+    "stage_order": ["event_type", "channel", "delta", "a1", "a2", "velocity", "duration", "control"]
+  },
+  "field_cardinalities": [10, 16, 7, 16, 1024, 1024, 128, 256, 7, 16, 8, 8],
+  "model": "research-nc-aria-gigamidi-v1",
+  "prefix_scalars": "Use sampled normalized delta/velocity/duration scalars directly; do not reconstruct the decoder prefix from quantized record fields.",
+  "strategy": "native-stream-state + decoder-prefix (two graphs)",
+  "stream_advance": {
+    "inputs": [
+      {"dtype": "int64", "name": "rec", "shape": [12]},
+      {"dtype": "int64", "name": "loc", "shape": [64, 12]},
+      {"dtype": "int64", "name": "lloc", "shape": []},
+      {"dtype": "float32", "name": "mbuf", "shape": [8, 224]},
+      {"dtype": "int64", "name": "mblen", "shape": []},
+      {"dtype": "float32", "name": "mhist", "shape": [64, 224]},
+      {"dtype": "int64", "name": "mhlen", "shape": []},
+      {"dtype": "float32", "name": "gbuf", "shape": [4, 224]},
+      {"dtype": "int64", "name": "gblen", "shape": []},
+      {"dtype": "float32", "name": "ghist", "shape": [64, 224]},
+      {"dtype": "int64", "name": "ghlen", "shape": []},
+      {"dtype": "float32", "name": "memf", "shape": [1, 224]},
+      {"dtype": "float32", "name": "memm", "shape": [1, 224]},
+      {"dtype": "float32", "name": "mems", "shape": [1, 224]},
+      {"dtype": "int64", "name": "steps", "shape": []}
+    ],
+    "outputs": [
+      {"dtype": "float32", "name": "ctx", "shape": [1, 224]},
+      {"dtype": "int64", "name": "loc_o", "shape": [64, 12]},
+      {"dtype": "int64", "name": "lloc_o", "shape": []},
+      {"dtype": "float32", "name": "mbuf_o", "shape": [8, 224]},
+      {"dtype": "int64", "name": "mblen_o", "shape": []},
+      {"dtype": "float32", "name": "mhist_o", "shape": [64, 224]},
+      {"dtype": "int64", "name": "mhlen_o", "shape": []},
+      {"dtype": "float32", "name": "gbuf_o", "shape": [4, 224]},
+      {"dtype": "int64", "name": "gblen_o", "shape": []},
+      {"dtype": "float32", "name": "ghist_o", "shape": [64, 224]},
+      {"dtype": "int64", "name": "ghlen_o", "shape": []},
+      {"dtype": "float32", "name": "memf_o", "shape": [1, 224]},
+      {"dtype": "float32", "name": "memm_o", "shape": [1, 224]},
+      {"dtype": "float32", "name": "mems_o", "shape": [1, 224]},
+      {"dtype": "int64", "name": "steps_o", "shape": []}
+    ]
+  },
+  "tokenizer": "orbitune-compound-v0-experimental",
+  "v1_status": "The fixed-S64 teacher-forced export is a surrogate and is not the production browser ABI."
+}
