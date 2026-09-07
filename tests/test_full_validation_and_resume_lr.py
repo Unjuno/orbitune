@@ -419,5 +419,65 @@ class TestResumeLrOverride(unittest.TestCase):
                 self.assertAlmostEqual(float(pg["lr"]), 1e-4)
 
 
+# ---------------------------------------------------------------------------
+# Phase 18: validation-corpus identity scoping for best_validation_loss
+# ---------------------------------------------------------------------------
+
+class TestValidationCorpusIdentityScoping(unittest.TestCase):
+    """When resuming from a checkpoint whose validation corpus differs from
+    the current one, best_validation_loss must be reset so cross-corpus
+    loss values are not compared. See Phase 18 of the research-NC plan."""
+
+    def test_checkpoint_roundtrips_validation_corpus_identity(self):
+        cfg = CompoundBaseConfig(d_model=28, n_head=7,
+                                 local_layers=1, medium_layers=1, global_layers=1, intra_layers=1,
+                                 local_window=8, medium_stride=2, medium_window=8,
+                                 global_stride=2, global_window=8)
+        cfg.validate()
+        model = CompoundHierarchicalGPT(cfg)
+        import random as _r
+        rng = _r.Random(0)
+        runtime = {"n_head": 7, "seq_len": 256, "batch_size": 4,
+                   "precision": "bf16", "causal_fastpath": True, "cfe": True,
+                   "training_jsonl": "train", "validation_jsonl": "val"}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "ckpt.pt"
+            payload = build_compound_checkpoint(
+                model=model, optimizer=None, scaler=None,
+                step=100, events_seen=10000, runtime=runtime, rng=rng,
+                validation_corpus_identity="valset_abc",
+            )
+            atomic_torch_save(payload, path)
+            loaded, raw = CompoundHierarchicalGPT.load_checkpoint(path, map_location="cpu")
+            parsed = parse_compound_checkpoint(raw)
+            self.assertEqual(parsed["validation_corpus_identity"], "valset_abc")
+
+    def test_old_checkpoint_defaults_to_none(self):
+        cfg = CompoundBaseConfig(d_model=28, n_head=7,
+                                 local_layers=1, medium_layers=1, global_layers=1, intra_layers=1,
+                                 local_window=8, medium_stride=2, medium_window=8,
+                                 global_stride=2, global_window=8)
+        cfg.validate()
+        model = CompoundHierarchicalGPT(cfg)
+        import random as _r
+        rng = _r.Random(0)
+        runtime = {"n_head": 7, "seq_len": 256, "batch_size": 4,
+                   "precision": "bf16", "causal_fastpath": True, "cfe": True,
+                   "training_jsonl": "train", "validation_jsonl": "val"}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "ckpt.pt"
+            payload = build_compound_checkpoint(
+                model=model, optimizer=None, scaler=None,
+                step=100, events_seen=10000, runtime=runtime, rng=rng,
+            )
+            # Simulate old checkpoint without the field
+            if "validation_corpus_identity" in payload:
+                del payload["validation_corpus_identity"]
+            atomic_torch_save(payload, path)
+            loaded, raw = CompoundHierarchicalGPT.load_checkpoint(path, map_location="cpu")
+            parsed = parse_compound_checkpoint(raw)
+            self.assertIsNone(parsed.get("validation_corpus_identity"))
+
+
 if __name__ == "__main__":
     unittest.main()

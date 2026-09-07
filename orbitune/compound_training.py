@@ -298,6 +298,7 @@ def build_compound_checkpoint(
     last_healthy_events_seen: int | None = None,
     validation_history: list[dict[str, object]] | None = None,
     validation_plan: dict[str, object] | None = None,
+    validation_corpus_identity: str | None = None,
     source_commit: str | None = None,
 ) -> dict[str, object]:
     """Assemble a versioned, device-independent Compound checkpoint payload."""
@@ -324,8 +325,8 @@ def build_compound_checkpoint(
         "runtime": dict(runtime),
         "torch_rng_state": torch.get_rng_state().cpu(),
         "cuda_rng_state_all": cuda_states,
-        "python_rng_state": rng.getstate(),
-        "sampler_rng_state": None,
+        "python_rng_state": random.getstate(),
+        "sampler_rng_state": rng.getstate(),
         "source_commit": source_commit,
         "health": {
             "loss_history": list(loss_history or []),
@@ -340,6 +341,7 @@ def build_compound_checkpoint(
         },
         "validation_history": list(validation_history or []),
         "validation_plan": validation_plan,
+        "validation_corpus_identity": validation_corpus_identity,
     }
 
 
@@ -385,6 +387,7 @@ def parse_compound_checkpoint(payload: dict[str, object]) -> dict[str, object]:
 
     out.setdefault("validation_history", [])
     out.setdefault("validation_plan", None)
+    out.setdefault("validation_corpus_identity", None)
     out.setdefault("amp_scaler_state_dict", None)
     out.setdefault("events_seen", int(out.get("step", 0)))
     return out
