@@ -1,6 +1,7 @@
 import { CompoundBrowserRuntime } from './compound-runtime.mjs';
 import { compoundEventsToMidiBytes, decodeCompoundRecords } from './compound-midi.mjs';
 import { CompoundPreviewPlayer } from './compound-player.mjs';
+import { availableCompoundVariants, validateCompoundRuntimeConfig } from './compound-variant.mjs';
 
 const variantSelect = document.getElementById('compound-variant');
 const modelMeta = document.getElementById('compound-model-meta');
@@ -28,9 +29,7 @@ async function loadJson(url) {
   if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
   return response.json();
 }
-function availableVariants() {
-  return (config?.variants || []).filter((variant) => variant.available === true && variant.stream?.url && variant.decoder?.url && variant.stream?.sha256 && variant.decoder?.sha256);
-}
+function availableVariants() { return config ? availableCompoundVariants(config) : []; }
 function selectedVariant() { return availableVariants().find((variant) => variant.id === variantSelect.value) || null; }
 
 async function ensureRuntime() {
@@ -51,8 +50,14 @@ async function ensureRuntime() {
 
 async function initialize() {
   updateLabels();
-  try { config = await loadJson('./compound-runtime-config.json'); }
-  catch (error) { setStatus(`Compound runtime config failed: ${error.message}`); return; }
+  try {
+    config = await loadJson('./compound-runtime-config.json');
+    validateCompoundRuntimeConfig(config);
+  } catch (error) {
+    generateButton.disabled = true;
+    setStatus(`Compound runtime config failed closed: ${error.message}`);
+    return;
+  }
   modelMeta.textContent = `${config.model_id} · ${config.architecture} · ${config.distribution_scope}`;
   const variants = availableVariants();
   variantSelect.replaceChildren();
@@ -83,7 +88,10 @@ async function generate() {
     playButton.disabled = !generatedEvents.some((event) => event.type === 0); stopButton.disabled = false;
     setStatus([`Generation complete.`, `variant=${selectedVariant()?.id || 'unknown'}`, `new_events=${count}`, `decoded_events=${generatedEvents.length}`, `temperature=${temp.toFixed(2)}`, `top_p=${p.toFixed(2)}`, `elapsed_ms=${(performance.now() - started).toFixed(0)}`].join('\n'));
   } catch (error) { setStatus(`Generation failed: ${error.message}`); }
-  finally { generateButton.disabled = !availableVariants().length; }
+  finally {
+    try { generateButton.disabled = !availableVariants().length; }
+    catch { generateButton.disabled = true; }
+  }
 }
 
 temperature.addEventListener('input', updateLabels); topP.addEventListener('input', updateLabels);
