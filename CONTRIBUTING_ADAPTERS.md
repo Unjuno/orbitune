@@ -51,8 +51,10 @@ Current public policy:
 - Mutable continuation checkpoints are not public Adapter compatibility targets.
 - A public Compound Adapter must target an immutable Base id + exact checkpoint SHA-256.
 - Compound target modules, rank, scaling and artifact tensor layout must be measured and frozen under a **new Adapter ABI identifier**.
-- The first validated browser strategy is a pre-merged LoRA variant exported as a matched Compound `stream` + `decoder_prefix` graph pair.
+- The planned initial browser strategy is a pre-merged LoRA variant exported as a matched Compound `stream` + `decoder_prefix` graph pair **after** the Adapter and exact merged artifact pass their own native/Web parity validation.
 - Community Compound Adapter binaries are not accepted into the production registry until those gates are closed.
+
+The pre-merged path is a deployment plan, not a claim that a Compound LoRA merged model has already been validated. The existing V2 browser parity evidence applies to the Base export described by its handoff, not to a future merged Adapter artifact.
 
 Experimental Compound LoRA code, bounded rank/target experiments, tests and ABI proposals are welcome when clearly labeled experimental and when they do not publish restricted Base/model artifacts.
 
