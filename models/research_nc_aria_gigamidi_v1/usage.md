@@ -1,104 +1,65 @@
-# Usage Guide
+# Using an independently obtained checkpoint
 
-This model is part of the orbitune repository. The frozen checkpoint is a large
-binary (~101.6 MiB) and is **not** stored in Git. Obtain the checkpoint at its
-release location and verify its SHA-256 before use:
+## Availability and trust
 
-```
-8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc
-```
+The repository does **not** include the trained checkpoint and does not currently provide a public download URL for it. The commands below are for a user who already has an authorized local copy. They do not download data or start training.
 
-## Generating MIDI
+Install the source checkout as described in the [root README](../../README.md). Run commands from the repository root. Only load checkpoints from a trusted source: [PyTorch warns that checkpoint loading uses an unpickler](https://docs.pytorch.org/docs/stable/generated/torch.load.html). A matching hash detects byte differences against a trusted reference; it is not a safety review of an unknown producer.
 
-### Basic generation (CPU)
+## Verify bytes without loading the model
 
-```bash
-orbitune-compound generate \
-  --checkpoint path/to/research_nc_aria_gigamidi_v1/model.pt \
-  --out generated.mid \
-  --events 512 \
-  --device cpu \
-  --seed 100 \
-  --temperature 0.85
+Windows PowerShell:
+
+```powershell
+$checkpoint = 'path/to/model.pt'
+$expected = '8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc'
+$actual = (Get-FileHash -LiteralPath $checkpoint -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw 'Checkpoint SHA-256 mismatch; do not load it.' }
 ```
 
-### Continue from a primer MIDI
-
-```bash
-orbitune-compound generate \
-  --checkpoint path/to/research_nc_aria_gigamidi_v1/model.pt \
-  --primer-midi prompt.mid \
-  --out continuation.mid \
-  --events 512 \
-  --device cpu \
-  --seed 100 \
-  --temperature 0.85
-```
-
-### GPU generation
-
-```bash
-orbitune-compound generate \
-  --checkpoint path/to/research_nc_aria_gigamidi_v1/model.pt \
-  --out generated.mid \
-  --events 2048 \
-  --device cuda \
-  --seed 200 \
-  --temperature 0.95
-```
-
-## Loading the checkpoint programmatically
+Portable Python check (all platforms):
 
 ```python
-import torch
-from orbitune.compound_base import CompoundHierarchicalGPT, CompoundBaseConfig
-from orbitune.compound_training import parse_compound_checkpoint
-
-# Load checkpoint (Compound schema v2)
-ckpt = torch.load(
-    "path/to/research_nc_aria_gigamidi_v1/model.pt",
-    map_location="cpu",
-    weights_only=False,
-)
-ckpt = parse_compound_checkpoint(ckpt)
-
-# Reconstruct model from saved config
-cfg = CompoundBaseConfig(**ckpt["config"])
-model = CompoundHierarchicalGPT(cfg)
-model.load_state_dict(ckpt["model_state_dict"])
-model.eval()
-
-# Generation defaults
-# - seed: 100, 200, 300, 400, 500 (validated in quality_validation_3way.json)
-# - temperature: 0.85 (conservative) or 0.95 (creative)
-# - events: 500 (standard generation length in validation)
+import hashlib
+from pathlib import Path
+checkpoint = Path("path/to/model.pt")
+expected = "8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc"
+hash_state = hashlib.sha256()
+with checkpoint.open("rb") as handle:
+    for block in iter(lambda: handle.read(1024 * 1024), b""):
+        hash_state.update(block)
+if hash_state.hexdigest() != expected:
+    raise SystemExit("Checkpoint SHA-256 mismatch; do not load it.")
+print("Checkpoint hash matches the documented reference.")
 ```
 
-## Resuming training (prospective — not for the frozen checkpoint)
+## Inspect and generate
+
+Replace `path/to/model.pt` with the verified local path. These flags are defined by the checked-in `orbitune.compound_cli` parser:
 
 ```bash
-orbitune-compound resume \
-  --checkpoint path/to/research_nc_aria_gigamidi_v1/model.pt \
-  --steps 50000 \
-  --device cuda \
-  --allow-runtime-change
+orbitune-compound info --checkpoint path/to/model.pt
+orbitune-compound generate --checkpoint path/to/model.pt --out generated.mid --events 512 --device cpu --temperature 0.85 --top-p 0.92
 ```
 
-> **Important**: The frozen checkpoint at step 100,000 has `sampler_rng_state` saved correctly (post-fix), but the **frozen training run itself** (steps 50,000→100,000) was affected by the pre-fix bug where the local training RNG was not restored. Resuming from this checkpoint will start from the correct RNG state for **future** steps but will not reproduce the exact original sampler sequence. See `reproducibility.md` for details.
+For a MIDI primer:
 
-## Validation corpus
-
-The validation corpus identity for this checkpoint is:
-
-```
-9b8f61eaa156971ad3988a13945184708edcdbc39293ae9d4ba52c5c87831c2c
+```bash
+orbitune-compound generate --checkpoint path/to/model.pt --primer-midi prompt.mid --out continuation.mid --events 512 --device cpu --temperature 0.85 --top-p 0.92
 ```
 
-This SHA-256 is computed over the sorted list of validation song SHA-256 values across both Aria and GigaMIDI validation splits. If the validation corpus changes, `best_validation_loss` and `best_step` are automatically reset.
+With a compatible CUDA-enabled environment, `--device cuda` is available. CPU is the portable documented starting point; macOS GPU acceleration and Compound browser/ONNX compatibility are not claimed here.
 
-## Rights / license
+The current public `generate` command has **no `--seed` flag**. Do not add it to these commands. The historical fixed-seed quality report used separate local tooling. This cleanup checks argument compatibility in CI; it cannot test inference against weights that are not distributed here.
 
-- This model is **non-commercial only** (CC-BY-NC-SA-4.0).
-- Training data: Aria-MIDI (CC-BY-NC-SA-4.0) + GigaMIDI (research-use only).
-- Generated output inherits the model license: CC-BY-NC-SA-4.0.
-- Commercial use is prohibited.
+## Continuing training
+
+Inference does not require the training corpus. Training resumption does. Do not point a resume command at an immutable baseline and assume it writes elsewhere; inspect the specific trainer's output and step semantics first.
+
+The public `orbitune-compound resume` parser does **not** accept `--allow-runtime-change`. The CFE training helper has a different interface. Consult the relevant `--help`, use a new output/run, preserve the exact parent hash and noncommercial lineage, and validate corpus/tokenizer/runtime compatibility.
+
+Current code can save sampler-local RNG state for future checkpoints. That does not add missing RNG state to the frozen checkpoint. Legacy state must be inspected and resume fidelity reported honestly. See [reproducibility.md](reproducibility.md).
+
+## Rights
+
+The documented research model remains noncommercial under project policy. The historical checkpoint license declaration is CC-BY-NC-SA-4.0. No public release or additional license grant is made by these instructions; generated-output rights are not automatically established by this guide.

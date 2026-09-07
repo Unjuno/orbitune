@@ -1,174 +1,59 @@
-# Research-NC Aria+GigaMIDI V1
+# Orbitune Research-NC Aria+GigaMIDI V1
 
-> **Orbitune Research-NC Aria+GigaMIDI V1** — a frozen, non-commercial Compound Hierarchical GPT model.
+**Availability: documentation only. Trained weights are not included in Git and no public download is recorded.** Compound ONNX/Web export is not published. Follow [usage.md](usage.md) only after obtaining the checkpoint independently from a trusted, authorized source.
 
-| Field | Value |
-|-------|-------|
-| **ID** | `research-nc-aria-gigamidi-v1` |
-| **Architecture** | `orbitune-compound-hierarchical-gpt-v1` |
-| **Tokenizer** | `orbitune-compound-v0-experimental` |
-| **Parameters** | 8,857,250 |
-| **Checkpoint SHA-256** | `8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc` |
-| **Checkpoint (bytes)** | 106,583,212 (≈101.6 MiB) |
-| **Frozen at step** | 100,000 |
-| **Final val loss** | −1.1929529 |
-| **Distribution** | Non-commercial only |
-| **License** | CC-BY-NC-SA-4.0 (model output); training data: Aria-MIDI CC-BY-NC-SA-4.0 + GigaMIDI research-only |
-| **Lineage** | COMMERCIAL_BASE_V1 → RESEARCH_NC_CKPT_ARIA_V1 → **RESEARCH_NC_ARIA_GIGAMIDI_V1** |
+## Reported model identity
 
----
+| Field | Recorded value |
+| --- | --- |
+| Model ID | `research-nc-aria-gigamidi-v1` |
+| Architecture | `orbitune-compound-hierarchical-gpt-v1` |
+| Tokenizer | `orbitune-compound-v0-experimental` |
+| Parameters | 8,857,250 |
+| Final global step | 100,000 |
+| Additional steps in the combined-data stage | 50,000, from parent step 50,000 |
+| Checkpoint size | 106,583,212 bytes |
+| Recorded checkpoint license | CC-BY-NC-SA-4.0 |
+| Project use policy | Noncommercial / `research-nc`; not commercially eligible |
+| Public Base-registry eligibility | No: experimental Compound ABI, no ONNX artifact, and checkpoint exceeds the existing 95 MiB Base-artifact limit |
 
-## Overview
+Recorded checkpoint SHA-256:
 
-This model is a **continuation** of the frozen Aria research-NC checkpoint, trained for 50,000 additional steps (from step 50,000 to step 100,000) on the combined Aria + GigaMIDI indexed corpus. It is frozen and immutable — no further training has been performed since the freeze.
-
-The model uses Orbitune's Compound Transformer architecture, a hierarchical multi-scale transformer with local, medium, and global attention streams plus a recurrent memory module.
-
----
-
-## Lineage Chain
-
-```
-COMMERCIAL_BASE_V1 (step 20,000)
-    │  SHA256: 1c33e63b3e9e4207f1695fb4b235f9867da44cdf9dd63d74f00f882af59c8178
-    │  Frozen: YES
-    ↓
-RESEARCH_NC_CKPT_ARIA_V1 (step 50,000)
-    │  SHA256: fb0b86398cd84b0394b323cfe927ca442ac7a93bb3d1d5f1ae0fc4989f1e8369
-    │  Frozen: YES
-    ↓
-RESEARCH_NC_ARIA_GIGAMIDI_V1 (step 100,000)  ← YOU ARE HERE
-    │  SHA256: 8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc
-    │  Frozen: YES (immutable)
+```text
+8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc
 ```
 
-### Training configuration
+These are reported-run facts retained from [manifest.json](manifest.json). The checkpoint and original local audit files were not available to this publication cleanup for independent verification. [publication.json](publication.json) is a separate, validated availability record and does not change the checkpoint bytes or grant publication rights.
 
-| Parameter | Value |
-|-----------|-------|
-| Seed | 3 (`random.Random(3 + 7919 = 7922)`) |
-| Steps | 100,000 (50,000 new from step 50,000) |
-| Batch size | 16 |
-| Sequence length | 256 events |
-| Precision | bfloat16 |
-| Optimizer | Fused AdamW |
-| Learning rate | 3e-4 |
-| Weight decay | 0.01 |
-| Grad clip | 1.0 |
-| Config | `configs/compound_hierarchical_9m.json` |
+## Lineage
 
-### Model config (`configs/compound_hierarchical_9m.json`)
+| Stage | Step | Recorded SHA-256 |
+| --- | ---: | --- |
+| Commercial Base V1 | 20,000 | `1c33e63b3e9e4207f1695fb4b235f9867da44cdf9dd63d74f00f882af59c8178` |
+| Aria research-NC V1 | 50,000 | `fb0b86398cd84b0394b323cfe927ca442ac7a93bb3d1d5f1ae0fc4989f1e8369` |
+| Aria+GigaMIDI research-NC V1 | 100,000 | `8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc` |
 
-```json
-{
-  "d_model": 224,
-  "n_head": 8,
-  "local_layers": 4,
-  "medium_layers": 2,
-  "global_layers": 2,
-  "intra_layers": 2,
-  "ff_mult": 4,
-  "dropout": 0.1,
-  "local_window": 64,
-  "medium_stride": 8,
-  "medium_window": 64,
-  "global_stride": 4,
-  "global_window": 64,
-  "fast_decay": 0.9,
-  "medium_decay": 0.97,
-  "slow_decay": 0.997
-}
-```
+## Training scale and interpretation
 
----
+The historical record reports 2,263,855 indexed train songs, 4,071,401,228 records, and 4,069,137,373 available next-event pairs. These are **corpus capacity**, not unique events consumed or an epoch-completion claim. The combined stage ran 50,000 additional steps with batch size 16 and sequence length 256; the checkpoint record carries a cumulative `events_seen` counter of 409,600,000. Neither counter establishes unique coverage under random-replacement sampling.
 
-## Training Data
+See the [data card](training_data.md) for missing-input exclusions, unresolved source-accounting details, and the distinction between source notes, indexed records, and sampler draws.
 
-### Sources
+## Reported evaluation
 
-| Source | License | Train Songs | Train Records |
-|--------|---------|-------------|---------------|
-| Aria-MIDI | CC-BY-NC-SA-4.0 | 815,984 | 1,745,990,770 |
-| GigaMIDI | Research-use only | 1,447,871 | 2,325,401,045 (uint8 shards) |
-| **Combined** | — | **2,263,855** | **4,071,401,228** |
+The committed historical manifest summarizes 30 generated MIDI files across three checkpoints, five seeds, and two temperatures. All 30 were reported parse-valid. It reports mean note counts of 258.9 (Commercial), 483.5 (Aria), and 443.7 (combined), and final combined validation loss of approximately -1.193.
 
-### Corpus accounting
+The underlying `quality_validation_3way.json` and generated samples are **local audit artifacts, not bundled public evidence**. MIDI parse validity is a technical smoke test, not proof of musical quality, expressive phrasing, generalization, or superiority. Losses on different validation corpora must not be directly ranked.
 
-```
-TRAIN_RECORDS (4,071,401,228) − TRAIN_SONGS (2,263,855) = 4,069,137,373
-                                       = combined_research_train_1x_active_events (PASS)
-```
+## Known limitations
 
-- 378,272 GigaMIDI songs rejected during shard build: 366,056 missing-input + 12,342 parse_failure:OverflowError + 126 dedup-timing discrepancy
-- 645,211,002 events lost from rejected/missing songs (attributable but not per-song verifiable)
-- 366 training shards, all verified complete with SHA256 match; 0 unaccounted
+- The frozen continuation has a documented sampler-local RNG restoration defect. Current code contains a prospective fix; the frozen run must not be described as bit-exact. See [reproducibility.md](reproducibility.md).
+- Missing GigaMIDI inputs and a 126-song accounting discrepancy remain important qualifications. A hash matching a generated report does not establish completeness of the intended input set.
+- Exact normalized-fingerprint nonmatches do not establish absence of composition overlap, near-duplicates, or train/validation leakage.
+- No listening-panel benchmark, public weight download, or Compound browser deployment is established here.
 
-See `training_data.md` for the full data card.
+## Rights
 
----
+The project's research-NC restriction remains unchanged. The historical manifest declares CC-BY-NC-SA-4.0 for the checkpoint; this page is not a new relicensing decision. The [Apache-2.0 source-code license](../../LICENSE) does not supersede data or checkpoint terms. Do not assume every generated MIDI automatically inherits one uniform license: assess applicable rights and actual release terms separately. [Creative Commons' AI guidance](https://creativecommons.org/using-cc-licensed-works-for-ai-training-2/) explains the need to consider license applicability and conditions.
 
-## Quality Validation
-
-30 MIDI files generated (5 seeds × 2 temperatures × 3 model checkpoints). **All 30 are parse-valid.**
-
-| Tier | Parse-Valid | Mean Notes | Mean Poly | Mean Events | Pitch Range |
-|------|-------------|-----------|-----------|-------------|-------------|
-| Commercial Base V1 | 10/10 | 258.9 | 4.1 | 498.7 | 33–93 |
-| Aria research-NC V1 | 10/10 | 483.5 | 8.0 | 498.8 | 26–93 |
-| **Aria+GigaMIDI V1 (this model)** | **10/10** | **443.7** | **3.8** | **500.0** | **33–89** |
-
-Full results: `evidence/quality_validation_3way.json`
-
----
-
-## Sampler / RNG Notes
-
-- **Sampler type**: `IndexedTensorSampler` (random replacement, with replacement per draw)
-- **RNG seed**: 7922 (`random.Random(3 + 7919)`)
-- **Order invariance**: NOT order-invariant across batch sizes — batch size and seq_len affect the RNG stream by design
-- **Known resume-fidelity bug**: During the 50,000→100,000 continuation, the local training RNG was not restored from checkpoint (the original code saved `sampler_rng_state=None`). Model weights, optimizer state, and validation plan are correct. The RNG fix has been implemented and applied prospectively.
-
-See `reproducibility.md` for the full bug analysis and fix.
-
----
-
-## Usage
-
-```bash
-# Generate a 512-event MIDI file
-orbitune-compound generate \
-  --checkpoint "C:\path\to\runs\research_nc_aria_gigamidi_v1\model.pt" \
-  --out output.mid \
-  --events 512 \
-  --device cpu \
-  --seed 100 \
-  --temperature 0.85
-```
-
-See `usage.md` for full instructions including resume, priming, and GPU generation.
-
----
-
-## License
-
-- **Source code**: Apache-2.0
-- **Model checkpoint**: CC-BY-NC-SA-4.0 (non-commercial use only)
-- **Training data**: Aria-MIDI (CC-BY-NC-SA-4.0) + GigaMIDI (research-use only)
-- **Generated output**: CC-BY-NC-SA-4.0
-
-Commercial use is **prohibited**. See `LICENSE` for the full source-code license and `training_data.md` for data-license details.
-
----
-
-## Evidence Files
-
-| File | Description |
-|------|-------------|
-| `evidence/lineage_freeze_aria_gigamidi_v1.json` | Lineage chain and SHA256s |
-| `evidence/index_freeze.json` | Corpus index accounting |
-| `evidence/quality_validation_3way.json` | 30-file quality validation |
-| `evidence/sampler_measurement_aria_gigamidi_v1.json` | Sampler RNG measurements |
-| `evidence/sampler_resume_fix_audit_aria_gigamidi_v1.json` | RNG bug audit + fix |
-| `evidence/gigamidi_train_audit.json` | 366-shard GigaMIDI audit |
-| `evidence/combined_corpus_report.json` | Corpus composition report |
-| `evidence/aria_midi_ingest_report.json` | Aria-MIDI ingest report |
+[Usage](usage.md) | [Data card](training_data.md) | [Reproducibility](reproducibility.md) | [Publication checklist](../../docs/PUBLICATION.md)
