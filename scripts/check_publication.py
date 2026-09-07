@@ -66,7 +66,9 @@ def scan_paths(root: Path, paths: list[str]) -> list[str]:
         if secret_name:
             errors.append(f"{rel}: credential/private-key path must not be tracked")
         legacy_artifact = item.parts[0] in {"bases", "adapters"}
-        if (item.parts[0] in BLOCKED_ROOTS and name != ".gitkeep") or name.endswith(BLOCKED_SUFFIXES):
+        # Catch nested/case-variant data directories even after git add --force.
+        blocked_directory = any(part.lower() in BLOCKED_ROOTS for part in item.parts[:-1])
+        if (blocked_directory and name != ".gitkeep") or name.endswith(BLOCKED_SUFFIXES):
             errors.append(f"{rel}: local data/build output must not be tracked")
         if name.endswith(WEIGHT_SUFFIXES) and not legacy_artifact:
             errors.append(f"{rel}: weight artifact outside reviewed Base/Adapter path")

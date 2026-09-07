@@ -127,3 +127,30 @@ def test_preserves_existing_placeholder_but_still_scans_it(tmp_path):
     assert CHECK.scan_paths(tmp_path, ["runs/compound/.gitkeep"]) == []
     _write(tmp_path, "runs/compound/.gitkeep", b"hf_" + b"Y" * 40)
     assert CHECK.scan_paths(tmp_path, ["runs/compound/.gitkeep"])
+
+
+@pytest.mark.parametrize("blocked", sorted(CHECK.BLOCKED_ROOTS))
+@pytest.mark.parametrize("pattern", ["data/{lower}/private.mid", "docs/cache/{upper}/model.data", "{upper}/private.mid"])
+def test_blocks_nested_and_case_variant_artifact_directories(tmp_path, blocked, pattern):
+    rel = pattern.format(lower=blocked, upper=blocked.upper())
+    _write(tmp_path, rel)
+    errors = CHECK.scan_paths(tmp_path, [rel])
+    assert any("local data/build output must not be tracked" in error for error in errors)
+
+
+@pytest.mark.parametrize("blocked", sorted(CHECK.BLOCKED_ROOTS))
+def test_nested_placeholder_exception_still_checks_credentials(tmp_path, blocked):
+    rel = f"docs/cache/{blocked.upper()}/.gitkeep"
+    _write(tmp_path, rel)
+    assert CHECK.scan_paths(tmp_path, [rel]) == []
+    token = b"hf_" + b"Z" * 40
+    _write(tmp_path, rel, token)
+    errors = CHECK.scan_paths(tmp_path, [rel])
+    assert any("possible credential material" in error for error in errors)
+    assert token.decode() not in str(errors)
+
+
+@pytest.mark.parametrize("rel", ["docs/raw_notes/guide.md", "docs/checkpoints_guide/usage.md", "docs/draw/example.mid", "docs/raw"])
+def test_artifact_rule_matches_directory_components_not_substrings_or_filenames(tmp_path, rel):
+    _write(tmp_path, rel)
+    assert CHECK.scan_paths(tmp_path, [rel]) == []
