@@ -15,6 +15,26 @@ from orbitune.tokenizer.compound_event import COMPOUND_RECORD_WIDTH, CompoundEve
 INDEX_FORMAT = "orbitune-compound-indexed-v1"
 INDEX_SCHEMA_VERSION = 1
 
+_DTYPE_ALIASES = {
+    "int32-le": "<i4",
+    "int32": "<i4",
+    "<i4": "<i4",
+    "int32_be": ">i4",
+    "uint8": "u1",
+    "int8": "i1",
+    "u1": "u1",
+    "i1": "i1",
+}
+
+
+def _resolve_dtype(dtype_str: str | None) -> np.dtype:
+    if dtype_str is None:
+        return np.dtype("<i4")
+    normalized = dtype_str.strip().lower().replace(" ", "")
+    if normalized in _DTYPE_ALIASES:
+        return np.dtype(_DTYPE_ALIASES[normalized])
+    return np.dtype(dtype_str)
+
 
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -227,7 +247,7 @@ def load_indexed_compound_corpus(index_path: str | Path) -> IndexedCompoundCorpu
     event_count = int(metadata["events"])
     records_path = index_path.parent / str(metadata["records_file"])
     songs_path = index_path.parent / str(metadata["songs_file"])
-    records = np.memmap(records_path, dtype="<i4", mode="r", shape=(event_count, COMPOUND_RECORD_WIDTH))
+    records = np.memmap(records_path, dtype=_resolve_dtype(str(metadata.get("dtype", "int32"))), mode="r", shape=(event_count, COMPOUND_RECORD_WIDTH))
     songs: list[IndexedCompoundSong] = []
     with songs_path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, 1):
@@ -255,3 +275,78 @@ def load_indexed_compound_corpus(index_path: str | Path) -> IndexedCompoundCorpu
     if len(songs) != int(metadata.get("songs", -1)):
         raise ValueError("indexed corpus song count does not match index metadata")
     return IndexedCompoundCorpus(index_path=index_path, records=records, songs=songs, metadata=metadata)
+
+
+SHARDED_INDEX_FORMAT = "orbitune-compound-indexed-sharded-v1"
+SHARDED_INDEX_SCHEMA_VERSION = 1
+
+
+@dataclass(slots=True)
+class ShardedIndexedCorpus:
+    """Collection of shard-indexed Compound corpora loaded from index_manifest.json."""
+    index_path: Path
+    songs: list[IndexedCompoundSong]
+    shards: list[IndexedCompoundCorpus]
+    metadata: dict[str, object]
+
+
+def load_sharded_indexed_corpus(manifest_path: str | Path) -> ShardedIndexedCorpus:
+    """Load a sharded indexed corpus from an index_manifest.json.
+
+    Each shard is loaded as an IndexedCompoundCorpus; all songs from all
+    shards are merged into a single flat list. Each song's IndexedRecords
+    references its own shard's memmap, so no global concatenation is needed.
+    """
+    manifest_path = Path(manifest_path)
+    metadata = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if int(metadata.get("schema_version", 0)) != SHARDED_INDEX_SCHEMA_VERSION:
+        raise ValueError(f"unsupported sharded corpus schema: {manifest_path}")
+    if metadata.get("format") != SHARDED_INDEX_FORMAT:
+        raise ValueError(f"unsupported sharded corpus format: {manifest_path}")
+
+    shards: list[IndexedCompoundCorpus] = []
+    songs: list[IndexedCompoundSong] = []
+    for shard_info in metadata.get("shards", []):
+        shard_dir = Path(shard_info["path"])
+        index_path = shard_dir / "index.json"
+        if index_path.exists():
+            corpus = load_indexed_compound_corpus(index_path)
+        else:
+            report_path = shard_dir / "report.json"
+            if not report_path.exists():
+                raise ValueError(f"shard {shard_dir} missing index.json and report.json")
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            records_path = shard_dir / str(report["records_file"])
+            songs_path = shard_dir / str(report["songs_file"])
+            event_count = int(report["events"])
+            records = np.memmap(records_path, dtype=_resolve_dtype(str(report.get("dtype", "int32"))), mode="r",
+                                shape=(event_count, COMPOUND_RECORD_WIDTH))
+            shard_songs: list[IndexedCompoundSong] = []
+            with songs_path.open("r", encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, 1):
+                    if not line.strip():
+                        continue
+                    row = json.loads(line)
+                    offset = int(row["offset"])
+                    length = int(row["length"])
+                    shard_songs.append(IndexedCompoundSong(
+                        path=str(row.get("path", "")),
+                        sha256=str(row.get("sha256", "")),
+                        tokenizer_abi=CompoundEventTokenizer.abi,
+                        records=IndexedRecords(records, offset, length),
+                        quality_weight=float(row.get("quality_weight", 1.0)),
+                        sampling_weight=float(row.get("sampling_weight", row.get("quality_weight", 1.0))),
+                        tracks=int(row.get("tracks", 0)),
+                        composition_fingerprint=str(row.get("composition_fingerprint", "")),
+                        source_id=str(row.get("source_id", "")),
+                        license=str(row.get("license", "")),
+                    ))
+            corpus = IndexedCompoundCorpus(
+                index_path=report_path, records=records, songs=shard_songs, metadata=report
+            )
+        shards.append(corpus)
+        songs.extend(corpus.songs)
+
+    if len(songs) != int(metadata.get("total_songs", len(songs))):
+        raise ValueError("sharded corpus song count mismatch")
+    return ShardedIndexedCorpus(index_path=manifest_path, songs=songs, shards=shards, metadata=metadata)
