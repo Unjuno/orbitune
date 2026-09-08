@@ -787,6 +787,50 @@ class CompoundHierarchicalGPT(nn.Module):
         memory_context, _ = self.memory.forward_sequence(event)
         return self.fusion(torch.cat([local, medium_context, global_context, memory_context], dim=-1))
 
+    def encode_window_capped(self, records: torch.Tensor) -> torch.Tensor:
+        """Vectorized causal encode with configured windows at every hierarchy.
+
+        This preserves summary completion/broadcast timing and prevents direct
+        attention outside each configured horizon. With multilayer stacks it
+        is not bit-equivalent to streaming prefix recomputation because cached
+        intermediate rows can themselves contain older context.
+        """
+        event = self.embedding(records)
+        local = self.local(
+            event,
+            _causal_bias(records.shape[1], records.device, window=self.config.local_window),
+        )
+        medium_summary = _pool_groups(local, self.config.medium_stride)
+        medium_hidden = self.medium(
+            medium_summary,
+            _causal_bias(
+                medium_summary.shape[1], records.device,
+                window=self.config.medium_window,
+            ),
+        )
+        medium_context = _broadcast_completed(
+            medium_hidden, records.shape[1], self.config.medium_stride
+        )
+        global_summary = _pool_groups(medium_hidden, self.config.global_stride)
+        global_hidden = self.global_stack(
+            global_summary,
+            _causal_bias(
+                global_summary.shape[1], records.device,
+                window=self.config.global_window,
+            ),
+        )
+        global_context = _broadcast_completed(
+            global_hidden, records.shape[1],
+            self.config.medium_stride * self.config.global_stride,
+        )
+        # Phase 4's batched-bank recurrence helps lane-TBPTT but regresses this
+        # large fixed-window geometry, where ordinary GRUCell kernels already
+        # receive a large batch. Keep the measured faster implementation here.
+        memory_context, _ = self.memory.forward_sequence(event)
+        return self.fusion(
+            torch.cat([local, medium_context, global_context, memory_context], dim=-1)
+        )
+
     def forward(self, records: torch.Tensor, targets: torch.Tensor | None = None) -> tuple[torch.Tensor, dict[str, float]]:
         if targets is None:
             raise ValueError("training forward requires targets")
