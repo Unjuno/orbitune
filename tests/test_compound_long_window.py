@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import torch
+import importlib.util
+from pathlib import Path
+from unittest import mock
 
 from orbitune.compound_base import CompoundBaseConfig, CompoundHierarchicalGPT
 
@@ -48,3 +51,15 @@ def test_forward_selects_window_capped_training_semantics():
         expected = model.decoder.loss(model.encode_window_capped(records), records)[0]
         actual = model(records, records)[0]
     torch.testing.assert_close(actual, expected)
+
+
+def test_cuda_fast_loss_selects_window_capped_training_semantics():
+    path = Path(__file__).resolve().parents[1] / "scripts" / "compound_cuda_train.py"
+    spec = importlib.util.spec_from_file_location("phase5_cuda_train", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    model = _model(); model.training_encode_semantics = "a2"
+    records = torch.zeros(1, 24, 12, dtype=torch.long)
+    with torch.no_grad(), mock.patch.object(model, "encode", side_effect=AssertionError):
+        actual, _ = module.fast_loss(model, records, records)
+    assert torch.isfinite(actual)

@@ -74,7 +74,9 @@ def gaussian_each(mean: torch.Tensor, log_scale: torch.Tensor, target: torch.Ten
 
 
 def fast_loss(model: CompoundHierarchicalGPT, inputs: torch.Tensor, targets: torch.Tensor):
-    out = model.decoder.forward_teacher(model.encode(inputs), targets)
+    semantics = getattr(model, "training_encode_semantics", "a1")
+    context = model.encode_window_capped(inputs) if semantics == "a2" else model.encode(inputs)
+    out = model.decoder.forward_teacher(context, targets)
     target = out["targets"]
     event = target["event_type"]
     losses: dict[str, torch.Tensor] = {}
