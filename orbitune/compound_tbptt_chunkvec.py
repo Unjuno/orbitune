@@ -41,9 +41,11 @@ def _causal_window_endpad_bias(lengths: torch.Tensor, lmax: int, device: torch.d
     batch = lengths.numel()
     row = torch.arange(lmax, device=device)[:, None]
     col = torch.arange(lmax, device=device)[None, :]
-    ok = (col <= row) & ((row - col) < window)
-    valid_key = col < lengths.to(device)[None, :]
-    ok = ok & valid_key
+    ok = (col <= row) & ((row - col) < window)  # [L, L]
+    ok = ok[None, None, :, :].expand(batch, 1, lmax, lmax)
+    valid_key = (torch.arange(lmax, device=device)[None, :]
+                 < lengths.to(device)[:, None])  # [B, L]
+    ok = ok & valid_key[:, None, None, :]
     bias = torch.zeros(batch, 1, lmax, lmax, device=device, dtype=torch.float32)
     bias = bias.masked_fill(~ok, float("-inf"))
     pad_query = torch.arange(lmax, device=device)[None, :] >= lengths.to(device)[:, None]
@@ -144,6 +146,53 @@ def _summaries_from_buffer(buf: list[torch.Tensor], new_items: list[torch.Tensor
     return summaries, leftover, completions
 
 
+def _hierarchy_contexts_batched(
+    model: CompoundHierarchicalGPT, stack: torch.nn.Module,
+    carried_list: list[list[torch.Tensor]], new_list: list[list[torch.Tensor]],
+    completions_list: list[list[int]], steps: int,
+    zero_like: torch.Tensor, device: torch.device,
+    *, window: int,
+) -> tuple[torch.Tensor, list[list[torch.Tensor]]]:
+    """ONE causal (+sliding-window) forward for ALL lanes (end-padded).
+
+    Same per-event gathering as _hierarchy_contexts; lanes have independent
+    lengths via the end-pad bias. Returns (contexts [B, steps, D],
+    completion_outputs per lane in completion order).
+    """
+    batch = len(carried_list)
+    dtype = zero_like.dtype
+    seqs = [c + n for c, n in zip(carried_list, new_list)]
+    lens = torch.tensor([len(s) for s in seqs], dtype=torch.long)
+    lmax = int(lens.max().item()) if batch else 0
+    d_model = zero_like.numel()
+    if lmax == 0:
+        return zero_like[None, None, :].expand(batch, steps, -1).clone(), [[] for _ in range(batch)]
+    padded = torch.zeros(batch, lmax, d_model, device=device, dtype=dtype)
+    for b, s in enumerate(seqs):
+        if s:
+            padded[b, :len(s)] = torch.stack(s).to(device=device, dtype=dtype)
+    bias = _causal_window_endpad_bias(lens, lmax, device, window=window)
+    out = stack(padded, bias)
+    h0 = [len(c) for c in carried_list]
+    comp_outs: list[list[torch.Tensor]] = []
+    for b in range(batch):
+        comp_outs.append([out[b, h0[b] + s] for s in range(len(new_list[b]))])
+    ctx = torch.empty(batch, steps, d_model, device=device, dtype=dtype)
+    for b in range(batch):
+        rows = []
+        for t in range(steps):
+            s = 0
+            for c in completions_list[b]:
+                if c <= t:
+                    s += 1
+                else:
+                    break
+            idx = h0[b] + s - 1
+            rows.append(out[b, idx] if idx >= 0 else zero_like)
+        ctx[b] = torch.stack(rows)
+    return ctx, comp_outs
+
+
 def _hierarchy_contexts(model: CompoundHierarchicalGPT, stack: torch.nn.Module,
                         carried: list[torch.Tensor],
                         new_summaries: list[torch.Tensor],
@@ -238,44 +287,50 @@ def encode_tbptt_chunkvec(
     for b in range(batch):
         states[b].memory = (cur[0][b], cur[1][b], cur[2][b])
 
-    # ---- Phase B: medium summaries + contexts ----
+    # ---- Phase B: medium summaries + contexts (lanes batched) ----
     # NOTE: reference appends local_hidden per position into medium_buffer;
     # leftover slices below reference the chunk's local_h rows (attached),
     # exactly like reference buffer tensors.
-    med_ctx = torch.empty(batch, steps, d_model, device=device, dtype=local_h.dtype)
-    med_comp_outs: list[list[torch.Tensor]] = []
+    med_summaries: list[list[torch.Tensor]] = []
     med_completions: list[list[int]] = []
-    new_med_histories: list[list[torch.Tensor]] = []
+    med_carried: list[list[torch.Tensor]] = []
     for b in range(batch):
         st = states[b]
         new_items = [local_h[b, t] for t in range(steps)]
         summaries, leftover, completions = _summaries_from_buffer(
             st.medium_buffer, new_items, cfg.medium_stride)
         st.medium_buffer = leftover
+        med_carried.append(st.medium_history)
+        med_summaries.append(summaries)
         med_completions.append(completions)
-        zero = local_h[b, 0].new_zeros(d_model)
-        ctx_b, comp_outs = _hierarchy_contexts(
-            model, model.medium, st.medium_history, summaries, completions,
-            steps, zero, device, window=cfg.medium_window)
-        med_ctx[b] = ctx_b.to(med_ctx.dtype)
-        med_comp_outs.append(comp_outs)
-        new_history = (st.medium_history + summaries)[-cfg.medium_window:]
-        new_med_histories.append(new_history)
+    med_ctx, med_comp_nested = _hierarchy_contexts_batched(
+        model, model.medium, med_carried, med_summaries, med_completions,
+        steps, local_h[0, 0].new_zeros(d_model), device,
+        window=cfg.medium_window)
+    med_ctx = med_ctx.to(local_h.dtype)
+    med_comp_outs: list[list[torch.Tensor]] = med_comp_nested
+    new_med_histories: list[list[torch.Tensor]] = []
+    for b in range(batch):
+        new_med_histories.append((states[b].medium_history + med_summaries[b])[-cfg.medium_window:])
 
-    # ---- Phase C: global summaries + contexts ----
-    glob_ctx = torch.empty(batch, steps, d_model, device=device, dtype=local_h.dtype)
+    # ---- Phase C: global summaries + contexts (lanes batched) ----
+    glob_summaries: list[list[torch.Tensor]] = []
+    glob_carried: list[list[torch.Tensor]] = []
+    glob_completions: list[list[int]] = []
     for b in range(batch):
         st = states[b]
         summaries, leftover, completions = _summaries_from_buffer(
             st.global_buffer, med_comp_outs[b], cfg.global_stride,
             new_positions=med_completions[b])
         st.global_buffer = leftover
-        zero = local_h[b, 0].new_zeros(d_model)
-        ctx_b, _ = _hierarchy_contexts(
-            model, model.global_stack, st.global_history, summaries, completions,
-            steps, zero, device, window=cfg.global_window)
-        glob_ctx[b] = ctx_b.to(glob_ctx.dtype)
+        glob_carried.append(st.global_history)
+        glob_summaries.append(summaries)
+        glob_completions.append(completions)
         st.global_history = (st.global_history + summaries)[-cfg.global_window:]
+    glob_ctx, _ = _hierarchy_contexts_batched(
+        model, model.global_stack, glob_carried, glob_summaries, glob_completions,
+        steps, local_h[0, 0].new_zeros(d_model), device, window=cfg.global_window)
+    glob_ctx = glob_ctx.to(local_h.dtype)
 
     # ---- fusion (single call) + state bookkeeping ----
     fused = model.fusion(torch.cat([local_h, med_ctx, glob_ctx, mem_reads], dim=-1))
