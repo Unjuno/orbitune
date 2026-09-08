@@ -32,6 +32,20 @@ COMPOUND_BASE_ABI = "orbitune-compound-hierarchical-gpt-v1"
 FIELD_CARDINALITIES = (10, 16, 7, 16, 1024, 1024, 128, 256, 7, 16, 8, 8)
 EVENT_SLOT_COUNT = 8
 
+#: Flag-gated 28 -> 32 internal head padding for SDPA fast backends.
+#: Default OFF (math backend, reference behavior). Enable explicitly via
+#: set_padded_head_dim_sdpa(True) or env ORBITUNE_PADDED_SDPA=1.
+#: Different dropout-mask stream from the math path (regime change).
+PADDED_HEAD_DIM_SDPA = os.environ.get("ORBITUNE_PADDED_SDPA", "0") == "1"
+
+
+def set_padded_head_dim_sdpa(enabled: bool) -> bool:
+    """Enable/disable the padded fast-SDPA path; returns the previous value."""
+    global PADDED_HEAD_DIM_SDPA
+    previous = PADDED_HEAD_DIM_SDPA
+    PADDED_HEAD_DIM_SDPA = bool(enabled)
+    return previous
+
 
 @dataclass(slots=True)
 class CompoundBaseConfig:
@@ -134,6 +148,9 @@ class MultiheadSelfAttention(nn.Module):
         self.v_proj = nn.Linear(d_model, d_model, bias=False)
         self.out_proj = nn.Linear(d_model, d_model, bias=False)
         self.dropout = dropout
+        #: Per-instance override for the padded fast-SDPA path
+        #: (None follows the global PADDED_HEAD_DIM_SDPA flag).
+        self.padded_sdpa_override: bool | None = None
 
     def forward(self, x: torch.Tensor, attention_bias: torch.Tensor | None) -> torch.Tensor:
         batch, steps, width = x.shape
@@ -141,11 +158,39 @@ class MultiheadSelfAttention(nn.Module):
         k = self.k_proj(x).view(batch, steps, self.n_head, self.head_dim).transpose(1, 2)
         v = self.v_proj(x).view(batch, steps, self.n_head, self.head_dim).transpose(1, 2)
         q, k = _apply_rope(q, k)
+        use_padded = self.padded_sdpa_override
+        if use_padded is None:
+            use_padded = PADDED_HEAD_DIM_SDPA
+        if use_padded and self.head_dim == 28 and q.is_cuda:
+            return self._padded_sdpa_forward(q, k, v, attention_bias, width)
         y = F.scaled_dot_product_attention(
             q, k, v, attn_mask=attention_bias,
             dropout_p=self.dropout if self.training else 0.0,
         )
         return self.out_proj(y.transpose(1, 2).contiguous().view(batch, steps, width))
+
+    def _padded_sdpa_forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
+                             attention_bias: torch.Tensor | None, width: int) -> torch.Tensor:
+        """Internal 28 -> 32 head padding for SDPA fast backends (flag-gated).
+
+        RoPE already applied at the original 28 dims (caller order preserved).
+        Net attention scale stays 1/sqrt(28) via q pre-scale sqrt(32/28).
+        No weight, head-count, width or checkpoint-shape change. Output sliced
+        back to 28 before the head concat + out_proj, which are untouched.
+        Dropout masks differ from the math path (regime change, not silent).
+        """
+        scale_fix = 1.0690449676496976  # sqrt(32)/sqrt(28)
+        qp = F.pad(q, (0, 4)) * scale_fix
+        kp = F.pad(k, (0, 4))
+        vp = F.pad(v, (0, 4))
+        bias = attention_bias.to(dtype=qp.dtype) if attention_bias is not None else None
+        y = F.scaled_dot_product_attention(
+            qp, kp, vp, attn_mask=bias,
+            dropout_p=self.dropout if self.training else 0.0,
+        )
+        y = y[..., :28]
+        return self.out_proj(y.transpose(1, 2).contiguous().view(
+            q.shape[0], q.shape[2], width))
 
 
 class TransformerBlock(nn.Module):
