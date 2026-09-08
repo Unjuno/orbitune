@@ -37,3 +37,14 @@ def test_window_capped_preserves_completion_timing_zero_prefixes():
     encoded = model.encode_window_capped(records)
     assert encoded.shape == (1, 7, 32)
     assert torch.isfinite(encoded).all()
+
+
+def test_forward_selects_window_capped_training_semantics():
+    torch.manual_seed(521)
+    model = _model()
+    records = torch.zeros(1, 24, 12, dtype=torch.long)
+    model.training_encode_semantics = "a2"
+    with torch.no_grad():
+        expected = model.decoder.loss(model.encode_window_capped(records), records)[0]
+        actual = model(records, records)[0]
+    torch.testing.assert_close(actual, expected)

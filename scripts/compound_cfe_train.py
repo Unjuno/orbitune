@@ -661,6 +661,7 @@ def train(args: argparse.Namespace) -> None:
             )
             validation_plan = None
 
+    model.training_encode_semantics = args.encode_semantics
     if args.compile:
         model.compile(mode=args.compile_mode)
 
@@ -675,6 +676,9 @@ def train(args: argparse.Namespace) -> None:
         "head_dim": model.config.d_model // model.config.n_head,
         "causal_fastpath": args.causal_fastpath,
         "cfe": True,
+        "encode_semantics": args.encode_semantics,
+        "checkpoint_every_events": args.checkpoint_every_events,
+        "eval_every_events": args.eval_every_events,
         "training_jsonl": str(args.train_jsonl),
         "validation_jsonl": str(args.validation_jsonl),
     }
@@ -755,12 +759,27 @@ def train(args: argparse.Namespace) -> None:
         pending_health.append((step, loss.detach(), grad_norm_tensor.detach()))
 
         should_log = step == start_step + 1 or step % args.log_every == 0 or step == args.steps
+        previous_events = start_events + (step - start_step - 1) * args.batch_size * args.seq_len
+        current_events = previous_events + args.batch_size * args.seq_len
+        event_eval_due = (
+            args.eval_every_events > 0
+            and previous_events // args.eval_every_events < current_events // args.eval_every_events
+        )
+        event_checkpoint_due = (
+            args.checkpoint_every_events > 0
+            and previous_events // args.checkpoint_every_events < current_events // args.checkpoint_every_events
+        )
         should_eval = (
             validation_songs is not None
-            and args.eval_every > 0
-            and (step % args.eval_every == 0 or step == args.steps)
+            and ((args.eval_every_events > 0 and event_eval_due)
+                 or (args.eval_every_events == 0 and args.eval_every > 0 and step % args.eval_every == 0)
+                 or step == args.steps)
         )
-        should_checkpoint = step % args.checkpoint_every == 0 or step == args.steps
+        should_checkpoint = (
+            (args.checkpoint_every_events > 0 and event_checkpoint_due)
+            or (args.checkpoint_every_events == 0 and step % args.checkpoint_every == 0)
+            or step == args.steps
+        )
 
         if should_log or should_eval or should_checkpoint:
             (
@@ -932,8 +951,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--weight-decay", type=float, default=0.01)
     p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--checkpoint-every", type=int, default=250)
+    p.add_argument("--checkpoint-every-events", type=int, default=0,
+                   help="If positive, replace step cadence with crossed event-position milestones.")
     p.add_argument("--log-every", type=int, default=25)
     p.add_argument("--eval-every", type=int, default=250)
+    p.add_argument("--eval-every-events", type=int, default=0,
+                   help="If positive, replace step cadence with crossed event-position milestones.")
+    p.add_argument("--encode-semantics", choices=("a1", "a2"), default="a1",
+                   help="Historical unbounded hierarchy (A1) or causally window-capped hierarchy (A2).")
     p.add_argument("--validation-batches", type=int, default=4)
     p.add_argument("--validation-batch-size", type=int, default=4)
     p.add_argument("--validation-seed", type=int, default=10001,

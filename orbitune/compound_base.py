@@ -834,7 +834,9 @@ class CompoundHierarchicalGPT(nn.Module):
     def forward(self, records: torch.Tensor, targets: torch.Tensor | None = None) -> tuple[torch.Tensor, dict[str, float]]:
         if targets is None:
             raise ValueError("training forward requires targets")
-        return self.decoder.loss(self.encode(records), targets)
+        semantics = getattr(self, "training_encode_semantics", "a1")
+        context = self.encode_window_capped(records) if semantics == "a2" else self.encode(records)
+        return self.decoder.loss(context, targets)
 
     def initial_stream_state(self) -> StreamState:
         return StreamState([], [], [], [], [], None, 0)
