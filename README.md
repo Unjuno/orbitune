@@ -24,7 +24,7 @@ The Compound browser runtime is implemented and deployed in fail-closed form: ge
 
 The reported frozen research checkpoint is `research-nc-aria-gigamidi-v1`, at global step 100,000. Its recorded indexed train corpus contains 4,069,137,373 active next-event pairs. **Corpus capacity is not the number of unique events consumed by training.** The checkpoint record reports cumulative `events_seen = 409,600,000`; replacement sampling means this is not an exact epoch/coverage claim. See the [data card](models/research_nc_aria_gigamidi_v1/training_data.md) and [reproducibility notes](models/research_nc_aria_gigamidi_v1/reproducibility.md).
 
-A later full-parameter continuation may become a new Base candidate only after it is completed, evaluated, frozen and documented under a new immutable identity. It does not overwrite the historical 100k checkpoint.
+A separate local full-parameter continuation toward 1,000,000 global steps is now reported active from the immutable 100k parent. Its continuation checkpoint is mutable training state and is not distributed by this repository. If a later checkpoint is completed, evaluated and selected as a Base, it must be frozen and documented under a new immutable identity; it does not overwrite the historical 100k checkpoint. See the [roadmap](docs/ROADMAP.md) for the latest recorded local-run evidence snapshot.
 
 ## Quick start: source checkout
 
