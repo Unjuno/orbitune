@@ -21,11 +21,13 @@ Current high-level state:
 DONE     hierarchical Compound Base implementation
 DONE     frozen Research-NC Aria+GigaMIDI V1 at step 100k
 DONE     native V2 Compound Base Web runtime source + Pages deployment
-PLANNED  longer full-parameter Base continuation; not claimed started here
+ACTIVE   local full-parameter Base continuation toward step 1M; latest recorded local evidence is in ROADMAP.md
 THEN     freeze/evaluate a later Base candidate if produced
 THEN     define and validate a new Compound Adapter ABI
 GATE     model/ONNX publication remains subject to redistribution review
 ```
+
+The active continuation is mutable local training state, not a public model release and not a public Adapter compatibility target. The historical 100k V1 identity remains frozen and unchanged.
 
 The existing V2 parity evidence validates the Base browser ABI described by its handoff; it does not pre-validate a future LoRA-merged artifact.
 
