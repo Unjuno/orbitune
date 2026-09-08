@@ -12,7 +12,7 @@ from typing import Any
 
 import torch
 
-from orbitune.compound_base import CompoundHierarchicalGPT
+from orbitune.compound_base import CompoundHierarchicalGPT, set_padded_head_dim_sdpa
 from orbitune.compound_longrun import build_longrun_checkpoint, restore_longrun_rng, safe_backward_step
 from orbitune.compound_tbptt import (
     SequentialSongChunkSampler,
@@ -22,6 +22,7 @@ from orbitune.compound_tbptt import (
     initial_batch_stream_states,
     tbptt_loss,
 )
+from orbitune.compound_tbptt_hybrid import tbptt_loss_hybrid
 from orbitune.compound_training import atomic_torch_save, parse_compound_checkpoint
 from orbitune.indexed_sampling import IndexedSequentialSongChunkSampler
 from orbitune.tbptt_run_support import (
@@ -161,6 +162,9 @@ def train(args: argparse.Namespace) -> None:
     random.seed(args.seed)
     sampler_rng = random.Random(args.seed + 7919)
     cfe.install_causal_fastpath() if args.causal_fastpath else cfe.uninstall_causal_fastpath()
+    set_padded_head_dim_sdpa(bool(args.padded_sdpa))
+    print(json.dumps({"event": "tbptt_impl_selected", "impl": args.impl,
+                      "padded_head_dim_sdpa": bool(args.padded_sdpa)}), flush=True)
 
     train_sources = load_training_sources(args.train_jsonl)
     validation_sources = load_training_sources(args.validation_jsonl)
@@ -219,6 +223,7 @@ def train(args: argparse.Namespace) -> None:
         "training_mode": "state_carry_tbptt", "device_type": device.type,
         "precision": precision, "fused_adamw": fused,
         "batch_size": args.batch_size, "seq_len": args.seq_len,
+        "tbptt_impl": args.impl, "padded_head_dim_sdpa": bool(args.padded_sdpa),
         "n_head": model.config.n_head, "head_dim": model.config.d_model // model.config.n_head,
         "causal_fastpath": args.causal_fastpath, "grad_clip": args.grad_clip,
         "learning_rate": float(optimizer.param_groups[0]["lr"]),
@@ -241,6 +246,17 @@ def train(args: argparse.Namespace) -> None:
     }
     if payload and not transitioning_from_fixed:
         validate_resume_contract(payload, runtime)
+        prev = payload.get("runtime") or {}
+        for key, want in (("tbptt_impl", args.impl),
+                          ("padded_head_dim_sdpa", bool(args.padded_sdpa))):
+            if key not in prev:
+                raise ValueError(
+                    f"TBPTT resume missing runtime identity {key}; legacy TBPTT "
+                    "checkpoints need an explicit migration audit, not silent resume")
+            if prev[key] != want:
+                raise ValueError(
+                    f"TBPTT resume regime mismatch for {key}: "
+                    f"checkpoint={prev[key]!r} requested={want!r}")
     if transitioning_from_fixed and payload.get("sampler_rng_state") is None:
         print(json.dumps({"event": "legacy_sampler_rng_missing",
                           "exact_fixed_window_resume": False,
@@ -294,8 +310,13 @@ def train(args: argparse.Namespace) -> None:
         batch = sampler.sample(device)
         optimizer.zero_grad(set_to_none=True)
         with base.autocast_for(precision):
-            loss, parts, stream_states = tbptt_loss(model, batch.inputs, batch.targets,
-                                                   stream_states, reset_mask=batch.reset_mask)
+            if args.impl == "hybrid":
+                loss, parts, stream_states = tbptt_loss_hybrid(
+                    model, batch.inputs, batch.targets,
+                    stream_states, reset_mask=batch.reset_mask)
+            else:
+                loss, parts, stream_states = tbptt_loss(model, batch.inputs, batch.targets,
+                                                        stream_states, reset_mask=batch.reset_mask)
         result = safe_backward_step(loss=loss, model=model, optimizer=optimizer,
                                     scaler=scaler, grad_clip=args.grad_clip)
         if not result.stepped:
@@ -390,6 +411,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--health-history-len", type=int, default=200)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--allow-synthetic", action="store_true")
+    parser.add_argument("--impl", choices=("reference", "hybrid"), default="reference",
+                        help="TBPTT step implementation: reference per-lane loop or hybrid "
+                             "(A3 local windows + exact per-position lane-batched hierarchies). "
+                             "Recorded in runtime identity; regime changes require a new run, not silent resume.")
+    parser.add_argument("--padded-sdpa", action=argparse.BooleanOptionalAction, default=False,
+                        help="Enable the flag-gated padded head-dim fast-SDPA path. "
+                             "Recorded in runtime identity; changes dropout-mask streams.")
     return parser
 
 
