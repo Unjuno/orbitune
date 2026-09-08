@@ -21,7 +21,7 @@ full-parameter Base pretraining
 → publish only after rights + compatibility review
 ```
 
-LoRA is **not** used to finish or replace full-parameter Base pretraining. A mutable continuation checkpoint is training state, not a public Adapter compatibility target. The repository currently documents a planned longer Base continuation, but does not treat that plan as proof that a run has started or completed.
+LoRA is **not** used to finish or replace full-parameter Base pretraining. A mutable continuation checkpoint is training state, not a public Adapter compatibility target. The repository now records a reported active local long-run Base continuation toward step 1,000,000; that run remains mutable training state until a completed checkpoint is evaluated, selected, frozen, hashed and documented under a new Base identity.
 
 Intermediate checkpoints may be used for local experiments, but an Adapter trained against one must remain explicitly experimental and bound to that exact checkpoint SHA-256. If the Base changes, the Adapter must be retrained or separately revalidated; compatibility is never inferred from architecture name or parameter count.
 
@@ -29,7 +29,7 @@ Intermediate checkpoints may be used for local experiments, but an Adapter train
 
 The repository currently documents the frozen research checkpoint `research-nc-aria-gigamidi-v1` at global step 100,000. Its exact reported SHA-256 remains the model identity recorded in the model card and publication record.
 
-A later continuation may become a new Base candidate only after that exact checkpoint is completed, evaluated, frozen, hashed and documented under a new model identity. It does not overwrite the historical 100k model.
+A separate local continuation is reported active from that immutable parent. It does not overwrite the historical 100k model, and its mutable continuation checkpoint is not distributed by this repository. A later continuation checkpoint may become a new Base candidate only after it is completed, evaluated, frozen, hashed and documented under a new model identity.
 
 No public Compound community Adapter target exists today because the Compound Adapter ABI itself has not been frozen.
 

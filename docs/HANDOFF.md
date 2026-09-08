@@ -26,14 +26,17 @@ Compound browser runtime source     merged and deployed
 Model / ONNX distribution           still frozen pending redistribution review
 Compound dynamic LoRA ABI           not frozen
 Planned LoRA Web strategy            pre-merged variant after Adapter + merged-artifact parity
-Long-run Base continuation          planned external/model-training work; not claimed started here
+Long-run Base continuation          active local run toward step 1M; mutable checkpoint remains unpublished
 ```
+
+Latest reported continuation evidence is recorded in [ROADMAP.md](ROADMAP.md). It reports the immutable 100k parent unchanged and the local continuation active beyond step 100k. Treat that evidence as a local-run status snapshot, not as a public checkpoint-byte verification or release.
 
 ## Non-negotiable boundaries
 
 - Do not overwrite historical frozen model identities with later continuation checkpoints.
 - Do not describe corpus capacity as unique training exposure.
-- Do not claim a planned continuation has started/completed without actual run/checkpoint evidence.
+- Do not describe the active continuation as completed until an actual final checkpoint is saved, loaded, hashed, evaluated and documented.
+- Do not treat reported local continuation state as a downloadable or publicly verified checkpoint.
 - Do not reuse the legacy Theory-REMI `orbitune-lora-v0` ABI for Compound.
 - Do not use mutable training state as a public Adapter compatibility target.
 - Do not treat Base V2 Web parity as proof that a future LoRA-merged export passes parity; validate the exact merged bytes separately.

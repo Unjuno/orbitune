@@ -63,11 +63,33 @@ Completed:
 
 The source runtime is public. The actual Compound ONNX model files are not public yet. The Base V2 parity evidence does not validate a future LoRA-merged artifact; any merged variant must repeat parity on its own exact bytes.
 
-## Milestone E — long-run full-parameter Base continuation — PLANNED NEXT MODEL WORK
+## Milestone E — long-run full-parameter Base continuation — ACTIVE LOCAL RUN
 
-The next Base-training objective is a normal full-parameter continuation from an immutable parent, with ordinary resumable checkpoints. The public repository does **not** claim this planned run has started or completed until actual checkpoint/run evidence is recorded.
+A normal full-parameter continuation from the immutable 100k parent is now reported active locally under run id `research_nc_aria_gigamidi_v2_1m`. The continuation checkpoint is mutable training state and is **not** a public model release or Adapter compatibility target.
 
-A clean round target of 1,000,000 global steps under the planned 16 × 256 batch geometry corresponds to approximately:
+Reported local-run evidence snapshot, 2026-09-08:
+
+```text
+parent model id              research-nc-aria-gigamidi-v1
+parent step                  100,000
+parent SHA-256               8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc
+parent unchanged             yes
+continuation run id          research_nc_aria_gigamidi_v2_1m
+reported continuation step   102,000
+reported events_seen         417,792,000
+batch × sequence             16 × 256
+precision                    bf16
+learning rate                3e-4
+weight decay                 0.01
+optimizer                    fused AdamW
+sampler RNG state            present in new continuation checkpoints
+validation window hash       db2b3903dbdae6e9c3821494009b5adbd1b0ba19499adcca84b790c66a5c9814
+non-finite loss / grad       0 / 0
+```
+
+These values are **reported local run evidence**. The continuation checkpoint itself is not distributed by this repository, so the snapshot is not a public-byte verification claim. The immutable V1 publication record remains unchanged.
+
+The clean round target remains 1,000,000 global steps under the active 16 × 256 batch geometry:
 
 ```text
 4,096 event positions / step
@@ -160,6 +182,7 @@ Tracked separately from Base training:
 
 - Standard MIDI 3-byte TEMPO behavior for generated 1–3 BPM values (issue #48)
 - import the exact local native Compound Web golden fixture into source CI without reconstructing omitted values (issue #49)
+- safe CFE telemetry/synchronization fixes from issue #52 are merged; deeper recurrent-memory, sampler/H2D and boundary-overhead profiling remains separate from the active production lineage
 - corpus accounting/provenance limitations already recorded in the V1 model documentation
 - future public artifact/Adapter release review
 
@@ -170,7 +193,7 @@ DONE     repository/publication safety foundation
 DONE     Compound hierarchical Base implementation
 DONE     Aria+GigaMIDI V1 frozen at step 100k
 DONE     native Compound V2 Web runtime source + Pages deployment
-PLANNED  long-run full-parameter Base continuation
+ACTIVE   local long-run full-parameter Base continuation toward step 1M
 THEN     evaluate/freeze next immutable Base candidate if produced
 THEN     freeze and validate Compound LoRA ABI
 THEN     optional Adapter/pre-merged variants after their own parity validation
