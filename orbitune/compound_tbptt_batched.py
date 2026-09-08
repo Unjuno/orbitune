@@ -92,6 +92,61 @@ def _batched_stack_forward(model: CompoundHierarchicalGPT, stack: torch.nn.Modul
     return out
 
 
+def _bump_version(state: StreamState, attr: str) -> int:
+    ver = getattr(state, attr, 0) + 1
+    setattr(state, attr, ver)
+    return ver
+
+
+def _memo_contexts(model: CompoundHierarchicalGPT, stack, states: list[StreamState],
+                   histories_attr: str, ver_attr: str, cache_attr: str,
+                   d_model: int, device: torch.device,
+                   fallback_like: list[torch.Tensor]) -> list[torch.Tensor]:
+    """Versioned reuse of hierarchy contexts (same-history => same tensor).
+
+    Histories mutate only via append/pop, each bumping the version counter, so
+    a cache hit implies byte-identical history contents. A hit reuses one
+    shared autograd node (gradient accumulation is identical by linearity).
+    With dropout > 0 the shared node consumes one mask instead of one per
+    position (documented regime behavior). Cache lives on the live state
+    object only: detach/from_cpu/reset construct fresh states and implicitly
+    drop it, so a cached tensor never crosses an optimizer step.
+    """
+    batch = len(states)
+    need: list[int] = []
+    for b, s in enumerate(states):
+        hist = getattr(s, histories_attr)
+        if not hist:
+            continue
+        ver = getattr(s, ver_attr, 0)
+        cached = getattr(s, cache_attr, None)
+        if cached is None or cached[0] != ver:
+            need.append(b)
+    fresh: dict[int, torch.Tensor] = {}
+    if need:
+        items = [getattr(states[b], histories_attr) for b in need]
+        outs = _batched_stack_forward(model, stack, items, d_model,
+                                      [True] * len(need), device, window=None)
+        for k, b in enumerate(need):
+            assert outs[k] is not None
+            ver = getattr(states[b], ver_attr, 0)
+            setattr(states[b], cache_attr, (ver, outs[k]))
+            fresh[b] = outs[k]
+    out: list[torch.Tensor] = []
+    for b, s in enumerate(states):
+        hist = getattr(s, histories_attr)
+        if not hist:
+            out.append(fallback_like[b].new_zeros(d_model))
+            continue
+        if b in fresh:
+            out.append(fresh[b])
+        else:
+            cached = getattr(s, cache_attr, None)
+            assert cached is not None
+            out.append(cached[1])
+    return out
+
+
 def advance_all_lanes(
     model: CompoundHierarchicalGPT,
     cur_records: torch.Tensor,
@@ -167,16 +222,18 @@ def advance_all_lanes(
             states[b].medium_buffer.clear()
             states[b].medium_history.append(summaries[k])
             k += 1
+            _bump_version(states[b], "_memo_mver")
             if len(states[b].medium_history) > model.config.medium_window:
                 states[b].medium_history.pop(0)
-        # medium_out for firing lanes (batched; mirrors reference completion call)
-        outs = _batched_stack_forward(model, model.medium,
-                                      [states[b].medium_history for b in range(batch)],
-                                      d_model, firing, device, window=None)
-        for b in range(batch):
-            if firing[b]:
-                assert outs[b] is not None
-                states[b].global_buffer.append(outs[b])
+                _bump_version(states[b], "_memo_mver")
+    # medium contexts (memoized); firing lanes reuse theirs for global_buffer
+    # below, eliminating the duplicate completion forward.
+    medium_contexts = _memo_contexts(model, model.medium, states, "medium_history",
+                                     "_memo_mver", "_memo_mctx", d_model, device,
+                                     local_hiddens)
+    for b in range(batch):
+        if firing[b]:
+            states[b].global_buffer.append(medium_contexts[b])
 
     # 4. global summaries for lanes whose stride boundary fires.
     gfiring = [len(s.global_buffer) >= model.config.global_stride for s in states]
@@ -190,22 +247,15 @@ def advance_all_lanes(
             states[b].global_buffer.clear()
             states[b].global_history.append(gsummaries[k])
             k += 1
+            _bump_version(states[b], "_memo_gver")
             if len(states[b].global_history) > model.config.global_window:
                 states[b].global_history.pop(0)
+                _bump_version(states[b], "_memo_gver")
 
-    # 5. medium/global contexts for lanes with nonempty history.
-    mactive = [len(s.medium_history) > 0 for s in states]
-    mouts = _batched_stack_forward(model, model.medium,
-                                   [states[b].medium_history for b in range(batch)],
-                                   d_model, mactive, device, window=None)
-    gactive = [len(s.global_history) > 0 for s in states]
-    gouts = _batched_stack_forward(model, model.global_stack,
-                                   [states[b].global_history for b in range(batch)],
-                                   d_model, gactive, device, window=None)
-    medium_contexts = [mouts[b] if mouts[b] is not None
-                       else local_hiddens[b].new_zeros(d_model) for b in range(batch)]
-    global_contexts = [gouts[b] if gouts[b] is not None
-                       else local_hiddens[b].new_zeros(d_model) for b in range(batch)]
+    # 5. global contexts (memoized).
+    global_contexts = _memo_contexts(model, model.global_stack, states, "global_history",
+                                     "_memo_gver", "_memo_gctx", d_model, device,
+                                     local_hiddens)
 
     for b in range(batch):
         states[b].steps += 1
