@@ -96,8 +96,15 @@ def advance_all_lanes(
     model: CompoundHierarchicalGPT,
     cur_records: torch.Tensor,
     states: list[StreamState],
+    *,
+    local_hiddens: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """One time step for every lane; returns stacked contexts [B, D]."""
+    """One time step for every lane; returns stacked contexts [B, D].
+
+    When local_hiddens [B, D] is supplied (e.g. chunk-vectorized A3 windows),
+    the local Transformer forward is skipped, but raw-record append/evict
+    still runs so lane state stays identical.
+    """
     device = next(model.parameters()).device
     batch = len(states)
     d_model = model.config.d_model
@@ -108,18 +115,21 @@ def advance_all_lanes(
         states[b].local_records.append(raw)
         if len(states[b].local_records) > model.config.local_window:
             states[b].local_records.pop(0)
-    lengths = torch.tensor([len(s.local_records) for s in states], dtype=torch.long)
-    tmax = int(lengths.max().item())
-    pad_rec = torch.zeros(batch, tmax, 12, device=device, dtype=torch.long)
-    for b in range(batch):
-        recs = states[b].local_records
-        pad_rec[b, tmax - len(recs):] = torch.stack(recs)
-    local_event = model.embedding(pad_rec)
-    local_out = model.local(
-        local_event,
-        _padded_causal_bias(lengths, tmax, device, window=model.config.local_window),
-    )[:, -1]
-    local_hiddens = [local_out[b] for b in range(batch)]
+    if local_hiddens is None:
+        lengths = torch.tensor([len(s.local_records) for s in states], dtype=torch.long)
+        tmax = int(lengths.max().item())
+        pad_rec = torch.zeros(batch, tmax, 12, device=device, dtype=torch.long)
+        for b in range(batch):
+            recs = states[b].local_records
+            pad_rec[b, tmax - len(recs):] = torch.stack(recs)
+        local_event = model.embedding(pad_rec)
+        local_out = model.local(
+            local_event,
+            _padded_causal_bias(lengths, tmax, device, window=model.config.local_window),
+        )[:, -1]
+        local_hiddens = [local_out[b] for b in range(batch)]
+    else:
+        local_hiddens = [local_hiddens[b] for b in range(batch)]
 
     # 2. recurrent memory, batched across lanes (None -> zeros per lane).
     event_emb = model.embedding(cur_records.to(device=device)[:, None, :])[:, 0]
