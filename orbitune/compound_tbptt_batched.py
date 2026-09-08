@@ -153,6 +153,7 @@ def advance_all_lanes(
     states: list[StreamState],
     *,
     local_hiddens: torch.Tensor | None = None,
+    memory_read_override: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """One time step for every lane; returns stacked contexts [B, D].
 
@@ -187,24 +188,27 @@ def advance_all_lanes(
         local_hiddens = [local_hiddens[b] for b in range(batch)]
 
     # 2. recurrent memory, batched across lanes (None -> zeros per lane).
-    event_emb = model.embedding(cur_records.to(device=device)[:, None, :])[:, 0]
-    mem_states = []
-    mem_is_none = []
-    for b in range(batch):
-        mem = states[b].memory
-        mem_is_none.append(mem is None)
-        mem_states.append(mem)
-    stacked_mem: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
-    if not all(mem_is_none):
-        parts: list[list[torch.Tensor]] = [[], [], []]
-        for mem in mem_states:
-            for k in range(3):
-                parts[k].append(mem[k] if mem is not None
-                                else event_emb.new_zeros(d_model))
-        stacked_mem = (torch.stack(parts[0]), torch.stack(parts[1]), torch.stack(parts[2]))
-    memory_read, new_mem = model.memory.step(event_emb, stacked_mem)
-    for b in range(batch):
-        states[b].memory = (new_mem[0][b], new_mem[1][b], new_mem[2][b])
+    if memory_read_override is None:
+        event_emb = model.embedding(cur_records.to(device=device)[:, None, :])[:, 0]
+        mem_states = []
+        mem_is_none = []
+        for b in range(batch):
+            mem = states[b].memory
+            mem_is_none.append(mem is None)
+            mem_states.append(mem)
+        stacked_mem: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
+        if not all(mem_is_none):
+            parts: list[list[torch.Tensor]] = [[], [], []]
+            for mem in mem_states:
+                for k in range(3):
+                    parts[k].append(mem[k] if mem is not None
+                                    else event_emb.new_zeros(d_model))
+            stacked_mem = (torch.stack(parts[0]), torch.stack(parts[1]), torch.stack(parts[2]))
+        memory_read, new_mem = model.memory.step(event_emb, stacked_mem)
+        for b in range(batch):
+            states[b].memory = (new_mem[0][b], new_mem[1][b], new_mem[2][b])
+    else:
+        memory_read = memory_read_override
     memory_reads = [memory_read[b] for b in range(batch)]
 
     # 3. medium summaries for lanes whose stride boundary fires.

@@ -260,6 +260,29 @@ class DecayedGRUMemoryBank(nn.Module):
         proposal = self.cell(self.norm(x), state)
         return self.decay * state + (1.0 - self.decay) * proposal
 
+    def input_gates(self, x: torch.Tensor) -> torch.Tensor:
+        """Project input-dependent GRU gates for any leading dimensions."""
+        return torch.nn.functional.linear(
+            self.norm(x), self.cell.weight_ih, self.cell.bias_ih
+        )
+
+    def step_from_input_gates(
+        self, input_gates: torch.Tensor, state: torch.Tensor | None
+    ) -> torch.Tensor:
+        """Exact GRUCell recurrence with an already-computed input affine."""
+        if state is None:
+            state = input_gates.new_zeros(input_gates.shape[0], self.cell.hidden_size)
+        hidden_gates = torch.nn.functional.linear(
+            state, self.cell.weight_hh, self.cell.bias_hh
+        )
+        input_reset, input_update, input_new = input_gates.chunk(3, dim=-1)
+        hidden_reset, hidden_update, hidden_new = hidden_gates.chunk(3, dim=-1)
+        reset = torch.sigmoid(input_reset + hidden_reset)
+        update = torch.sigmoid(input_update + hidden_update)
+        new = torch.tanh(input_new + reset * hidden_new)
+        proposal = new + update * (state - new)
+        return self.decay * state + (1.0 - self.decay) * proposal
+
 
 class RoutedRecurrentMemory(nn.Module):
     def __init__(self, cfg: CompoundBaseConfig) -> None:
@@ -292,6 +315,57 @@ class RoutedRecurrentMemory(nn.Module):
         if not outputs:
             raise ValueError("memory requires at least one event")
         return torch.stack(outputs, dim=1), next_state  # type: ignore[arg-type]
+
+    def forward_sequence_precomputed(
+        self,
+        x: torch.Tensor,
+        state: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+        """Run recurrence after projecting every chunk input in three GEMMs."""
+        banks = (self.fast, self.medium, self.slow)
+        gates = tuple(bank.input_gates(x) for bank in banks)
+        next_state = (None, None, None) if state is None else state
+        outputs: list[torch.Tensor] = []
+        for index in range(x.shape[1]):
+            values = tuple(
+                bank.step_from_input_gates(gate[:, index], previous)
+                for bank, gate, previous in zip(banks, gates, next_state)
+            )
+            outputs.append(self.fuse(torch.cat(values, dim=-1)))
+            next_state = values
+        if not outputs:
+            raise ValueError("memory requires at least one event")
+        return torch.stack(outputs, dim=1), next_state  # type: ignore[return-value]
+
+    def forward_sequence_threebank(
+        self,
+        x: torch.Tensor,
+        state: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+        """Precompute inputs and batch the three independent hidden affines."""
+        banks = (self.fast, self.medium, self.slow)
+        input_gates = torch.stack(tuple(bank.input_gates(x) for bank in banks))
+        if state is None:
+            states = x.new_zeros(3, x.shape[0], x.shape[-1])
+        else:
+            states = torch.stack(state)
+        weights = torch.stack(tuple(bank.cell.weight_hh for bank in banks))
+        biases = torch.stack(tuple(bank.cell.bias_hh for bank in banks))
+        decays = x.new_tensor(tuple(bank.decay for bank in banks))[:, None, None]
+        outputs: list[torch.Tensor] = []
+        for index in range(x.shape[1]):
+            hidden_gates = torch.bmm(states, weights.transpose(1, 2)) + biases[:, None, :]
+            input_reset, input_update, input_new = input_gates[:, :, index].chunk(3, dim=-1)
+            hidden_reset, hidden_update, hidden_new = hidden_gates.chunk(3, dim=-1)
+            reset = torch.sigmoid(input_reset + hidden_reset)
+            update = torch.sigmoid(input_update + hidden_update)
+            new = torch.tanh(input_new + reset * hidden_new)
+            proposal = new + update * (states - new)
+            states = decays * states + (1.0 - decays) * proposal
+            outputs.append(self.fuse(states.transpose(0, 1).reshape(x.shape[0], -1)))
+        if not outputs:
+            raise ValueError("memory requires at least one event")
+        return torch.stack(outputs, dim=1), tuple(states.unbind(0))  # type: ignore[return-value]
 
 
 class GaussianHead(nn.Module):

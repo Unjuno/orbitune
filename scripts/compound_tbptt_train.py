@@ -310,10 +310,12 @@ def train(args: argparse.Namespace) -> None:
         batch = sampler.sample(device)
         optimizer.zero_grad(set_to_none=True)
         with base.autocast_for(precision):
-            if args.impl == "hybrid":
+            if args.impl.startswith("hybrid"):
                 loss, parts, stream_states = tbptt_loss_hybrid(
                     model, batch.inputs, batch.targets,
-                    stream_states, reset_mask=batch.reset_mask)
+                    stream_states, reset_mask=batch.reset_mask,
+                    memory_input_precompute=args.impl == "hybrid-precompute",
+                    memory_threebank=args.impl == "hybrid-threebank")
             else:
                 loss, parts, stream_states = tbptt_loss(model, batch.inputs, batch.targets,
                                                         stream_states, reset_mask=batch.reset_mask)
@@ -411,9 +413,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--health-history-len", type=int, default=200)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--allow-synthetic", action="store_true")
-    parser.add_argument("--impl", choices=("reference", "hybrid"), default="reference",
+    parser.add_argument("--impl", choices=("reference", "hybrid", "hybrid-precompute", "hybrid-threebank"), default="reference",
                         help="TBPTT step implementation: reference per-lane loop or hybrid "
-                             "(A3 local windows + exact per-position lane-batched hierarchies). "
+                             "(A3 local windows + exact per-position lane-batched hierarchies), "
+                             "optionally with chunk input-gate precompute or three-bank hidden batching. "
                              "Recorded in runtime identity; regime changes require a new run, not silent resume.")
     parser.add_argument("--padded-sdpa", action=argparse.BooleanOptionalAction, default=False,
                         help="Enable the flag-gated padded head-dim fast-SDPA path. "

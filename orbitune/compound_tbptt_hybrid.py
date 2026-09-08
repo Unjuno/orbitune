@@ -31,6 +31,8 @@ def encode_tbptt_hybrid(
     states: list[StreamState],
     *,
     reset_mask: torch.Tensor | None = None,
+    memory_input_precompute: bool = False,
+    memory_threebank: bool = False,
 ) -> tuple[torch.Tensor, list[StreamState]]:
     """Same contract as encode_tbptt_chunk."""
     if records.ndim != 3 or records.shape[-1] != 12:
@@ -47,10 +49,31 @@ def encode_tbptt_hybrid(
             states[lane] = model.initial_stream_state()
     device = next(model.parameters()).device
     local_h, _ = _local_windows_a3(model, records, states, device)
+    memory_context = None
+    if memory_input_precompute or memory_threebank:
+        event = model.embedding(records.to(device=device))
+        packed = None
+        if any(state.memory is not None for state in states):
+            zero = event.new_zeros(model.config.d_model)
+            packed = tuple(torch.stack([
+                zero if state.memory is None else state.memory[bank]
+                for state in states
+            ]) for bank in range(3))
+        memory_forward = (
+            model.memory.forward_sequence_threebank
+            if memory_threebank else model.memory.forward_sequence_precomputed
+        )
+        memory_context, final_memory = memory_forward(event, packed)
+        for lane, state in enumerate(states):
+            state.memory = tuple(value[lane] for value in final_memory)  # type: ignore[assignment]
     per_step: list[torch.Tensor] = []
     for step in range(steps):
         per_step.append(advance_all_lanes(model, records[:, step], states,
-                                          local_hiddens=local_h[:, step]))
+                                          local_hiddens=local_h[:, step],
+                                          memory_read_override=(
+                                              None if memory_context is None
+                                              else memory_context[:, step]
+                                          )))
     return torch.stack(per_step, dim=1), states
 
 
@@ -62,7 +85,13 @@ def tbptt_loss_hybrid(
     *,
     reset_mask: torch.Tensor | None = None,
     event_weight: torch.Tensor | None = None,
+    memory_input_precompute: bool = False,
+    memory_threebank: bool = False,
 ) -> tuple[torch.Tensor, dict[str, float], list[StreamState]]:
-    contexts, states = encode_tbptt_hybrid(model, inputs, states, reset_mask=reset_mask)
+    contexts, states = encode_tbptt_hybrid(
+        model, inputs, states, reset_mask=reset_mask,
+        memory_input_precompute=memory_input_precompute,
+        memory_threebank=memory_threebank,
+    )
     loss, parts = model.decoder.loss(contexts, targets, event_weight=event_weight)
     return loss, parts, states
