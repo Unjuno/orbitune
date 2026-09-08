@@ -1,5 +1,7 @@
 # Compound state-carry TBPTT implementation
 
+> **Historical experiment scope:** the step-1900 baseline and stop/next-experiment labels below describe the earlier MAESTRO experiment, not the current Aria+GigaMIDI production run. For mixed indexed corpora, cumulative event targets and strict resume requirements, see [TBPTT corpus continuation](TBPTT_CORPUS_CONTINUATION.md). Do not stop or switch an active trainer merely because of the historical labels on this page.
+
 Status: **implemented, correctness-gated, awaiting RTX 3080 throughput/quality A/B**.
 
 This path does not introduce a new model architecture. It reuses the existing
