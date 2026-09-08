@@ -82,6 +82,46 @@ def _local_windows_a1(model: CompoundHierarchicalGPT, records: torch.Tensor,
     return hidden.view(batch, steps, -1), lengths
 
 
+def _local_windows_a3(model: CompoundHierarchicalGPT, records: torch.Tensor,
+                      states: list[StreamState], device: torch.device,
+                      ) -> tuple[torch.Tensor, int]:
+    """A3: unfold-based window materialization (no per-position Python loop).
+
+    Per lane: full = carried + chunk rows -> left-pad (W-1) -> unfold(0, W, 1)
+    -> last T windows. Lanes stack directly ([T, W, 12] each, no cross-lane
+    padding). Produces the identical [B*T, W, 12] tensor as A1.
+    """
+    batch, steps, _ = records.shape
+    window = model.config.local_window
+    rec = records.to(device=device, dtype=torch.long)
+    lane_windows = []
+    for b in range(batch):
+        carried = states[b].local_records
+        if carried:
+            full = torch.stack(carried).to(device=device, dtype=torch.long)
+            full = torch.cat([full, rec[b]], dim=0)
+        else:
+            full = rec[b]
+        if full.shape[0] >= window:
+            # windows via unfold need (W-1) left pad; when full is long, only
+            # the last (steps) windows matter: prefix can be trimmed to
+            # (steps + window - 1) rows to bound the unfold cost.
+            keep = steps + window - 1
+            if full.shape[0] > keep:
+                full = full[-keep:]
+        padded = torch.nn.functional.pad(full, (0, 0, window - 1, 0))
+        # unfold yields [N, 12, W]; transpose to [N, W, 12] windows.
+        wins = padded.unfold(0, window, 1).transpose(1, 2)[-steps:]
+        lane_windows.append(wins)
+    stacked = torch.stack(lane_windows).reshape(batch * steps, window, 12)
+    lengths = torch.tensor(
+        [min(t + 1 + len(states[b].local_records), window)
+         for b in range(batch) for t in range(steps)], dtype=torch.long)
+    bias = _padded_causal_bias(lengths, window, device, window=window)
+    hidden = model.local(model.embedding(stacked), bias)[:, -1]
+    return hidden.view(batch, steps, -1), len(lane_windows)
+
+
 def _local_windows_a2(model: CompoundHierarchicalGPT, records: torch.Tensor,
                       states: list[StreamState], device: torch.device,
                       ) -> tuple[torch.Tensor, dict[int, int]]:
@@ -260,8 +300,10 @@ def encode_tbptt_chunkvec(
         local_h, _ = _local_windows_a1(model, records, states, device)
     elif local_mode == "a2":
         local_h, _ = _local_windows_a2(model, records, states, device)
+    elif local_mode == "a3":
+        local_h, _ = _local_windows_a3(model, records, states, device)
     else:
-        raise ValueError("local_mode must be 'a1' or 'a2'")
+        raise ValueError("local_mode must be 'a1', 'a2' or 'a3'")
     # local_h: [B, T, D]
 
     # ---- Memory stays sequential (lane-batched per step, as before) ----
