@@ -407,6 +407,9 @@ def validation_loss(
         "validation_window_hash": str(plan_payload["window_hash"]),
         "validation_batch_size": int(plan_payload["batch_size"]),
         "validation_seq_len": int(plan_payload["seq_len"]),
+        "validation_encode_semantics": str(
+            plan_payload.get("encode_semantics", "legacy-unspecified")
+        ),
     }
     return mean_loss, telemetry
 
@@ -661,6 +664,35 @@ def train(args: argparse.Namespace) -> None:
             )
             validation_plan = None
 
+    # A captured window plan is protocol-specific.  Reusing a fixed-256 plan
+    # after an approved move to seq_len=512 silently evaluates the new run on
+    # the old geometry and also mixes incompatible best-loss series.
+    if validation_plan is not None:
+        stored_plan_seq_len = int(validation_plan.get("seq_len", 0))
+        stored_plan_semantics = validation_plan.get("encode_semantics")
+        protocol_changed = (
+            stored_plan_seq_len != args.seq_len
+            or stored_plan_semantics != args.encode_semantics
+        )
+        if protocol_changed:
+            print(
+                json.dumps(
+                    {
+                        "event": "validation_plan_discarded",
+                        "reason": "validation_protocol_mismatch",
+                        "stored_seq_len": stored_plan_seq_len,
+                        "requested_seq_len": args.seq_len,
+                        "stored_encode_semantics": stored_plan_semantics,
+                        "requested_encode_semantics": args.encode_semantics,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            validation_plan = None
+            best_validation_loss = None
+            best_step = None
+
     model.training_encode_semantics = args.encode_semantics
     if args.compile:
         model.compile(mode=args.compile_mode)
@@ -702,6 +734,7 @@ def train(args: argparse.Namespace) -> None:
             batch_size=min(args.batch_size, args.validation_batch_size),
             seq_len=args.seq_len,
         )
+        validation_plan["encode_semantics"] = args.encode_semantics
 
     model.train()
     interval_start = time.perf_counter()
