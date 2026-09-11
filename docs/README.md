@@ -11,6 +11,7 @@
 - [Compound Base architecture and CLI](COMPOUND_BASE.md)
 - [Compound browser runtime status](COMPOUND_WEB_RUNTIME.md)
 - [Compound LoRA / Adapter policy](COMPOUND_LORA_POLICY.md)
+- [Experimental Compound LoRA SFT smoke path](COMPOUND_LORA_EXPERIMENTAL.md)
 - [Publication status and release checklist](PUBLICATION.md)
 - [Current roadmap](ROADMAP.md)
 
@@ -19,6 +20,7 @@
 - [Compound Base](COMPOUND_BASE.md)
 - [Compound browser runtime](COMPOUND_WEB_RUNTIME.md)
 - [Compound LoRA policy](COMPOUND_LORA_POLICY.md)
+- [Experimental Compound LoRA SFT](COMPOUND_LORA_EXPERIMENTAL.md)
 - [Contributing](../CONTRIBUTING.md)
 - [Legacy Base contribution contract](../CONTRIBUTING_BASES.md)
 - [Legacy/Compound Adapter contribution boundary](../CONTRIBUTING_ADAPTERS.md)
@@ -37,6 +39,7 @@ README.md
 → docs/COMPOUND_BASE.md
 → docs/COMPOUND_WEB_RUNTIME.md
 → docs/COMPOUND_LORA_POLICY.md
+→ docs/COMPOUND_LORA_EXPERIMENTAL.md
 → docs/PUBLICATION.md
 → model-specific README/publication.json
 ```
