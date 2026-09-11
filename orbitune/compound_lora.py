@@ -135,15 +135,19 @@ def inject_lora(model: nn.Module, config: CompoundLoRAConfig) -> list[str]:
     freeze_base(model)
     targets = resolve_target_modules(model, config.target_patterns)
     originals = {name: model.get_submodule(name) for name in targets}
+    replacements: dict[str, LoRALinear] = {}
     for name in targets:
         base = originals[name]
         if not isinstance(base, nn.Linear):
             raise TypeError(f"resolved target is no longer nn.Linear: {name}")
-        _replace_module(
-            model,
-            name,
-            LoRALinear(base, rank=config.rank, alpha=config.alpha, dropout=config.dropout),
+        replacements[name] = LoRALinear(
+            base,
+            rank=config.rank,
+            alpha=config.alpha,
+            dropout=config.dropout,
         )
+    for name in targets:
+        _replace_module(model, name, replacements[name])
     return targets
 
 
@@ -281,6 +285,8 @@ def load_adapter(
     base_sha256: str,
     strict_base_binding: bool = True,
 ) -> dict[str, object]:
+    """Preflight an Adapter completely, then mutate ``model`` only after validation."""
+
     target = Path(adapter_dir)
     manifest = json.loads((target / ADAPTER_MANIFEST_FILE).read_text(encoding="utf-8"))
     if manifest.get("schema") != EXPERIMENTAL_COMPOUND_LORA_SCHEMA:
@@ -306,27 +312,41 @@ def load_adapter(
         alpha=float(manifest["alpha"]),
         dropout=float(manifest.get("dropout", 0.0)),
     )
-    targets = inject_lora(model, config)
+    config.validate()
+    targets = resolve_target_modules(model, config.target_patterns)
     if targets != sorted(config.target_patterns):
         raise ValueError("Adapter target modules do not resolve exactly on this Base")
 
     tensors = load_safetensors(str(target / str(manifest.get("tensor_file", ADAPTER_TENSOR_FILE))))
-    expected_keys: set[str] = set()
-    for name, module in iter_lora_modules(model):
-        key_a = f"{name}.lora_A"
-        key_b = f"{name}.lora_B"
-        expected_keys.update((key_a, key_b))
-        if key_a not in tensors or key_b not in tensors:
-            raise ValueError(f"Adapter tensors missing for target {name}")
-        if tuple(tensors[key_a].shape) != tuple(module.lora_A.shape):
-            raise ValueError(f"Adapter lora_A shape mismatch for {name}")
-        if tuple(tensors[key_b].shape) != tuple(module.lora_B.shape):
-            raise ValueError(f"Adapter lora_B shape mismatch for {name}")
-        module.lora_A.data.copy_(tensors[key_a].to(module.lora_A))
-        module.lora_B.data.copy_(tensors[key_b].to(module.lora_B))
-
+    expected_keys = {
+        key
+        for name in targets
+        for key in (f"{name}.lora_A", f"{name}.lora_B")
+    }
+    missing = sorted(expected_keys - set(tensors))
     unexpected = sorted(set(tensors) - expected_keys)
+    if missing:
+        raise ValueError(f"Adapter tensors missing: {missing}")
     if unexpected:
         raise ValueError(f"unexpected Adapter tensors: {unexpected}")
+
+    for name in targets:
+        base = model.get_submodule(name)
+        if not isinstance(base, nn.Linear):
+            raise ValueError(f"Adapter target is not nn.Linear on this Base: {name}")
+        expected_a = (config.rank, base.in_features)
+        expected_b = (base.out_features, config.rank)
+        if tuple(tensors[f"{name}.lora_A"].shape) != expected_a:
+            raise ValueError(f"Adapter lora_A shape mismatch for {name}")
+        if tuple(tensors[f"{name}.lora_B"].shape) != expected_b:
+            raise ValueError(f"Adapter lora_B shape mismatch for {name}")
+
+    injected = inject_lora(model, config)
+    if injected != targets:
+        raise RuntimeError("LoRA injection target set changed after preflight")
+    for name, module in iter_lora_modules(model):
+        module.lora_A.data.copy_(tensors[f"{name}.lora_A"].to(module.lora_A))
+        module.lora_B.data.copy_(tensors[f"{name}.lora_B"].to(module.lora_B))
+
     assert_only_lora_trainable(model)
     return manifest
