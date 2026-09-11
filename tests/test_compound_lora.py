@@ -12,6 +12,7 @@ from orbitune.compound import COMPOUND_TOKENIZER_ABI
 from orbitune.compound_base import CompoundBaseConfig, CompoundHierarchicalGPT
 from orbitune.compound_lora import (
     CompoundLoRAConfig,
+    LoRALinear,
     assert_base_unchanged,
     assert_only_lora_trainable,
     base_parameter_digests,
@@ -168,8 +169,11 @@ def test_adapter_save_reload_and_base_binding(tmp_path: Path) -> None:
         assert torch.equal(source[name], restored[name])
 
     wrong_base = CompoundHierarchicalGPT(_tiny())
+    names_before = list(dict(wrong_base.named_parameters()))
     with pytest.raises(ValueError, match="Base SHA mismatch"):
         load_adapter(wrong_base, adapter_dir, base_sha256="b" * 64)
+    assert list(dict(wrong_base.named_parameters())) == names_before
+    assert not any(isinstance(module, LoRALinear) for module in wrong_base.modules())
 
 
 def test_experimental_sft_script_end_to_end(tmp_path: Path) -> None:
