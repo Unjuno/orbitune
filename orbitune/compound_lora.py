@@ -4,7 +4,7 @@ import fnmatch
 import hashlib
 import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -84,6 +84,13 @@ def sha256_file(path: str | Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _validate_sha256(value: str, *, field: str) -> str:
+    normalized = str(value).lower()
+    if len(normalized) != 64 or any(char not in "0123456789abcdef" for char in normalized):
+        raise ValueError(f"{field} must be a 64-character hexadecimal SHA-256")
+    return normalized
 
 
 def freeze_base(model: nn.Module) -> None:
@@ -217,6 +224,7 @@ def save_adapter(
     selected and frozen from measurements on the final Base.
     """
 
+    base_sha256 = _validate_sha256(base_sha256, field="base_sha256")
     modules = list(iter_lora_modules(model))
     if not modules:
         raise RuntimeError("model contains no experimental LoRA modules")
@@ -229,6 +237,9 @@ def save_adapter(
     if len(ranks) != 1 or len(alphas) != 1 or len(dropouts) != 1:
         raise RuntimeError("experimental writer currently requires uniform rank/alpha/dropout")
 
+    rank = next(iter(ranks))
+    alpha = next(iter(alphas))
+    dropout = next(iter(dropouts))
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
     tensor_path = target / ADAPTER_TENSOR_FILE
@@ -239,14 +250,14 @@ def save_adapter(
         "status": "experimental",
         "public_adapter_abi": False,
         "base_model_id": str(base_model_id),
-        "base_sha256": str(base_sha256),
+        "base_sha256": base_sha256,
         "architecture_abi": str(architecture_abi),
         "tokenizer_abi": str(tokenizer_abi),
         "target_modules": [name for name, _ in modules],
-        "rank": next(iter(ranks)),
-        "alpha": next(iter(alphas)),
-        "dropout": next(iter(dropouts)),
-        "scaling": next(iter(alphas)) / next(iter(ranks)),
+        "rank": rank,
+        "alpha": alpha,
+        "dropout": dropout,
+        "scaling": alpha / rank,
         "tensor_file": ADAPTER_TENSOR_FILE,
         "source_commit": source_commit,
         "training_config": training_config or {},
@@ -256,7 +267,7 @@ def save_adapter(
         str(tensor_path),
         metadata={
             "schema": EXPERIMENTAL_COMPOUND_LORA_SCHEMA,
-            "base_sha256": str(base_sha256),
+            "base_sha256": base_sha256,
         },
     )
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -274,11 +285,20 @@ def load_adapter(
     manifest = json.loads((target / ADAPTER_MANIFEST_FILE).read_text(encoding="utf-8"))
     if manifest.get("schema") != EXPERIMENTAL_COMPOUND_LORA_SCHEMA:
         raise ValueError("unsupported experimental Compound LoRA schema")
-    expected_base = str(manifest.get("base_sha256", ""))
-    if strict_base_binding and expected_base != str(base_sha256):
+
+    requested_base = _validate_sha256(base_sha256, field="base_sha256")
+    expected_base = _validate_sha256(str(manifest.get("base_sha256", "")), field="adapter base_sha256")
+    if strict_base_binding and expected_base != requested_base:
         raise ValueError(
-            f"Adapter Base SHA mismatch: adapter={expected_base!r}, requested={base_sha256!r}"
+            f"Adapter Base SHA mismatch: adapter={expected_base!r}, requested={requested_base!r}"
         )
+
+    model_architecture = getattr(model, "architecture", None)
+    model_tokenizer = getattr(model, "tokenizer", None)
+    if model_architecture != manifest.get("architecture_abi"):
+        raise ValueError("Adapter architecture ABI does not match model")
+    if model_tokenizer != manifest.get("tokenizer_abi"):
+        raise ValueError("Adapter tokenizer ABI does not match model")
 
     config = CompoundLoRAConfig(
         target_patterns=tuple(str(name) for name in manifest.get("target_modules", [])),
