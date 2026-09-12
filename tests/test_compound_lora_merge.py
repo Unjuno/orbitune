@@ -10,7 +10,7 @@ import torch
 
 from orbitune.compound_base import CompoundBaseConfig, CompoundHierarchicalGPT
 from orbitune.compound_lora import CompoundLoRAConfig, LoRALinear, inject_lora, save_adapter, sha256_file
-from orbitune.compound_lora_merge import merge_lora_inplace, merge_lora_linear
+from orbitune.compound_lora_merge import merge_lora_inplace, merge_lora_linear, verify_lora_merge_parity
 
 
 def _tiny() -> CompoundBaseConfig:
@@ -74,6 +74,14 @@ def test_merge_lora_linear_matches_eval_wrapper_with_dropout_configured() -> Non
     assert not any(parameter.requires_grad for parameter in merged.parameters())
 
 
+def test_bounded_merge_parity_probe_reports_target_error() -> None:
+    model = _adapted_model(dropout=0.25).eval()
+    report = verify_lora_merge_parity(model)
+    assert set(report["modules"]) == {"decoder.stack.blocks.0.attn.q_proj"}
+    assert report["max_abs"] >= 0.0
+    assert report["modules"]["decoder.stack.blocks.0.attn.q_proj"]["dtype"] == "float32"
+
+
 def test_merge_lora_inplace_preserves_model_outputs_and_restores_base_state_keys() -> None:
     model = _adapted_model().eval()
     inputs = _records()[:, :-1]
@@ -97,6 +105,8 @@ def test_merge_refuses_training_mode() -> None:
     model = _adapted_model()
     with pytest.raises(ValueError, match="eval mode"):
         merge_lora_inplace(model)
+    with pytest.raises(ValueError, match="eval mode"):
+        verify_lora_merge_parity(model)
 
 
 def test_premerge_cli_binds_exact_base_and_emits_reloadable_derivative(tmp_path: Path) -> None:
@@ -155,6 +165,7 @@ def test_premerge_cli_binds_exact_base_and_emits_reloadable_derivative(tmp_path:
     assert payload["derived_artifact"]["kind"] == "lora-premerged"
     assert payload["derived_artifact"]["base_checkpoint_sha256"] == base_sha
     assert payload["derived_artifact"]["adapter_id"] == "fixture-style-v1"
+    assert payload["derived_artifact"]["merge_parity"]["max_abs"] >= 0.0
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["status"] == "experimental_premerged_candidate"
@@ -162,4 +173,5 @@ def test_premerge_cli_binds_exact_base_and_emits_reloadable_derivative(tmp_path:
     assert manifest["public_adapter_abi"] is False
     assert manifest["base"]["checkpoint_sha256"] == base_sha
     assert manifest["adapter"]["id"] == "fixture-style-v1"
+    assert manifest["merge_parity"]["max_abs"] >= 0.0
     assert manifest["merged_checkpoint"]["sha256"] == sha256_file(merged_path)
