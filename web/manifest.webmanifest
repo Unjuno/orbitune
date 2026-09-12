@@ -1,0 +1,19 @@
+{
+  "name": "Orbitune Compound",
+  "short_name": "Orbitune",
+  "id": "./compound.html",
+  "start_url": "./compound.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101217",
+  "theme_color": "#101217",
+  "description": "Local-first continuous symbolic music generation with Orbitune Compound models.",
+  "icons": [
+    {
+      "src": "./orbitune-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
