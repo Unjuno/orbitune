@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "status": "approved_for_publication",
+  "id": "orbitune-a2-512-web-v1",
+  "display_name": "Orbitune A2-512 Base",
+  "base": {
+    "model_id": "orbitune-a2-512-research-nc",
+    "checkpoint_sha256": "e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0",
+    "checkpoint_hub_revision": "45579e28a32d5847f3121142aca9382b4e4aaedc",
+    "source_commit": "8489870f81a1591515a98e58554e533fcac9d095",
+    "architecture": "orbitune-compound-hierarchical-gpt-v1",
+    "tokenizer": "orbitune-compound-v0-experimental"
+  },
+  "runtime": {
+    "abi": "native-stream-state+decoder-prefix-v2",
+    "execution_providers": ["wasm"],
+    "onnx_opset": 18
+  },
+  "graphs": {
+    "stream": {
+      "filename": "stream.onnx",
+      "url": "./models/a2-v1/stream.onnx",
+      "sha256": "27be3d6a4db726f52d7fc7e8df2e7a24be04ab5bd76da243bd8dd92712f2e107",
+      "bytes": 27241782
+    },
+    "decoder": {
+      "filename": "decoder_prefix.onnx",
+      "url": "./models/a2-v1/decoder_prefix.onnx",
+      "sha256": "abb8326680222aff32d6b2fcb45356c748c523216cb0d75d6a755e615f419225",
+      "bytes": 8620888
+    }
+  },
+  "golden": {
+    "new_events": 48,
+    "records": 49,
+    "records_sha256": "668972140fb8acaea2955453a882be7512209774b2daa2074649f1c8104b22a1",
+    "wasm_exact_match": "PASS"
+  },
+  "parity": {
+    "native_stream_max_abs_observed": 0.0000057220458984375,
+    "native_decoder_max_abs_observed": 0.0000057220458984375,
+    "onnxruntime_stream_max_abs_observed": 0.00001049041748046875,
+    "onnxruntime_decoder_max_abs_observed": 0.000010013580322265625,
+    "repeat_export_count": 2,
+    "repeat_graph_sha256_identical": true
+  },
+  "benchmark": {
+    "environment": "GitHub-hosted ubuntu-24.04 x86_64 runner; Node 22.23.2; onnxruntime-web 1.29.0; WASM; numThreads=1; greedy 48-new-event rollout",
+    "events_per_second_observed_range": [19.317, 22.978],
+    "model_load_ms_observed_range": [605, 844],
+    "claim_scope": "bounded CI evidence only; not a phone/browser fleet performance guarantee"
+  },
+  "export_environment": {
+    "python": "3.11.16",
+    "torch": "2.10.0+cpu",
+    "onnx": "1.22.0",
+    "onnxscript": "0.7.2",
+    "onnxruntime": "1.30.0",
+    "node": "22.23.2",
+    "onnxruntime_web": "1.29.0"
+  },
+  "rights": {
+    "license": "CC-BY-NC-SA-4.0",
+    "distribution_scope": "research-noncommercial",
+    "commercial_eligible": false,
+    "redistribution_review": "completed",
+    "review_basis": "The A2-512 checkpoint is already publicly distributed by the project under CC-BY-NC-SA-4.0. These ONNX graphs are a deterministic derived serialization of the same frozen weights; the same research/non-commercial and ShareAlike scope is retained."
+  },
+  "publication": {
+    "target": "github-pages",
+    "path_prefix": "./models/a2-v1/",
+    "runtime_publication_status": "runtime_model_published"
+  },
+  "evidence": {
+    "workflow_run": 34690479996,
+    "validation_pr": 58
+  }
+}

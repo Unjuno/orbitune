@@ -1,0 +1,79 @@
+name: compound-web-export
+
+on:
+  pull_request:
+    paths:
+      - "orbitune/compound_base.py"
+      - "orbitune/compound_web_export.py"
+      - "orbitune/compound_web_golden.py"
+      - "scripts/export_compound_web_v2.py"
+      - "scripts/validate_compound_web_wasm.mjs"
+      - "tests/test_compound_web_export_v2.py"
+      - "tests/test_compound_web_golden.py"
+      - "web/compound-runtime.mjs"
+      - ".github/workflows/compound-web-export.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compound-web-export-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  a2-web-export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - name: Install CPU PyTorch
+        run: python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
+      - name: Install export dependencies
+        run: python -m pip install -e ".[export]" onnxruntime
+      - name: Download immutable A2-512 checkpoint
+        run: |
+          mkdir -p .artifacts/a2
+          curl --fail --location --retry 3 --output .artifacts/a2/model.pt \
+            "https://huggingface.co/Unjuno/orbitune-a2-512/resolve/45579e28a32d5847f3121142aca9382b4e4aaedc/model.pt?download=true"
+          echo "e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0  .artifacts/a2/model.pt" | sha256sum --check --strict
+      - name: Export V2 graphs and validate native/ORT parity
+        run: |
+          mkdir -p .artifacts/a2/web
+          python scripts/export_compound_web_v2.py \
+            --checkpoint .artifacts/a2/model.pt \
+            --checkpoint-sha256 e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0 \
+            --out-dir .artifacts/a2/web \
+            --native-parity-steps 96 \
+            --ort-parity-steps 24 \
+            --golden-events 48 | tee .artifacts/a2/export.stdout.json
+          ls -lh .artifacts/a2/web
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - name: Install pinned ONNX Runtime Web
+        run: npm install --no-save --ignore-scripts onnxruntime-web@1.29.0
+      - name: Validate exact native greedy rollout under WebAssembly
+        run: |
+          node scripts/validate_compound_web_wasm.mjs \
+            .artifacts/a2/web/stream.onnx \
+            .artifacts/a2/web/decoder_prefix.onnx \
+            .artifacts/a2/web/native-greedy-golden.json | tee .artifacts/a2/web/wasm-report.json
+      - name: Upload reviewed export evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: a2-compound-web-v2-${{ github.sha }}
+          path: |
+            .artifacts/a2/web
+            .artifacts/a2/export.stdout.json
+          if-no-files-found: warn
+          retention-days: 14

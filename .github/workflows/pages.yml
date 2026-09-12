@@ -8,9 +8,15 @@ on:
       - "web/**"
       - "bases/**"
       - "adapters/**"
+      - "models/research_nc_aria_gigamidi_a2_512_v1/web_release.json"
       - "orbitune/registry.py"
       - "orbitune/base_registry.py"
+      - "orbitune/compound_web_export.py"
+      - "orbitune/compound_web_golden.py"
       - "scripts/build_registry.py"
+      - "scripts/build_compound_web_runtime_config.py"
+      - "scripts/export_compound_web_v2.py"
+      - "scripts/validate_compound_web_wasm.mjs"
       - "pyproject.toml"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -25,7 +31,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout without persisted credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0; same pin as test.yml/web-test.yml
@@ -40,13 +46,65 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0; same pin as test.yml
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - name: Install CPU PyTorch
         run: python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
       - name: Install Orbitune registry dependencies
         run: python -m pip install -e .
       - name: Build Base and Adapter registries and browser assets
         run: python scripts/build_registry.py --bases bases --adapters adapters --web-root web
+
+      - name: Install deterministic Web export dependencies
+        if: github.event_name != 'pull_request'
+        run: |
+          python -m pip install \
+            numpy==2.4.6 \
+            onnx==1.22.0 \
+            onnxscript==0.7.2 \
+            onnxruntime==1.30.0 \
+            protobuf==7.36.1
+      - name: Download immutable A2-512 checkpoint
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p .pages-a2
+          curl --fail --location --retry 3 --output .pages-a2/model.pt \
+            "https://huggingface.co/Unjuno/orbitune-a2-512/resolve/45579e28a32d5847f3121142aca9382b4e4aaedc/model.pt?download=true"
+          echo "e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0  .pages-a2/model.pt" | sha256sum --check --strict
+      - name: Reproduce reviewed A2 Web V2 graphs
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p .pages-a2/web
+          python scripts/export_compound_web_v2.py \
+            --checkpoint .pages-a2/model.pt \
+            --checkpoint-sha256 e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0 \
+            --out-dir .pages-a2/web \
+            --native-parity-steps 96 \
+            --ort-parity-steps 24 \
+            --golden-events 48
+      - name: Verify reviewed graph identity and build published runtime config
+        if: github.event_name != 'pull_request'
+        run: |
+          python scripts/build_compound_web_runtime_config.py \
+            --release models/research_nc_aria_gigamidi_a2_512_v1/web_release.json \
+            --graph-dir .pages-a2/web \
+            --output web/compound-runtime-config.json
+          mkdir -p web/models/a2-v1
+          cp .pages-a2/web/stream.onnx web/models/a2-v1/stream.onnx
+          cp .pages-a2/web/decoder_prefix.onnx web/models/a2-v1/decoder_prefix.onnx
+          cp .pages-a2/web/native-greedy-golden.json web/models/a2-v1/native-greedy-golden.json
+          cp .pages-a2/web/export-report.json web/models/a2-v1/export-report.json
+          cp models/research_nc_aria_gigamidi_a2_512_v1/web_release.json web/models/a2-v1/release.json
+      - name: Install pinned ONNX Runtime Web for release validation
+        if: github.event_name != 'pull_request'
+        run: npm install --no-save --ignore-scripts onnxruntime-web@1.29.0
+      - name: Validate exact A2 greedy rollout under WebAssembly
+        if: github.event_name != 'pull_request'
+        run: |
+          node scripts/validate_compound_web_wasm.mjs \
+            web/models/a2-v1/stream.onnx \
+            web/models/a2-v1/decoder_prefix.onnx \
+            web/models/a2-v1/native-greedy-golden.json
+          node --input-type=module -e "import fs from 'node:fs'; import {validateCompoundRuntimeConfig,availableCompoundVariants} from './web/compound-variant.mjs'; const c=JSON.parse(fs.readFileSync('./web/compound-runtime-config.json','utf8')); validateCompoundRuntimeConfig(c); if(availableCompoundVariants(c).length!==1) throw new Error('expected exactly one reviewed A2 Base variant'); console.log('published A2 runtime config PASS')"
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # resolved v3 pin from successful deployment
         with:
