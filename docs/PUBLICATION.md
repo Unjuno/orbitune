@@ -2,111 +2,132 @@
 
 ## Scope
 
-The repository is public source code with documentation of trained research models. Source and model licenses remain separate. The completed A2-512 checkpoint is published externally on Hugging Face; model binaries remain outside Git.
+Orbitune publishes source code, the immutable A2-512 research checkpoint, and a reviewed browser serialization of that same Base. Source and model licenses remain separate.
 
-The historical 100k checkpoint remains documentation-only. The separately identified A2-512 checkpoint is distributed under CC-BY-NC-SA-4.0 for research/non-commercial use. This release does not publish training data, an ONNX browser export, or a Compound Adapter ABI.
+- Source code: Apache-2.0.
+- Historical 100k checkpoint: documentation-only.
+- A2-512 checkpoint: published on Hugging Face under CC-BY-NC-SA-4.0, research/non-commercial scope.
+- A2 native-stream V2 ONNX graph pair: distributed through the GitHub Pages artifact under the same research/non-commercial lineage.
+- Training data / memmap indexes: not redistributed.
+- Production Compound LoRA/Adapter artifact: not published yet.
+
+The current application is deployed at `https://unjuno.github.io/orbitune/`.
 
 ## Public artifact contract
 
 | Artifact | Status |
 | --- | --- |
-| Python/runtime source | Available in the repository under the existing source-code license |
-| Research model documentation | Historical record under `models/research_nc_aria_gigamidi_v1/`; A2-512 release under `models/research_nc_aria_gigamidi_a2_512_v1/` |
-| Compound browser runtime source | Available; separate native-stream V2 ABI with fail-closed publication config |
-| Compound LoRA policy | Available; public compatibility policy, **not** a frozen Compound Adapter ABI |
-| A2-512 research checkpoint | [Published on Hugging Face](https://huggingface.co/Unjuno/orbitune-a2-512); exact SHA and Hub revision recorded in Git |
-| Historical 100k checkpoint | Documentation-only; not distributed |
-| Compound ONNX stream/decoder graphs | Locally validated/referenced by handoff work; **not distributed by this repository** |
-| Compound Web model variants | None configured; generation remains disabled until a separately reviewed release |
-| Production Compound Adapter binaries | Not accepted/published yet; Compound Adapter ABI is not frozen |
-| Training data and memmap indexes | Not redistributed |
-| Local audit JSONs / generated MIDI package | Referenced by historical reports; not bundled public evidence |
+| Python/runtime source | Public in Git under the source-code license |
+| A2-512 PyTorch checkpoint | Published on Hugging Face; exact SHA and pinned Hub revision recorded in Git |
+| Historical 100k checkpoint | Documentation-only |
+| Compound Web/PWA source | Public; native-stream V2 runtime + install/offline/continuous-stream support |
+| A2 `stream.onnx` | Published inside the generated GitHub Pages artifact; not tracked in Git |
+| A2 `decoder_prefix.onnx` | Published inside the generated GitHub Pages artifact; not tracked in Git |
+| A2 Web release record | `models/research_nc_aria_gigamidi_a2_512_v1/web_release.json` |
+| Public Pages runtime config | Generated at deploy time only after exact artifact verification |
+| Checked-in runtime config | Intentionally fail-closed: A2-bound, `variants: []`, review pending |
+| Compound LoRA policy / experimental SFT primitive | Public source; **not** a frozen production Compound Adapter ABI |
+| Production Compound LoRA binaries | Not published yet |
+| Training data | Not redistributed |
 
-`models/research_nc_aria_gigamidi_v1/publication.json` remains the documentation-only model publication record. It disallows a model download URL or public-registry eligibility in its current status. The browser-side [runtime config](../web/compound-runtime-config.json) likewise contains an empty `variants` list and `redistribution_review: pending`.
+## A2 identities
 
-The canonical [A2-512 release manifest](../models/research_nc_aria_gigamidi_a2_512_v1/manifest.json) records the separately published checkpoint, immutable artifact SHA-256, byte size, reachable training-source commit, validation protocol and pinned Hugging Face revision. Publication of the PyTorch checkpoint does not make it a browser-runtime variant.
+Canonical Base release:
 
-The browser code adds another hard gate rather than weakening this boundary: an available Compound variant is rejected unless redistribution review is explicitly marked complete, publication status is switched to the published state, the variant is bound to the exact Base checkpoint SHA, and its architecture/tokenizer/runtime ABI match. See [Compound browser runtime](COMPOUND_WEB_RUNTIME.md).
+```text
+model id        orbitune-a2-512-research-nc
+checkpoint SHA  e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0
+Hub revision    45579e28a32d5847f3121142aca9382b4e4aaedc
+source commit   8489870f81a1591515a98e58554e533fcac9d095
+```
 
-The original research `manifest.json` is retained unchanged as a historical run record. It is not compatible with the strict [legacy Base schema](../schemas/base_manifest.schema.json): its additional fields, absent ONNX hash, zero ONNX bytes, and oversized checkpoint must not be hidden by loosening that production schema.
+Reviewed Web serialization:
+
+```text
+stream.onnx
+  bytes   27,241,782
+  SHA256  27be3d6a4db726f52d7fc7e8df2e7a24be04ab5bd76da243bd8dd92712f2e107
+
+decoder_prefix.onnx
+  bytes   8,620,888
+  SHA256  abb8326680222aff32d6b2fcb45356c748c523216cb0d75d6a755e615f419225
+```
+
+The graph pair is a deterministic derived serialization of the same frozen A2 weights. It does not broaden the Base license or commercial eligibility.
+
+## Why the checked-in runtime config stays unpublished
+
+`web/compound-runtime-config.json` in Git intentionally remains fail-closed. Pull requests and source checkouts therefore do not claim that an artifact is published merely because source metadata was edited.
+
+The main Pages build performs the publication transition in the generated artifact only after all of the following pass:
+
+1. download the checkpoint from the pinned Hub revision;
+2. verify the exact Base checkpoint SHA-256;
+3. reproduce the V2 `stream` + `decoder_prefix` graphs;
+4. run native tensor-wrapper parity;
+5. run Python ONNX Runtime parity;
+6. require exact graph bytes/sizes to match the reviewed Web release record;
+7. generate the fixed native greedy reference;
+8. require exact `onnxruntime-web`/WASM record equality;
+9. generate a `runtime_model_published` config with exactly the reviewed A2 Base variant;
+10. deploy the Pages artifact.
+
+If any gate fails, deployment is skipped.
+
+## A2 Web validation evidence
+
+Two independent exports on GitHub-hosted runners produced identical graph SHA-256 values. The deterministic seed + 48-new-event reference contains 49 records with record-list SHA-256 `668972140fb8acaea2955453a882be7512209774b2daa2074649f1c8104b22a1`. The WASM rollout matched the native record list exactly.
+
+Bounded CI throughput evidence using Node 22.23.2, `onnxruntime-web` 1.29.0, WASM and one thread observed 19.317–22.978 generated events/s and 605–844 ms graph load time. These are CI-runner measurements, not device-fleet guarantees.
 
 ## Base pretraining and Adapter publication
 
-For Compound, Base pretraining and LoRA adaptation are separate publication stages.
+For Compound, Base and Adapter stages remain separate:
 
 ```text
-mutable full-parameter training state
-→ completed/evaluated checkpoint
-→ immutable Base id + SHA-256
-→ versioned Compound Adapter ABI
+full-parameter Base training
+→ immutable A2 Base id + SHA-256
+→ Base Web release (now published)
+→ measure Compound LoRA target/rank choices
+→ freeze a versioned Compound Adapter ABI
 → frozen-Base LoRA training
 → Adapter / merged-variant evaluation
-→ rights review
-→ optional artifact publication
+→ Adapter rights review
+→ exact merged V2 export/parity
+→ optional LoRA Web variant publication
 ```
 
-A mutable continuation checkpoint must not become a public Adapter compatibility target. Intermediate checkpoints may be used for local research, but public compatibility requires an immutable Base identity.
+The legacy Theory-REMI `orbitune-lora-v0` ABI is not a shortcut around this gate.
 
-The existing Theory-REMI `orbitune-lora-v0` ABI is not a shortcut around this gate. Compound target modules, rank/scaling and serialization must be frozen under a new ABI after the exact target Base is selected. See [Compound LoRA policy](COMPOUND_LORA_POLICY.md).
-
-An Adapter cannot broaden the distribution rights of its Base. A research-NC Base yields research-NC/noncommercial Adapter/merged descendants at most; permissive Adapter training data does not convert the Base lineage into a commercial one.
-
-## Corrections made for public readers
-
-- Removed nonexistent `generate --seed` and `resume --allow-runtime-change` usage examples; current CLI arguments are tested.
-- Separated approximately 4.069 billion corpus target pairs from actual training exposure and unique coverage.
-- Preserved the historical sampler-RNG limitation; current fixes do not retroactively repair saved state.
-- Corrected the 126-song discrepancy being added as another rejection category. Missing inputs remain a limitation, not a proved quality exclusion.
-- Marked local evidence as local instead of presenting missing files as public deliverables.
-- Separated the Apache-2.0 code license, the reported NC checkpoint declaration, source terms, Adapter terms and generated-output rights. No license is changed by source/runtime cleanup.
-- Separated the native Compound browser ABI from the legacy Theory-REMI Web/LoRA ABI; Compound LoRA must not silently reuse the legacy Adapter contract.
-- Marked older design/handoff documents as historical through the current documentation index rather than treating their pre-implementation `NEXT` lists as present status.
-
-## Before a Base weight or ONNX release
-
-A maintainer should close these gates for the exact bytes being released:
-
-1. Verify checkpoint hash/size from the artifact, parent identities, loadability, and runtime compatibility. Verify the exact exported stream/decoder graph hashes and sizes against the artifact intended for release.
-2. Review rights and required attribution for every source and for checkpoint/derived-model redistribution. Preserve research-NC restrictions. Do not infer redistribution permission merely because runtime source is public.
-3. Provide a real, versioned artifact location with CORS behavior suitable for browser loading, plus exact SHA-256 values. The browser must verify bytes before creating ONNX sessions.
-4. Attach suitably redacted, source-addressable evaluation and provenance evidence. Resolve or explicitly retain limitations on missing inputs, source accounting, dtype/losslessness, split isolation, and historical resume fidelity. Do not rename missing evidence to PASS.
-5. Test the exact released stream/decoder pair in a clean onnxruntime-web/WASM environment and run a native-generation golden fixture. Distinguish technical MIDI validity from listening/quality claims.
-6. Change `redistribution_review` and `publication_status` only as part of that reviewed release, then add a fully ABI-bound Base or pre-merged-LoRA variant. The current source tree must remain generation-disabled before that point.
-7. Keep the legacy Base/Adapter registry unchanged unless a separately reviewed artifact actually satisfies its different ABI and artifact contract.
+An Adapter cannot broaden the permissions of its Base. A research-NC A2 Base yields research-NC/noncommercial Adapter and merged descendants at most.
 
 ## Before a Compound LoRA / Adapter release
 
-In addition to any applicable Base-release gates:
+1. Bind to the immutable A2 model id and exact checkpoint SHA-256.
+2. Freeze a new Compound Adapter ABI only after measured target-module/rank/scaling experiments.
+3. Freeze tensor names/shapes, rank/alpha/scaling and Safetensors metadata layout.
+4. Train with Base weights frozen and preserve reproducibility/provenance.
+5. Reject wrong-Base, wrong-ABI, missing and duplicate tensors.
+6. Record held-out and generated-MIDI Base-versus-Adapter evaluation.
+7. Review Adapter training-data rights independently.
+8. For Web publication, pre-merge against the exact Base, export the matched V2 graph pair, and rerun exact native/Python ORT/WASM parity on those exact bytes.
+9. Publish immutable hashes/URLs and an explicit Adapter identity.
 
-1. Select one immutable Base model id and exact checkpoint SHA-256.
-2. Freeze a new versioned Compound Adapter ABI; do not use `orbitune-lora-v0`.
-3. Freeze exact target-module names/shapes, rank/alpha/scaling and Safetensors metadata/tensor layout.
-4. Train with Base weights frozen and record enough configuration/source identity to reproduce the Adapter run.
-5. Verify strict rejection of wrong-Base, wrong-ABI, missing and duplicate Adapter tensors.
-6. Record held-out evaluation and generated-MIDI evidence for Base-only versus Adapter behavior.
-7. Review Adapter training-data rights separately and confirm that Adapter terms do not exceed the Base's distribution scope.
-8. If a browser variant is offered, merge only against the exact Base, export the matched V2 graph pair and rerun native/Web parity on those exact merged bytes.
-9. Publish real hashes/URLs and Adapter identity; never use an unversioned mutable training checkpoint as the dependency.
+Until those conditions are met, Compound LoRA remains an experimental/local adaptation path. The deployed selector is LoRA-ready but currently exposes the reviewed A2 Base only.
 
-Until these conditions are met, Compound LoRA remains an experimental/local adaptation path rather than a public community Adapter release channel.
+## Historical and source-hygiene boundaries
 
-Source/runtime/Adapter-policy development can finish while artifact-release gates remain open.
+The historical 100k release records remain unchanged. Missing historical evidence is not renamed to PASS. `check_publication.py` validates tracked publication/source contracts but is not a comprehensive secret scanner, malware analysis, legal review, or Git-history audit.
 
-## Source hygiene and its limits
-
-[check_publication.py](../scripts/check_publication.py) reads tracked files, checks selected public documentation links, validates the publication record, and detects common credential and local-artifact mistakes. [Tests](../tests/test_publication.py) cover its failure cases. [Security guidance](../SECURITY.md) describes safe reporting.
-
-The scan is **not** a comprehensive secret scanner, malware analysis, legal review, or Git-history audit. `.gitignore` prevents some future accidental additions; it does not remove already committed data or revoke leaked credentials. Historical audit files and existing source pins are preserved rather than rewritten.
-
-The Web runtime adds unit tests for numeric ABI rules, MIDI conversion, model-variant binding, allowed URL schemes, and release-gate state. These tests validate source contracts only; without a released ONNX graph pair they are not an independent re-verification of model quality or ONNX parity.
+The Pages release build is an artifact gate in addition to source CI; passing source tests alone is not sufficient to publish different model bytes.
 
 ## Local checks
 
 ```bash
 python -m pip install -e ".[dev]"
 python scripts/check_publication.py
-python -m pytest -q tests/test_publication.py
+python -m pytest -q
 node --test web/*.test.mjs
 ```
 
-The publication check performs no dataset processing, weight deserialization, Adapter training or Base training. Results apply to the inspected checkout, not to unavailable local training artifacts.
+Model-dependent A2 export/WASM validation is exercised by the dedicated `compound-web-export` workflow and repeated by the main Pages deployment workflow.
