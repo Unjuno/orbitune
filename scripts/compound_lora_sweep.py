@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import math
 import os
@@ -42,6 +43,8 @@ def _load_spec(path: Path) -> list[dict[str, Any]]:
         targets = item.get("target_modules")
         if not isinstance(targets, list) or not targets or not all(isinstance(value, str) and value for value in targets):
             raise ValueError(f"candidate {candidate_id} requires target_modules")
+        if len(targets) != len(set(targets)):
+            raise ValueError(f"candidate {candidate_id} contains duplicate target_modules")
         rank = int(item.get("rank", 0))
         alpha = float(item.get("alpha", 0.0))
         dropout = float(item.get("dropout", 0.0))
@@ -66,6 +69,18 @@ def _load_spec(path: Path) -> list[dict[str, Any]]:
 def _adapter_parameter_count(path: Path) -> int:
     tensors = load_safetensors(str(path / ADAPTER_TENSOR_FILE), device="cpu")
     return sum(tensor.numel() for tensor in tensors.values())
+
+
+def _assert_each_pattern_resolved(candidate_id: str, patterns: list[str], resolved: list[str]) -> None:
+    missing = [
+        pattern
+        for pattern in patterns
+        if not any(fnmatch.fnmatchcase(name, pattern) for name in resolved)
+    ]
+    if missing:
+        raise RuntimeError(
+            f"candidate {candidate_id} target patterns matched no resolved module: {missing}"
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -161,6 +176,8 @@ def main() -> None:
 
         metrics = json.loads((candidate_dir / "metrics.json").read_text(encoding="utf-8"))
         adapter = json.loads((candidate_dir / "adapter.json").read_text(encoding="utf-8"))
+        resolved_targets = list(adapter["target_modules"])
+        _assert_each_pattern_resolved(candidate["id"], candidate["target_modules"], resolved_targets)
         initial = float(metrics["initial_validation_loss"])
         final = float(metrics["final_validation_loss"])
         if reference_initial is None:
@@ -175,7 +192,7 @@ def main() -> None:
             {
                 "id": candidate["id"],
                 "target_patterns": candidate["target_modules"],
-                "resolved_targets": list(adapter["target_modules"]),
+                "resolved_targets": resolved_targets,
                 "rank": candidate["rank"],
                 "alpha": candidate["alpha"],
                 "dropout": candidate["dropout"],
