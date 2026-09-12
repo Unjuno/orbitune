@@ -4,12 +4,11 @@ import hashlib
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import Iterable
 
 import torch
 import torch.nn as nn
 
-from orbitune.compound_base import CompoundHierarchicalGPT, StreamState, _causal_bias
+from orbitune.compound_base import CompoundHierarchicalGPT, _causal_bias
 
 
 STREAM_INPUT_NAMES = (
@@ -29,12 +28,7 @@ DECODER_OUTPUT_NAMES = (
 
 
 class CompoundStreamAdvanceV2(nn.Module):
-    """Tensor-only equivalent of ``CompoundHierarchicalGPT.advance_stream``.
-
-    State is represented by fixed-capacity tensors plus scalar lengths so the
-    exact native stream semantics can cross the ONNX/Web boundary without an
-    ever-growing KV cache or record history.
-    """
+    """Tensor-only equivalent of ``CompoundHierarchicalGPT.advance_stream``."""
 
     def __init__(self, model: CompoundHierarchicalGPT) -> None:
         super().__init__()
@@ -69,28 +63,15 @@ class CompoundStreamAdvanceV2(nn.Module):
     @staticmethod
     def _last_hidden(stack: nn.Module, values: torch.Tensor, length: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
         hidden = stack(values[None], bias)[0]
-        width = hidden.shape[-1]
-        index = (length - 1).clamp(0, hidden.shape[0] - 1).reshape(1, 1).expand(1, width)
+        index = (length - 1).clamp(0, hidden.shape[0] - 1).reshape(1, 1).expand(1, hidden.shape[-1])
         selected = hidden.gather(0, index)[0]
         return torch.where(length > 0, selected, torch.zeros_like(selected))
 
     def forward(
-        self,
-        rec: torch.Tensor,
-        loc: torch.Tensor,
-        lloc: torch.Tensor,
-        mbuf: torch.Tensor,
-        mblen: torch.Tensor,
-        mhist: torch.Tensor,
-        mhlen: torch.Tensor,
-        gbuf: torch.Tensor,
-        gblen: torch.Tensor,
-        ghist: torch.Tensor,
-        ghlen: torch.Tensor,
-        memf: torch.Tensor,
-        memm: torch.Tensor,
-        mems: torch.Tensor,
-        steps: torch.Tensor,
+        self, rec: torch.Tensor, loc: torch.Tensor, lloc: torch.Tensor,
+        mbuf: torch.Tensor, mblen: torch.Tensor, mhist: torch.Tensor, mhlen: torch.Tensor,
+        gbuf: torch.Tensor, gblen: torch.Tensor, ghist: torch.Tensor, ghlen: torch.Tensor,
+        memf: torch.Tensor, memm: torch.Tensor, mems: torch.Tensor, steps: torch.Tensor,
     ) -> tuple[torch.Tensor, ...]:
         rec = rec.reshape(12).to(dtype=torch.long)
         loc_o, lloc_o = self._append_fixed(loc, lloc, rec)
@@ -100,8 +81,7 @@ class CompoundStreamAdvanceV2(nn.Module):
         local_hidden = local_all.gather(0, local_index)[0]
 
         event_emb = self.embedding(rec[None, None])[0, 0]
-        memory_read, memory_o = self.memory.step(event_emb[None], (memf, memm, mems))
-        memf_o, memm_o, mems_o = memory_o
+        memory_read, (memf_o, memm_o, mems_o) = self.memory.step(event_emb[None], (memf, memm, mems))
 
         mbuf_inserted, mblen_inserted = self._append_fixed(mbuf, mblen, local_hidden)
         medium_complete = (mblen + 1) >= self.medium_stride
@@ -128,15 +108,14 @@ class CompoundStreamAdvanceV2(nn.Module):
         global_context = self._last_hidden(self.global_stack, ghist_o, ghlen_o, self.global_bias)
 
         ctx = self.fusion(torch.cat((local_hidden, medium_context, global_context, memory_read[0]), dim=-1))[None]
-        steps_o = steps + 1
         return (
             ctx, loc_o, lloc_o, mbuf_o, mblen_o, mhist_o, mhlen_o, gbuf_o, gblen_o,
-            ghist_o, ghlen_o, memf_o, memm_o, mems_o, steps_o,
+            ghist_o, ghlen_o, memf_o, memm_o, mems_o, steps + 1,
         )
 
 
 class CompoundDecoderPrefixV2(nn.Module):
-    """Export all eight causal decoder stages from one prefix graph call."""
+    """Expose all eight causal intra-event stages from one ONNX graph."""
 
     def __init__(self, model: CompoundHierarchicalGPT) -> None:
         super().__init__()
@@ -145,15 +124,8 @@ class CompoundDecoderPrefixV2(nn.Module):
         self.register_buffer("bias", _causal_bias(8, torch.device("cpu")), persistent=False)
 
     def forward(
-        self,
-        ctx: torch.Tensor,
-        et: torch.Tensor,
-        ch: torch.Tensor,
-        dn: torch.Tensor,
-        a1: torch.Tensor,
-        a2: torch.Tensor,
-        vn: torch.Tensor,
-        dur: torch.Tensor,
+        self, ctx: torch.Tensor, et: torch.Tensor, ch: torch.Tensor, dn: torch.Tensor,
+        a1: torch.Tensor, a2: torch.Tensor, vn: torch.Tensor, dur: torch.Tensor,
     ) -> tuple[torch.Tensor, ...]:
         decoder = self.decoder
         ctx = ctx.reshape(1, self.d_model)
@@ -174,18 +146,10 @@ class CompoundDecoderPrefixV2(nn.Module):
         duration_mean, duration_log_scale = decoder.duration_head(hidden)
         control_mean, control_log_scale = decoder.control_head(hidden)
         return (
-            decoder.event_type_head(hidden),
-            decoder.channel_head(hidden),
-            delta_mean,
-            delta_log_scale,
-            decoder.a1_head(hidden),
-            decoder.a2_head(hidden),
-            velocity_mean,
-            velocity_log_scale,
-            duration_mean,
-            duration_log_scale,
-            control_mean,
-            control_log_scale,
+            decoder.event_type_head(hidden), decoder.channel_head(hidden),
+            delta_mean, delta_log_scale, decoder.a1_head(hidden), decoder.a2_head(hidden),
+            velocity_mean, velocity_log_scale, duration_mean, duration_log_scale,
+            control_mean, control_log_scale,
         )
 
 
@@ -193,8 +157,8 @@ def initial_tensor_stream_state(model: CompoundHierarchicalGPT, *, device: torch
     cfg = model.config
     device = torch.device(device)
     dtype = next(model.parameters()).dtype
-    i64 = lambda *shape: torch.zeros(*shape, dtype=torch.long, device=device)
-    f32 = lambda *shape: torch.zeros(*shape, dtype=dtype, device=device)
+    i64 = lambda *shape: torch.zeros(shape, dtype=torch.long, device=device)
+    f32 = lambda *shape: torch.zeros(shape, dtype=dtype, device=device)
     return (
         i64(cfg.local_window, 12), i64(),
         f32(cfg.medium_stride, cfg.d_model), i64(),
@@ -266,8 +230,7 @@ def verify_native_decoder_parity(model: CompoundHierarchicalGPT, *, atol: float 
         previous.append(decoder.scalar_emb(vn.reshape(1, 1))[0]); hidden = decoder._decode_hidden(ctx, previous); reference.append(decoder.duration_head(hidden))
         previous.append(decoder.scalar_emb(dur.reshape(1, 1))[0]); hidden = decoder._decode_hidden(ctx, previous); reference.append(decoder.control_head(hidden))
     checks = (
-        (outputs[0][0, 0], reference[0]),
-        (outputs[1][0, 1], reference[1]),
+        (outputs[0][0, 0], reference[0]), (outputs[1][0, 1], reference[1]),
         (outputs[2][0, 2], reference[2][0]), (outputs[3][0, 2], reference[2][1]),
         (outputs[4][0, 3], reference[3]), (outputs[5][0, 4], reference[4]),
         (outputs[6][0, 5], reference[5][0]), (outputs[7][0, 5], reference[5][1]),
@@ -284,12 +247,11 @@ def verify_native_decoder_parity(model: CompoundHierarchicalGPT, *, atol: float 
 
 
 def production_contract(model: CompoundHierarchicalGPT) -> None:
-    cfg = model.config
     expected = {
         "d_model": 224, "local_window": 64, "medium_stride": 8, "medium_window": 64,
         "global_stride": 4, "global_window": 64,
     }
-    actual = {name: getattr(cfg, name) for name in expected}
+    actual = {name: getattr(model.config, name) for name in expected}
     if actual != expected:
         raise ValueError(f"checkpoint does not match native-stream V2 Web contract: {actual} != {expected}")
 
@@ -337,10 +299,10 @@ def verify_onnxruntime_parity(model: CompoundHierarchicalGPT, stream_path: str |
     ort_state = tuple(t.clone() for t in pt_state)
     max_stream_abs = 0.0
     for record in synthetic_stream_records(steps):
-        with torch.no_grad(): pt_outputs = stream_wrapper(record, *pt_state)
+        with torch.no_grad():
+            pt_outputs = stream_wrapper(record, *pt_state)
         ort_inputs = {name: _numpy_input(value) for name, value in zip(STREAM_INPUT_NAMES, (record, *ort_state))}
-        ort_raw = stream_session.run(list(STREAM_OUTPUT_NAMES), ort_inputs)
-        ort_outputs = tuple(torch.from_numpy(value) for value in ort_raw)
+        ort_outputs = tuple(torch.from_numpy(value) for value in stream_session.run(list(STREAM_OUTPUT_NAMES), ort_inputs))
         for index, (pt_value, ort_value) in enumerate(zip(pt_outputs, ort_outputs)):
             if pt_value.is_floating_point():
                 delta = float((pt_value.cpu() - ort_value).abs().max().item())
@@ -359,8 +321,12 @@ def verify_onnxruntime_parity(model: CompoundHierarchicalGPT, stream_path: str |
         torch.tensor(2, dtype=torch.long), torch.tensor(0.37), torch.tensor(64, dtype=torch.long),
         torch.tensor(0, dtype=torch.long), torch.tensor(0.71), torch.tensor(0.22),
     )
-    with torch.no_grad(): pt_decoder = decoder(*decoder_inputs)
-    ort_decoder_raw = decoder_session.run(list(DECODER_OUTPUT_NAMES), {name: _numpy_input(value) for name, value in zip(DECODER_INPUT_NAMES, decoder_inputs)})
+    with torch.no_grad():
+        pt_decoder = decoder(*decoder_inputs)
+    ort_decoder_raw = decoder_session.run(
+        list(DECODER_OUTPUT_NAMES),
+        {name: _numpy_input(value) for name, value in zip(DECODER_INPUT_NAMES, decoder_inputs)},
+    )
     max_decoder_abs = 0.0
     for name, pt_value, raw in zip(DECODER_OUTPUT_NAMES, pt_decoder, ort_decoder_raw):
         ort_value = torch.from_numpy(np.asarray(raw))
@@ -374,11 +340,16 @@ def verify_onnxruntime_parity(model: CompoundHierarchicalGPT, stream_path: str |
 def sha256_file(path: str | Path) -> str:
     digest = hashlib.sha256()
     with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""): digest.update(chunk)
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
     return digest.hexdigest()
 
 
-def export_report(model: CompoundHierarchicalGPT, stream_path: str | Path, decoder_path: str | Path, *, checkpoint_sha256: str, checkpoint_source_commit: str | None, native_stream: dict, native_decoder: dict, ort_parity: dict | None) -> dict:
+def export_report(
+    model: CompoundHierarchicalGPT, stream_path: str | Path, decoder_path: str | Path, *,
+    checkpoint_sha256: str, checkpoint_source_commit: str | None,
+    native_stream: dict, native_decoder: dict, ort_parity: dict | None,
+) -> dict:
     stream = Path(stream_path); decoder = Path(decoder_path)
     return {
         "schema": "orbitune-compound-web-v2-export-report-v1",
