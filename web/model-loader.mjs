@@ -1,3 +1,7 @@
+import { IndexedDbModelStore } from './model-store.mjs';
+
+const DEFAULT_MODEL_STORE = new IndexedDbModelStore();
+
 function normalizeSha256(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(normalized)) throw new Error('expected SHA-256 must be 64 lowercase/uppercase hex characters');
@@ -27,7 +31,7 @@ export async function createVerifiedModelSession(
     expectedSha256 = '',
     executionProviders = ['wasm'],
     fetchImpl = globalThis.fetch,
-    modelStore = null,
+    modelStore = DEFAULT_MODEL_STORE,
   } = {},
 ) {
   if (!ortNamespace?.InferenceSession?.create) throw new Error('ONNX Runtime Web namespace is invalid');
