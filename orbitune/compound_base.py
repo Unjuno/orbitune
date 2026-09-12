@@ -799,6 +799,12 @@ def write_compound_midi(path: str | Path, events: Iterable[CompoundEvent], *, di
             timeline.append((tick, 3, bytes([0xB0 | event.channel, 32, event.a2])))
         elif event.type is CompoundEventType.TEMPO:
             micros = max(1, round(60_000_000 / event.a1))
+            # The Compound ABI preserves 1..999 BPM for checkpoint compatibility,
+            # but Standard MIDI's tempo payload is an unsigned 24-bit integer.
+            if micros > 0xFFFFFF:
+                raise ValueError(
+                    f"TEMPO {event.a1} BPM exceeds the three-byte MIDI tempo field"
+                )
             timeline.append((tick, 0, b"\xff\x51\x03" + micros.to_bytes(3, "big")))
         elif event.type is CompoundEventType.PEDAL:
             timeline.append((tick, 5, bytes([0xB0 | event.channel, 64, 127 if event.a1 else 0])))

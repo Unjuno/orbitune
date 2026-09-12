@@ -13,7 +13,11 @@ One Compound MIDI event is one temporal step. The current Base combines:
 5. **Intra-event Transformer** that autoregressively decodes the attributes of the next Compound event.
 6. **Mixed output heads**: categorical heads for discrete MIDI state and bounded continuous heads for delta time, duration, velocity and continuous controls.
 
-The checked-in `configs/compound_hierarchical_9m.json` is the architecture family used by the documented research model. The frozen `research-nc-aria-gigamidi-v1` checkpoint reports 8,857,250 parameters. The much smaller models under `experiments/` are research proxies and are not the documented trained Base.
+The checked-in `configs/compound_hierarchical_9m.json` is the architecture family used by the documented research models. The current [A2-512 Base release](../models/research_nc_aria_gigamidi_a2_512_v1/manifest.json) and historical `research-nc-aria-gigamidi-v1` checkpoint each report 8,857,250 parameters. The much smaller models under `experiments/` are research proxies and are not the documented trained Base.
+
+## TEMPO and Standard MIDI
+
+The trained Compound checkpoint ABI retains TEMPO values in `1..999 BPM`; narrowing this domain would change decoding semantics for existing weights. Standard MIDI stores microseconds per quarter note in an unsigned three-byte field, so `1..3 BPM` cannot be represented. Python and Web exporters therefore reject those values explicitly and consistently. `4..999 BPM` remains serializable. Generation masks and `CompoundEvent.validate()` continue to use the checkpoint-compatible `1..999 BPM` domain.
 
 ## Clone and install
 

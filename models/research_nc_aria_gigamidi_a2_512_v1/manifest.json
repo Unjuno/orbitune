@@ -1,5 +1,7 @@
 {
   "artifact_type": "orbitune_base",
+  "schema_version": 1,
+  "release_status": "complete",
   "id": "orbitune-a2-512-research-nc",
   "display_name": "Orbitune A2-512 Research-NC",
   "architecture": "orbitune-compound-hierarchical-gpt-v1",
@@ -34,7 +36,15 @@
   },
   "lineage": {
     "parent_sha256": "4be09e0869af256f8be62e5e596b72471f15f49a6abbedc613a6a3571fd5bca8",
-    "source_commit": "8489870f81a1591515a98e58554e533fcac9d095"
+    "source_commit": "8489870f81a1591515a98e58554e533fcac9d095",
+    "source_provenance_status": "resolved_reachable_public_commit",
+    "source_ref": "refs/heads/provenance/a2-512-training-source",
+    "source_url": "https://github.com/Unjuno/orbitune/tree/8489870f81a1591515a98e58554e533fcac9d095"
+  },
+  "publication": {
+    "status": "published",
+    "provider": "huggingface",
+    "repository": "Unjuno/orbitune-a2-512"
   },
   "hub_commit": "45579e28a32d5847f3121142aca9382b4e4aaedc",
   "completed_at": "2026-09-11T21:28:40+09:00"

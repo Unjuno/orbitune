@@ -63,55 +63,35 @@ Completed:
 
 The source runtime is public. The actual Compound ONNX model files are not public yet. The Base V2 parity evidence does not validate a future LoRA-merged artifact; any merged variant must repeat parity on its own exact bytes.
 
-## Milestone E — long-run full-parameter Base continuation — ACTIVE LOCAL RUN
+## Milestone E — A2-512 full-parameter Base continuation — DONE
 
-A normal full-parameter continuation from the immutable 100k parent is now reported active locally under run id `research_nc_aria_gigamidi_v2_1m`. The continuation checkpoint is mutable training state and is **not** a public model release or Adapter compatibility target.
-
-Reported local-run evidence snapshot, 2026-09-08:
+The long-run continuation from the immutable historical 100k checkpoint is complete. The selected result is frozen as `orbitune-a2-512-research-nc`, externally published, and recorded by the canonical [A2-512 release manifest](../models/research_nc_aria_gigamidi_a2_512_v1/manifest.json).
 
 ```text
-parent model id              research-nc-aria-gigamidi-v1
-parent step                  100,000
-parent SHA-256               8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc
-parent unchanged             yes
-continuation run id          research_nc_aria_gigamidi_v2_1m
-reported continuation step   102,000
-reported events_seen         417,792,000
-batch × sequence             16 × 256
-precision                    bf16
-learning rate                3e-4
-weight decay                 0.01
-optimizer                    fused AdamW
-sampler RNG state            present in new continuation checkpoints
-validation window hash       db2b3903dbdae6e9c3821494009b5adbd1b0ba19499adcca84b790c66a5c9814
-non-finite loss / grad       0 / 0
+model id                     orbitune-a2-512-research-nc
+final step                   220,813
+final events_seen            4,096,016,384
+checkpoint SHA-256           e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0
+checkpoint frozen            yes
+strict load                  PASS
+external publication         Hugging Face: Unjuno/orbitune-a2-512
+training source commit       8489870f81a1591515a98e58554e533fcac9d095
+source provenance            reachable public commit
 ```
 
-These values are **reported local run evidence**. The continuation checkpoint itself is not distributed by this repository, so the snapshot is not a public-byte verification claim. The immutable V1 publication record remains unchanged.
+The final event count is cumulative sampled exposure, not exact unique corpus coverage. The historical `research-nc-aria-gigamidi-v1` record remains unchanged.
 
-The clean round target remains 1,000,000 global steps under the active 16 × 256 batch geometry:
+## Milestone F — final Base selection and evaluation — DONE FOR A2-512
 
-```text
-4,096 event positions / step
-× 1,000,000 steps
-= 4,096,000,000 cumulative sampled event positions
-```
-
-This is approximately one corpus-equivalent amount of sampled exposure relative to the 4.069B active-pair corpus, **not** a claim that every corpus pair is visited exactly once. Replacement sampling permits repeats and unvisited records.
-
-This milestone is not complete until an actual final checkpoint is saved, loaded, hashed, evaluated and documented. A later checkpoint must receive a new model identity; it must not overwrite the 100k historical V1 record.
-
-## Milestone F — final Base selection and evaluation — AFTER A LONG-RUN CANDIDATE EXISTS
-
-For a later Base candidate:
+Completed for the A2-512 release:
 
 - verify exact checkpoint identity and loadability
 - compare held-out loss against earlier milestones
 - run fixed generated-MIDI regression batches
 - separate parse validity from musical-quality claims
 - retain useful intermediate milestones for comparison
-- decide which exact checkpoint becomes the next immutable Adapter target
-- repeat native Web export/parity validation for the selected checkpoint
+- selected and published an exact immutable checkpoint
+- retained Web ONNX export/parity as separate follow-up work
 
 Do not silently repoint an existing Base id or Adapter dependency to newer bytes.
 
@@ -147,9 +127,9 @@ frozen Base + validated Adapter
 
 No LoRA-specific merged Compound Web artifact has been validated or published yet. Dynamic browser LoRA is optional later work and requires its own validated packing/numerical/runtime contract.
 
-## Milestone I — model / ONNX publication — RIGHTS-GATED
+## Milestone I — model / ONNX publication — PYTORCH BASE DONE; ONNX GATED
 
-Before exposing a downloadable model or browser variant:
+The PyTorch A2-512 Base is published with its research-NC restriction, exact hash, source provenance and evaluation metadata. Before exposing a browser variant:
 
 - complete redistribution review for every restricted source lineage
 - verify exact Base and exported artifact hashes/sizes
@@ -158,7 +138,7 @@ Before exposing a downloadable model or browser variant:
 - keep research-NC restrictions intact
 - run clean-environment generation and native/Web parity against the exact release bytes
 
-A model host such as Hugging Face may be used after these gates; repository source publication alone is not weight-publication permission.
+The A2-512 Hugging Face release does not imply that an ONNX browser variant or training corpus has been released.
 
 ## Milestone J — post-training necessity gate — OPTIONAL
 
@@ -180,9 +160,10 @@ See `docs/POST_TRAINING_RESEARCH.md` for the research rationale.
 
 Tracked separately from Base training:
 
-- Standard MIDI 3-byte TEMPO behavior for generated 1–3 BPM values (issue #48)
-- import the exact local native Compound Web golden fixture into source CI without reconstructing omitted values (issue #49)
-- safe CFE telemetry/synchronization fixes from issue #52 are merged; deeper recurrent-memory, sampler/H2D and boundary-overhead profiling remains separate from the active production lineage
+- issue #48 is resolved in source by preserving the checkpoint ABI domain `1..999 BPM` while explicitly rejecting unrepresentable `1..3 BPM` at both Python and Web Standard MIDI serialization boundaries
+- issue #49 remains a non-blocking Web-release follow-up: import the exact native Compound Web golden fixture into CI
+- issue #52 remains future performance research; it is not an A2-512 Base release blocker
+- PR #55 is a separate TBPTT training experiment and must not be mixed into this frozen release baseline
 - corpus accounting/provenance limitations already recorded in the V1 model documentation
 - future public artifact/Adapter release review
 
@@ -193,10 +174,10 @@ DONE     repository/publication safety foundation
 DONE     Compound hierarchical Base implementation
 DONE     Aria+GigaMIDI V1 frozen at step 100k
 DONE     native Compound V2 Web runtime source + Pages deployment
-ACTIVE   local long-run full-parameter Base continuation toward step 1M
-THEN     evaluate/freeze next immutable Base candidate if produced
+DONE     A2-512 training, evaluation, immutable freeze and external publication
+DONE     exact training-source commit preserved on a public provenance branch
 THEN     freeze and validate Compound LoRA ABI
 THEN     optional Adapter/pre-merged variants after their own parity validation
-GATE     redistribution review before public model/ONNX release
+GATE     exact ONNX review/parity before browser model release
 OPTIONAL SFT/DPO/RL only if Base evaluation demonstrates a need
 ```

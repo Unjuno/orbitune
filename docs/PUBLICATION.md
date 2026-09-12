@@ -24,7 +24,7 @@ The historical 100k checkpoint remains documentation-only. The separately identi
 
 `models/research_nc_aria_gigamidi_v1/publication.json` remains the documentation-only model publication record. It disallows a model download URL or public-registry eligibility in its current status. The browser-side [runtime config](../web/compound-runtime-config.json) likewise contains an empty `variants` list and `redistribution_review: pending`.
 
-`models/research_nc_aria_gigamidi_a2_512_v1/manifest.json` records the separately published checkpoint, immutable artifact SHA-256, byte size, lineage, validation protocol and pinned Hugging Face revision. Publication of the PyTorch checkpoint does not make it a browser-runtime variant.
+The canonical [A2-512 release manifest](../models/research_nc_aria_gigamidi_a2_512_v1/manifest.json) records the separately published checkpoint, immutable artifact SHA-256, byte size, reachable training-source commit, validation protocol and pinned Hugging Face revision. Publication of the PyTorch checkpoint does not make it a browser-runtime variant.
 
 The browser code adds another hard gate rather than weakening this boundary: an available Compound variant is rejected unless redistribution review is explicitly marked complete, publication status is switched to the published state, the variant is bound to the exact Base checkpoint SHA, and its architecture/tokenizer/runtime ABI match. See [Compound browser runtime](COMPOUND_WEB_RUNTIME.md).
 

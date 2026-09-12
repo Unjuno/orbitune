@@ -23,6 +23,6 @@ hf download Unjuno/orbitune-a2-512 model.pt --local-dir orbitune-a2-512
 python -c "import hashlib, pathlib; p=pathlib.Path('orbitune-a2-512/model.pt'); print(hashlib.sha256(p.read_bytes()).hexdigest())"
 ```
 
-The recorded training-source identity is `8489870f81a1591515a98e58554e533fcac9d095`; it is provenance metadata and is not currently a reachable commit in the public repository. Training sources include Aria-MIDI and GigaMIDI, so the checkpoint is restricted to research and non-commercial use. The corpus itself is not distributed.
+The exact training-source commit is [`8489870f81a1591515a98e58554e533fcac9d095`](https://github.com/Unjuno/orbitune/tree/8489870f81a1591515a98e58554e533fcac9d095), preserved on `provenance/a2-512-training-source`. Training sources include Aria-MIDI and GigaMIDI, so the checkpoint is restricted to research and non-commercial use. The corpus itself is not distributed.
 
 Machine-readable metadata is in [manifest.json](manifest.json). The public Hub revision is [`45579e28a32d5847f3121142aca9382b4e4aaedc`](https://huggingface.co/Unjuno/orbitune-a2-512/commit/45579e28a32d5847f3121142aca9382b4e4aaedc).

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Orbitune completed A2 Base release",
+  "type": "object",
+  "required": ["schema_version", "artifact_type", "release_status", "id", "checkpoint", "training", "validation", "lineage", "publication", "hub_commit"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "artifact_type": {"const": "orbitune_base"},
+    "release_status": {"const": "complete"},
+    "id": {"const": "orbitune-a2-512-research-nc"},
+    "checkpoint": {
+      "type": "object",
+      "required": ["filename", "url", "sha256", "bytes", "strict_load"],
+      "properties": {
+        "filename": {"const": "model.pt"},
+        "sha256": {"pattern": "^[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "strict_load": {"const": "PASS"}
+      }
+    },
+    "training": {
+      "type": "object",
+      "required": ["encode_semantics", "seq_len", "final_step", "final_events_seen"],
+      "properties": {
+        "encode_semantics": {"const": "a2"},
+        "seq_len": {"const": 512},
+        "final_step": {"const": 220813},
+        "final_events_seen": {"const": 4096016384}
+      }
+    },
+    "validation": {"type": "object"},
+    "lineage": {
+      "type": "object",
+      "required": ["source_commit", "source_provenance_status", "source_ref", "source_url"],
+      "properties": {
+        "source_commit": {"pattern": "^[0-9a-f]{40}$"},
+        "source_provenance_status": {"const": "resolved_reachable_public_commit"},
+        "source_ref": {"const": "refs/heads/provenance/a2-512-training-source"}
+      }
+    },
+    "publication": {
+      "type": "object",
+      "required": ["status", "provider", "repository"],
+      "properties": {
+        "status": {"const": "published"},
+        "provider": {"const": "huggingface"},
+        "repository": {"const": "Unjuno/orbitune-a2-512"}
+      }
+    },
+    "hub_commit": {"pattern": "^[0-9a-f]{40}$"}
+  }
+}

@@ -25,7 +25,7 @@ The Compound browser runtime remains fail-closed because this release is a PyTor
 
 The reported frozen research checkpoint is `research-nc-aria-gigamidi-v1`, at global step 100,000. Its recorded indexed train corpus contains 4,069,137,373 active next-event pairs. **Corpus capacity is not the number of unique events consumed by training.** The checkpoint record reports cumulative `events_seen = 409,600,000`; replacement sampling means this is not an exact epoch/coverage claim. See the [data card](models/research_nc_aria_gigamidi_v1/training_data.md) and [reproducibility notes](models/research_nc_aria_gigamidi_v1/reproducibility.md).
 
-The A2-512 continuation completed at global step 220,813 and 4,096,016,384 cumulative events. It is frozen under a new identity and does not overwrite the historical 100k checkpoint. See its [release record](models/research_nc_aria_gigamidi_a2_512_v1/README.md).
+The A2-512 continuation completed at global step 220,813 and 4,096,016,384 cumulative events. It is frozen under a new identity and does not overwrite the historical 100k checkpoint. Its [machine-readable release manifest](models/research_nc_aria_gigamidi_a2_512_v1/manifest.json) is the canonical current-state record.
 
 ## Quick start: source checkout
 
@@ -106,4 +106,4 @@ Source code is [Apache-2.0](LICENSE). The published research checkpoint is CC-BY
 
 An Adapter or merged derivative cannot broaden the permissions of its Base. Commercial and research-NC lineages must remain separate.
 
-See [publication boundaries](docs/PUBLICATION.md), [the model card](models/research_nc_aria_gigamidi_v1/README.md), [Compound LoRA policy](docs/COMPOUND_LORA_POLICY.md), and [security guidance](SECURITY.md).
+See [publication boundaries](docs/PUBLICATION.md), [the A2-512 model card](models/research_nc_aria_gigamidi_a2_512_v1/README.md), [the historical model card](models/research_nc_aria_gigamidi_v1/README.md), [Compound LoRA policy](docs/COMPOUND_LORA_POLICY.md), and [security guidance](SECURITY.md).

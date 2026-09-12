@@ -14,12 +14,14 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
 MODEL_DIR = Path("models/research_nc_aria_gigamidi_v1")
+A2_MODEL_DIR = Path("models/research_nc_aria_gigamidi_a2_512_v1")
 PUBLIC_DOCS = (
     "README.md", "CONTRIBUTING.md", "SECURITY.md", "docs/README.md",
     "docs/PUBLICATION.md", "models/README.md",
     *(f"{MODEL_DIR.as_posix()}/{name}" for name in (
         "README.md", "training_data.md", "usage.md", "reproducibility.md",
     )),
+    f"{A2_MODEL_DIR.as_posix()}/README.md",
 )
 BLOCKED_ROOTS = {"raw", "converted", "indexes", "runs", "checkpoints"}
 BLOCKED_SUFFIXES = (".i32", ".u8", ".parquet", ".tar", ".tar.gz", ".zip", ".log", ".log.err")
