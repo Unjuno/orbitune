@@ -31,7 +31,7 @@ export function validateCompoundRuntimeConfig(config) {
   if (config.tokenizer !== COMPOUND_TOKENIZER) throw new Error(`Compound tokenizer mismatch: ${config.tokenizer}`);
   if (typeof config.model_id !== 'string' || !ID_RE.test(config.model_id)) throw new Error('Compound model_id must match ^[a-z0-9][a-z0-9-]*$');
   const checkpointSha = requireSha256(config.checkpoint_sha256, 'checkpoint_sha256');
-  if (config.commercial_eligible !== false || config.distribution_scope !== 'noncommercial' || config.license_policy !== 'research-nc') {
+  if (config.commercial_eligible !== false || config.distribution_scope !== 'research-noncommercial' || config.license_policy !== 'research-nc') {
     throw new Error('Compound runtime config must preserve research-NC/noncommercial lineage');
   }
   if (!ALLOWED_REDISTRIBUTION_REVIEW.has(config.redistribution_review)) throw new Error('redistribution_review must be pending or completed');

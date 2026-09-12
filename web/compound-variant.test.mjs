@@ -2,34 +2,38 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { availableCompoundVariants, validateCompoundRuntimeConfig } from './compound-variant.mjs';
 
-const BASE_SHA = '8bf20a1198c4f5ee086ca13fd89521af6cfaa1fb28dd6602b1eb8f0b104629dc';
-const STREAM_SHA = '7b309d60a9343d1c4de1edbc65e21e6a65ad3d58b71de32ee3833970c6e4b0ce';
-const DECODER_SHA = '8f844a724dab21f384e24980188d52e472f3e91e78ceaf0d02f942a89d4d443f';
+const BASE_SHA = 'e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0';
+const STREAM_SHA = '27be3d6a4db726f52d7fc7e8df2e7a24be04ab5bd76da243bd8dd92712f2e107';
+const DECODER_SHA = 'abb8326680222aff32d6b2fcb45356c748c523216cb0d75d6a755e615f419225';
 
 function config(overrides = {}) {
   return {
-    schema_version: '0.1.0', runtime_abi: 'native-stream-state+decoder-prefix-v2',
-    publication_status: 'runtime_ready_model_unpublished', model_id: 'research-nc-aria-gigamidi-v1',
+    schema_version: '0.2.0', runtime_abi: 'native-stream-state+decoder-prefix-v2',
+    publication_status: 'runtime_ready_model_unpublished', model_id: 'orbitune-a2-512-research-nc',
     checkpoint_sha256: BASE_SHA, architecture: 'orbitune-compound-hierarchical-gpt-v1', tokenizer: 'orbitune-compound-v0-experimental',
-    commercial_eligible: false, distribution_scope: 'noncommercial', license_policy: 'research-nc', redistribution_review: 'pending', variants: [],
+    commercial_eligible: false, distribution_scope: 'research-noncommercial', license_policy: 'research-nc', redistribution_review: 'pending', variants: [],
     ...overrides,
   };
 }
 
 function baseVariant(overrides = {}) {
   return {
-    id: 'research-nc-aria-gigamidi-v1-web', display_name: 'Research-NC Aria+GigaMIDI V1', kind: 'base', available: true,
+    id: 'orbitune-a2-512-web-v1', display_name: 'Orbitune A2-512 Base', kind: 'base', available: true,
     architecture: 'orbitune-compound-hierarchical-gpt-v1', tokenizer: 'orbitune-compound-v0-experimental',
     runtime_abi: 'native-stream-state+decoder-prefix-v2', base_checkpoint_sha256: BASE_SHA,
-    stream: { url: 'https://example.invalid/stream.onnx', sha256: STREAM_SHA },
-    decoder: { url: './models/decoder-prefix.onnx', sha256: DECODER_SHA }, execution_providers: ['wasm'],
+    stream: { url: './models/a2-v1/stream.onnx', sha256: STREAM_SHA },
+    decoder: { url: './models/a2-v1/decoder_prefix.onnx', sha256: DECODER_SHA }, execution_providers: ['wasm'],
     ...overrides,
   };
 }
 
-test('current unpublished config validates with zero available variants', () => {
+test('current unpublished A2 config validates with zero available variants', () => {
   assert.equal(validateCompoundRuntimeConfig(config()), true);
   assert.deepEqual(availableCompoundVariants(config()), []);
+});
+
+test('legacy generic noncommercial scope is rejected in favor of canonical A2 scope', () => {
+  assert.throws(() => validateCompoundRuntimeConfig(config({ distribution_scope: 'noncommercial' })), /research-NC\/noncommercial lineage/);
 });
 
 test('an available Base variant requires both completed review and published status', () => {
