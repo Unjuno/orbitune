@@ -10,6 +10,16 @@ export async function sha256Hex(arrayBuffer) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+async function verifiedCachedBytes(modelStore, expected) {
+  if (!modelStore?.get) return null;
+  const cached = await modelStore.get(expected);
+  if (!cached) return null;
+  const actual = await sha256Hex(cached);
+  if (actual === expected) return cached;
+  if (modelStore.delete) await modelStore.delete(expected);
+  return null;
+}
+
 export async function createVerifiedModelSession(
   ortNamespace,
   url,
@@ -17,6 +27,7 @@ export async function createVerifiedModelSession(
     expectedSha256 = '',
     executionProviders = ['wasm'],
     fetchImpl = globalThis.fetch,
+    modelStore = null,
   } = {},
 ) {
   if (!ortNamespace?.InferenceSession?.create) throw new Error('ONNX Runtime Web namespace is invalid');
@@ -24,13 +35,16 @@ export async function createVerifiedModelSession(
   if (!expectedSha256) {
     return ortNamespace.InferenceSession.create(url, { executionProviders });
   }
-  if (typeof fetchImpl !== 'function') throw new Error('fetch is unavailable for verified model loading');
-
   const expected = normalizeSha256(expectedSha256);
-  const response = await fetchImpl(url, { cache: 'force-cache' });
-  if (!response.ok) throw new Error(`Base model download failed: HTTP ${response.status}`);
-  const bytes = await response.arrayBuffer();
-  const actual = await sha256Hex(bytes);
-  if (actual !== expected) throw new Error(`Base model SHA-256 mismatch: ${actual} != ${expected}`);
+  let bytes = await verifiedCachedBytes(modelStore, expected);
+  if (!bytes) {
+    if (typeof fetchImpl !== 'function') throw new Error('fetch is unavailable for verified model loading');
+    const response = await fetchImpl(url, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`Base model download failed: HTTP ${response.status}`);
+    bytes = await response.arrayBuffer();
+    const actual = await sha256Hex(bytes);
+    if (actual !== expected) throw new Error(`Base model SHA-256 mismatch: ${actual} != ${expected}`);
+    if (modelStore?.put) await modelStore.put(expected, bytes, { url });
+  }
   return ortNamespace.InferenceSession.create(bytes, { executionProviders });
 }
