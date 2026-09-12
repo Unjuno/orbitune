@@ -21,3 +21,8 @@ test('MIDI tempo serialization accepts the first representable BPM', () => {
   const data = Array.from(midi);
   assert.ok(data.some((_, index) => pattern.every((byte, offset) => data[index + offset] === byte)));
 });
+
+test('MIDI tempo serialization preserves the checkpoint ABI upper bound', () => {
+  const midi = compoundEventsToMidiBytes([tempo(999)]);
+  assert.equal(new TextDecoder().decode(midi.slice(0, 4)), 'MThd');
+});
