@@ -28,14 +28,10 @@ def sha256_file(path: str | Path) -> str:
 def merge_lora_linear(module: LoRALinear) -> nn.Linear:
     """Materialize one eval-mode LoRA wrapper as a plain ``nn.Linear``.
 
-    For inference, dropout is disabled and the wrapper computes
-
-        base(x) + scaling * B(A(x)).
-
-    Therefore the exact merged weight is ``W + scaling * (B @ A)`` while
-    the Base bias is unchanged. This helper deliberately returns a normal
-    ``nn.Linear`` so the existing Compound checkpoint and Web-export paths do
-    not need a LoRA-specific runtime ABI.
+    For inference, dropout is disabled. The low-rank update is folded into the
+    Base weight once, and the Base bias is unchanged. Returning a normal
+    ``nn.Linear`` keeps the existing Compound checkpoint and Web-export paths
+    independent of a dynamic LoRA runtime ABI.
     """
 
     if module.training:
@@ -58,6 +54,55 @@ def merge_lora_linear(module: LoRALinear) -> nn.Linear:
         parameter.requires_grad_(False)
     merged.eval()
     return merged
+
+
+def _default_tolerances(dtype: torch.dtype) -> tuple[float, float]:
+    if dtype in (torch.float16, torch.bfloat16):
+        return 5e-3, 5e-3
+    return 1e-5, 1e-6
+
+
+def verify_lora_merge_parity(model: nn.Module) -> dict[str, object]:
+    """Numerically compare each eval-mode wrapper with its merged linear.
+
+    The probe is deterministic and bounded: two synthetic rows per target
+    module. This is a merge-implementation check, not a musical-quality or
+    end-to-end model-equivalence claim. Later V2 native/ORT/WASM parity remains
+    required for the exact exported derivative.
+    """
+
+    if model.training:
+        raise ValueError("model must be in eval mode before LoRA merge parity verification")
+    modules = sorted(iter_lora_modules(model), key=lambda item: item[0])
+    if not modules:
+        raise ValueError("model contains no experimental Compound LoRA modules")
+    per_module: dict[str, dict[str, float | str]] = {}
+    maximum = 0.0
+    with torch.no_grad():
+        for name, module in modules:
+            merged = merge_lora_linear(module)
+            count = max(2, 2 * module.base.in_features)
+            probe = torch.linspace(
+                -1.0,
+                1.0,
+                steps=count,
+                device=module.base.weight.device,
+                dtype=module.base.weight.dtype,
+            )[: 2 * module.base.in_features].reshape(2, module.base.in_features)
+            expected = module(probe)
+            actual = merged(probe)
+            diff = (actual - expected).abs()
+            max_abs = float(diff.max().item()) if diff.numel() else 0.0
+            rtol, atol = _default_tolerances(module.base.weight.dtype)
+            torch.testing.assert_close(actual, expected, rtol=rtol, atol=atol)
+            maximum = max(maximum, max_abs)
+            per_module[name] = {
+                "dtype": str(module.base.weight.dtype).removeprefix("torch."),
+                "max_abs": max_abs,
+                "rtol": rtol,
+                "atol": atol,
+            }
+    return {"max_abs": maximum, "modules": per_module}
 
 
 def merge_lora_inplace(model: nn.Module) -> list[str]:
