@@ -41,6 +41,17 @@ async function cacheFirst(request, cacheName) {
   return response;
 }
 
+async function ownOriginResponse(request) {
+  try { return await cacheFirst(request, SHELL_CACHE); }
+  catch (error) {
+    if (request.mode === 'navigate') {
+      const fallback = await caches.match('./compound.html');
+      if (fallback) return fallback;
+    }
+    throw error;
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
@@ -48,7 +59,7 @@ self.addEventListener('fetch', (event) => {
   const ownOrigin = url.origin === self.location.origin;
   const ortRuntimeAsset = url.hostname === 'cdn.jsdelivr.net' && url.pathname.includes('/onnxruntime-web@1.29.0/');
   if (ownOrigin) {
-    event.respondWith(cacheFirst(request, SHELL_CACHE).catch(() => caches.match('./compound.html')));
+    event.respondWith(ownOriginResponse(request));
     return;
   }
   if (ortRuntimeAsset) event.respondWith(cacheFirst(request, RUNTIME_CACHE));
