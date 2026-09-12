@@ -3,48 +3,72 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Orbitune Compound Runtime</title>
+  <meta name="theme-color" content="#111111" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./orbitune.svg" type="image/svg+xml" />
+  <title>Orbitune Infinite MIDI</title>
   <style>
     :root { color-scheme: light dark; }
-    body { font-family: system-ui, sans-serif; margin: 0 auto; padding: 1.25rem; max-width: 720px; }
+    body { font-family: system-ui, sans-serif; margin: 0 auto; padding: 1.25rem; max-width: 760px; }
     label { display: block; margin-top: 1rem; font-weight: 650; }
     input, select, button, a.button { width: 100%; box-sizing: border-box; padding: 0.8rem; margin-top: 0.35rem; font: inherit; }
     button, a.button { cursor: pointer; font-weight: 700; text-align: center; }
     button:disabled { cursor: not-allowed; opacity: 0.55; }
     a.button { display: block; text-decoration: none; border: 1px solid currentColor; border-radius: 4px; }
-    .card { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 16px; padding: 1.1rem; }
+    .card { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 16px; padding: 1.1rem; margin-bottom: 1rem; }
     .muted { opacity: 0.72; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
-    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 1rem; }
+    .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin-top: 1rem; }
+    .offline-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; border-radius: 10px; background: color-mix(in srgb, currentColor 8%, transparent); }
-    @media (max-width: 520px) { .row, .actions { grid-template-columns: 1fr; } }
+    @media (max-width: 620px) { .row, .actions, .offline-actions { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <p><a href="./">← Legacy Theory-REMI page</a></p>
-  <h1>Orbitune Compound</h1>
-  <p class="muted">Native-stream Compound browser runtime. Model artifacts remain unpublished until redistribution review is complete.</p>
-  <main class="card">
-    <label for="compound-variant">Model / pre-merged LoRA variant</label>
+  <h1>Orbitune Infinite MIDI</h1>
+  <p class="muted">Local-first Compound generation. A continuous stream keeps only bounded model/playback state instead of retaining the full musical history.</p>
+
+  <section class="card">
+    <h2>Model</h2>
+    <label for="compound-variant">Base / pre-merged LoRA variant</label>
     <select id="compound-variant"></select>
     <div id="compound-model-meta" class="muted">Loading runtime status…</div>
-
-    <div class="row">
-      <div><label for="compound-events">New events</label><select id="compound-events"><option>64</option><option selected>128</option><option>256</option><option>512</option></select></div>
-      <div><label for="compound-temperature">Temperature: <span id="compound-temperature-value">0.85</span></label><input id="compound-temperature" type="range" min="0" max="1.20" step="0.05" value="0.85" /></div>
+    <div id="compound-storage-status" class="muted">Checking offline model storage…</div>
+    <div class="offline-actions">
+      <button id="compound-offline" type="button" disabled>Download for offline use</button>
+      <button id="compound-install" type="button" hidden>Install Orbitune app</button>
     </div>
-    <label for="compound-top-p">Top-p: <span id="compound-top-p-value">0.92</span></label>
-    <input id="compound-top-p" type="range" min="0.10" max="1" step="0.01" value="0.92" />
+  </section>
 
+  <section class="card">
+    <h2>Infinite stream</h2>
+    <p class="muted">Generate while listening. Stop discards the carried generation state; the previous stream cannot be reconstructed unless it was explicitly recorded elsewhere.</p>
+    <div class="row">
+      <div><label for="compound-temperature">Temperature: <span id="compound-temperature-value">0.85</span></label><input id="compound-temperature" type="range" min="0" max="1.20" step="0.05" value="0.85" /></div>
+      <div><label for="compound-top-p">Top-p: <span id="compound-top-p-value">0.92</span></label><input id="compound-top-p" type="range" min="0.10" max="1" step="0.01" value="0.92" /></div>
+    </div>
+    <div class="actions">
+      <button id="compound-live-start" type="button" disabled>Start infinite stream</button>
+      <button id="compound-live-pause" type="button" disabled>Pause stream</button>
+      <button id="compound-live-stop" type="button" disabled>Stop / reset</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Finite MIDI export</h2>
+    <label for="compound-events">New events</label>
+    <select id="compound-events"><option>64</option><option selected>128</option><option>256</option><option>512</option></select>
     <button id="compound-generate" type="button" disabled>Generate MIDI</button>
     <div class="actions">
       <button id="compound-play" type="button" disabled>Play preview</button>
-      <button id="compound-stop" type="button" disabled>Stop</button>
+      <button id="compound-stop" type="button" disabled>Stop preview</button>
+      <a id="compound-download" class="button" hidden>Download MIDI</a>
     </div>
-    <a id="compound-download" class="button" hidden>Download MIDI</a>
-    <pre id="compound-status">Loading Compound runtime status…</pre>
-  </main>
-  <p class="muted">Preview audio uses a lightweight WebAudio synth; downloaded output is Standard MIDI. The source runtime does not imply that the research weights are publicly downloadable.</p>
+  </section>
+
+  <pre id="compound-status">Loading Compound runtime status…</pre>
+  <p class="muted">Preview audio uses a lightweight WebAudio synth. Published model variants remain SHA-bound to the immutable Base and keep the research-NC/noncommercial lineage.</p>
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.min.js"></script>
   <script type="module" src="./compound-app.mjs"></script>
 </body>
