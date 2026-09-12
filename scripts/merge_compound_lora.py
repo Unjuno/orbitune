@@ -8,7 +8,12 @@ import torch
 
 from orbitune.compound_base import CompoundHierarchicalGPT
 from orbitune.compound_lora import ADAPTER_MANIFEST_FILE, load_adapter
-from orbitune.compound_lora_merge import adapter_artifact_digests, merge_lora_inplace, sha256_file
+from orbitune.compound_lora_merge import (
+    adapter_artifact_digests,
+    merge_lora_inplace,
+    sha256_file,
+    verify_lora_merge_parity,
+)
 
 
 PREMERGED_SCHEMA = "orbitune-compound-lora-premerged-experimental-v0"
@@ -49,6 +54,7 @@ def main() -> None:
     model, base_payload = CompoundHierarchicalGPT.load_checkpoint(base_path, map_location="cpu")
     adapter_manifest = load_adapter(model, adapter_dir, base_sha256=base_sha, strict_base_binding=True)
     model.eval()
+    merge_parity = verify_lora_merge_parity(model)
     merged_modules = merge_lora_inplace(model)
 
     output_checkpoint.parent.mkdir(parents=True, exist_ok=True)
@@ -66,6 +72,7 @@ def main() -> None:
         "rank": int(adapter_manifest["rank"]),
         "alpha": float(adapter_manifest["alpha"]),
         "scaling": float(adapter_manifest["scaling"]),
+        "merge_parity": merge_parity,
     }
     torch.save(derived_payload, output_checkpoint)
 
@@ -92,6 +99,7 @@ def main() -> None:
             "scaling": float(adapter_manifest["scaling"]),
             "source_commit": adapter_manifest.get("source_commit"),
         },
+        "merge_parity": merge_parity,
         "merged_checkpoint": {
             "filename": output_checkpoint.name,
             "sha256": merged_sha,
