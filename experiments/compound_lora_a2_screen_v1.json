@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "purpose": "Bounded ML screening grid for A2-512 Compound LoRA. This file does not define a production Adapter ABI or musical-preference winner.",
+  "design_notes": [
+    "Keep alpha/rank = 2.0 across candidates so the rank comparison does not also change LoRA scaling.",
+    "Compare intra-event decoder adaptation against hierarchical context adaptation rather than assuming the legacy Theory-REMI q/v target is optimal.",
+    "Use identical Base bytes, data hashes, seed, optimizer settings, step budget and validation protocol for every candidate.",
+    "Advance leading candidates to generated-MIDI and blinded human-preference evaluation; validation loss alone is not a preference metric."
+  ],
+  "candidates": [
+    {
+      "id": "decoder-q-r4",
+      "target_modules": [
+        "decoder.stack.blocks.*.attn.q_proj"
+      ],
+      "rank": 4,
+      "alpha": 8,
+      "dropout": 0.0
+    },
+    {
+      "id": "decoder-qv-r4",
+      "target_modules": [
+        "decoder.stack.blocks.*.attn.q_proj",
+        "decoder.stack.blocks.*.attn.v_proj"
+      ],
+      "rank": 4,
+      "alpha": 8,
+      "dropout": 0.0
+    },
+    {
+      "id": "decoder-qv-r8",
+      "target_modules": [
+        "decoder.stack.blocks.*.attn.q_proj",
+        "decoder.stack.blocks.*.attn.v_proj"
+      ],
+      "rank": 8,
+      "alpha": 16,
+      "dropout": 0.0
+    },
+    {
+      "id": "context-qv-r4",
+      "target_modules": [
+        "local.blocks.*.attn.q_proj",
+        "local.blocks.*.attn.v_proj",
+        "medium.blocks.*.attn.q_proj",
+        "medium.blocks.*.attn.v_proj",
+        "global_stack.blocks.*.attn.q_proj",
+        "global_stack.blocks.*.attn.v_proj"
+      ],
+      "rank": 4,
+      "alpha": 8,
+      "dropout": 0.0
+    },
+    {
+      "id": "context-decoder-qv-r4",
+      "target_modules": [
+        "local.blocks.*.attn.q_proj",
+        "local.blocks.*.attn.v_proj",
+        "medium.blocks.*.attn.q_proj",
+        "medium.blocks.*.attn.v_proj",
+        "global_stack.blocks.*.attn.q_proj",
+        "global_stack.blocks.*.attn.v_proj",
+        "decoder.stack.blocks.*.attn.q_proj",
+        "decoder.stack.blocks.*.attn.v_proj"
+      ],
+      "rank": 4,
+      "alpha": 8,
+      "dropout": 0.0
+    }
+  ]
+}
