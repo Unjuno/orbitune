@@ -1,0 +1,41 @@
+{
+  "artifact_type": "orbitune_base",
+  "id": "orbitune-a2-512-research-nc",
+  "display_name": "Orbitune A2-512 Research-NC",
+  "architecture": "orbitune-compound-hierarchical-gpt-v1",
+  "tokenizer": "orbitune-compound-v0-experimental",
+  "parameter_count": 8857250,
+  "checkpoint": {
+    "filename": "model.pt",
+    "url": "https://huggingface.co/Unjuno/orbitune-a2-512/resolve/45579e28a32d5847f3121142aca9382b4e4aaedc/model.pt",
+    "sha256": "e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0",
+    "bytes": 106635500,
+    "strict_load": "PASS"
+  },
+  "license": "CC-BY-NC-SA-4.0",
+  "distribution_scope": "research-noncommercial",
+  "commercial_eligible": false,
+  "training": {
+    "encode_semantics": "a2",
+    "batch_size": 64,
+    "seq_len": 512,
+    "precision": "bf16",
+    "compile": false,
+    "initial_step": 109500,
+    "initial_events_seen": 448512000,
+    "final_step": 220813,
+    "final_events_seen": 4096016384
+  },
+  "validation": {
+    "protocol": "a2-seq512-v1",
+    "loss": -1.5476370453834534,
+    "events": 98304,
+    "window_hash": "0d76ff62fc73b22190f14b4377d2bc8e0da48710da398ef09efaac35fcd4da4e"
+  },
+  "lineage": {
+    "parent_sha256": "4be09e0869af256f8be62e5e596b72471f15f49a6abbedc613a6a3571fd5bca8",
+    "source_commit": "8489870f81a1591515a98e58554e533fcac9d095"
+  },
+  "hub_commit": "45579e28a32d5847f3121142aca9382b4e4aaedc",
+  "completed_at": "2026-09-11T21:28:40+09:00"
+}

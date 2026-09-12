@@ -2,19 +2,20 @@
 
 ## Scope
 
-The repository is public source code with documentation of a locally trained research model. **Source publication is not weight publication.** The repository may contain browser/runtime code and LoRA policy that describe how future verified artifacts should be loaded or adapted while the model binary itself remains unavailable.
+The repository is public source code with documentation of trained research models. Source and model licenses remain separate. The completed A2-512 checkpoint is published externally on Hugging Face; model binaries remain outside Git.
 
-The documented research checkpoint is not tracked, no release asset is created by the current runtime/policy work, and no model download URL is invented. Repository/runtime/Adapter-policy changes must not be interpreted as permission to redistribute the research weights, derived weights or training data.
+The historical 100k checkpoint remains documentation-only. The separately identified A2-512 checkpoint is distributed under CC-BY-NC-SA-4.0 for research/non-commercial use. This release does not publish training data, an ONNX browser export, or a Compound Adapter ABI.
 
 ## Public artifact contract
 
 | Artifact | Status |
 | --- | --- |
 | Python/runtime source | Available in the repository under the existing source-code license |
-| Research model documentation | Available under `models/research_nc_aria_gigamidi_v1/` |
+| Research model documentation | Historical record under `models/research_nc_aria_gigamidi_v1/`; A2-512 release under `models/research_nc_aria_gigamidi_a2_512_v1/` |
 | Compound browser runtime source | Available; separate native-stream V2 ABI with fail-closed publication config |
 | Compound LoRA policy | Available; public compatibility policy, **not** a frozen Compound Adapter ABI |
-| Research checkpoint | Reported as locally frozen; not distributed by this repository |
+| A2-512 research checkpoint | [Published on Hugging Face](https://huggingface.co/Unjuno/orbitune-a2-512); exact SHA and Hub revision recorded in Git |
+| Historical 100k checkpoint | Documentation-only; not distributed |
 | Compound ONNX stream/decoder graphs | Locally validated/referenced by handoff work; **not distributed by this repository** |
 | Compound Web model variants | None configured; generation remains disabled until a separately reviewed release |
 | Production Compound Adapter binaries | Not accepted/published yet; Compound Adapter ABI is not frozen |
@@ -22,6 +23,8 @@ The documented research checkpoint is not tracked, no release asset is created b
 | Local audit JSONs / generated MIDI package | Referenced by historical reports; not bundled public evidence |
 
 `models/research_nc_aria_gigamidi_v1/publication.json` remains the documentation-only model publication record. It disallows a model download URL or public-registry eligibility in its current status. The browser-side [runtime config](../web/compound-runtime-config.json) likewise contains an empty `variants` list and `redistribution_review: pending`.
+
+`models/research_nc_aria_gigamidi_a2_512_v1/manifest.json` records the separately published checkpoint, immutable artifact SHA-256, byte size, lineage, validation protocol and pinned Hugging Face revision. Publication of the PyTorch checkpoint does not make it a browser-runtime variant.
 
 The browser code adds another hard gate rather than weakening this boundary: an available Compound variant is rejected unless redistribution review is explicitly marked complete, publication status is switched to the published state, the variant is bound to the exact Base checkpoint SHA, and its architecture/tokenizer/runtime ABI match. See [Compound browser runtime](COMPOUND_WEB_RUNTIME.md).
 
@@ -95,7 +98,7 @@ Source/runtime/Adapter-policy development can finish while artifact-release gate
 
 The scan is **not** a comprehensive secret scanner, malware analysis, legal review, or Git-history audit. `.gitignore` prevents some future accidental additions; it does not remove already committed data or revoke leaked credentials. Historical audit files and existing source pins are preserved rather than rewritten.
 
-The Web runtime adds unit tests for numeric ABI rules, MIDI conversion, model-variant binding, allowed URL schemes, and release-gate state. These tests validate source contracts only; without the unpublished model files they are not an independent re-verification of model quality or ONNX parity.
+The Web runtime adds unit tests for numeric ABI rules, MIDI conversion, model-variant binding, allowed URL schemes, and release-gate state. These tests validate source contracts only; without a released ONNX graph pair they are not an independent re-verification of model quality or ONNX parity.
 
 ## Local checks
 

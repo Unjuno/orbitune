@@ -7,7 +7,8 @@ Local-first symbolic MIDI generation with a hierarchical Compound Transformer an
 | Goal | Entry point |
 | --- | --- |
 | Install and inspect the code | Quick start below |
-| Understand the trained research model | [Research model card](models/research_nc_aria_gigamidi_v1/README.md) |
+| Download the completed A2-512 research model | [A2-512 model card](models/research_nc_aria_gigamidi_a2_512_v1/README.md) |
+| Understand the historical 100k model | [Historical model card](models/research_nc_aria_gigamidi_v1/README.md) |
 | Understand the Compound architecture | [Compound Base](docs/COMPOUND_BASE.md) |
 | Inspect the Compound browser runtime | [Compound Web runtime](docs/COMPOUND_WEB_RUNTIME.md) |
 | Understand how Compound LoRA will be applied | [Compound LoRA policy](docs/COMPOUND_LORA_POLICY.md) |
@@ -18,13 +19,13 @@ Local-first symbolic MIDI generation with a hierarchical Compound Transformer an
 
 ## What is available
 
-**This repository is public source code, browser-runtime source, documentation and CI — not a downloadable pretrained model release.** The documented Aria+GigaMIDI checkpoint is not tracked in Git, has no download URL in the publication record, and its Compound ONNX graphs are not distributed here. A clone is not a pretrained installation.
+The completed `orbitune-a2-512-research-nc` checkpoint is publicly available from [Hugging Face](https://huggingface.co/Unjuno/orbitune-a2-512). Its immutable SHA-256 is `e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0`. Weights remain outside Git, and a source clone alone is not a pretrained installation.
 
-The Compound browser runtime is implemented and deployed in fail-closed form: generation remains disabled until a separately reviewed release supplies exact model URLs and SHA-256 values. The [publication record](models/research_nc_aria_gigamidi_v1/publication.json) records the current documentation-only model availability.
+The Compound browser runtime remains fail-closed because this release is a PyTorch training checkpoint, not a browser-ready ONNX graph pair. The [historical publication record](models/research_nc_aria_gigamidi_v1/publication.json) continues to describe the older documentation-only model.
 
 The reported frozen research checkpoint is `research-nc-aria-gigamidi-v1`, at global step 100,000. Its recorded indexed train corpus contains 4,069,137,373 active next-event pairs. **Corpus capacity is not the number of unique events consumed by training.** The checkpoint record reports cumulative `events_seen = 409,600,000`; replacement sampling means this is not an exact epoch/coverage claim. See the [data card](models/research_nc_aria_gigamidi_v1/training_data.md) and [reproducibility notes](models/research_nc_aria_gigamidi_v1/reproducibility.md).
 
-A separate local full-parameter continuation toward 1,000,000 global steps is now reported active from the immutable 100k parent. Its continuation checkpoint is mutable training state and is not distributed by this repository. If a later checkpoint is completed, evaluated and selected as a Base, it must be frozen and documented under a new immutable identity; it does not overwrite the historical 100k checkpoint. See the [roadmap](docs/ROADMAP.md) for the latest recorded local-run evidence snapshot.
+The A2-512 continuation completed at global step 220,813 and 4,096,016,384 cumulative events. It is frozen under a new identity and does not overwrite the historical 100k checkpoint. See its [release record](models/research_nc_aria_gigamidi_a2_512_v1/README.md).
 
 ## Quick start: source checkout
 
@@ -56,7 +57,7 @@ orbitune-compound --help
 orbitune-compound info --config configs/compound_hierarchical_9m.json
 ```
 
-A local checkpoint from a trusted source is required for Python generation. The exact implemented flags are documented in [usage.md](models/research_nc_aria_gigamidi_v1/usage.md). Do not load an untrusted `.pt` file merely because its filename looks correct.
+A checkpoint can be downloaded with `hf download Unjuno/orbitune-a2-512 model.pt --local-dir orbitune-a2-512`. Verify its SHA-256 against the [release record](models/research_nc_aria_gigamidi_a2_512_v1/README.md) before loading it. The exact implemented generation flags are documented in [usage.md](models/research_nc_aria_gigamidi_v1/usage.md).
 
 ## Runtime and Adapter boundaries
 
@@ -72,7 +73,7 @@ A local checkpoint from a trusted source is required for Python generation. The 
 | --- | --- |
 | `orbitune/` | Model, MIDI representation, sampler and runtime code |
 | `configs/` | Model and corpus configurations; existing source pins are preserved |
-| `models/` | Research model cards and publication metadata; documented weights are not tracked |
+| `models/` | Research model cards and publication metadata; weights are hosted externally and not tracked in Git |
 | `bases/`, `adapters/`, `registry/` | Separately validated legacy Theory-REMI Base/Adapter contribution path |
 | `scripts/`, `tools/` | Training, corpus, maintenance and audit utilities |
 | `tests/`, `benchmarks/fixtures/` | Tests and bounded synthetic fixtures |
@@ -101,7 +102,7 @@ The broader Python test suite can be run with `python -m pytest -q`. A passing s
 
 ## Licenses and distribution
 
-Source code is [Apache-2.0](LICENSE). The research model's recorded checkpoint license is CC-BY-NC-SA-4.0 and its project policy remains noncommercial; public runtime/LoRA policy documentation does not grant additional rights or publish its weights. Dataset terms, Base terms, Adapter terms and rights in generated output are distinct.
+Source code is [Apache-2.0](LICENSE). The published research checkpoint is CC-BY-NC-SA-4.0 and remains restricted to research/non-commercial use. Dataset terms, Base terms, Adapter terms and rights in generated output are distinct.
 
 An Adapter or merged derivative cannot broaden the permissions of its Base. Commercial and research-NC lineages must remain separate.
 
