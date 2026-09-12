@@ -4,10 +4,12 @@
 
 This is a bounded research/debug path for exercising post-Base LoRA adaptation on the Compound model family. It is **not** the frozen public Compound Adapter ABI and it does not change the policy in [COMPOUND_LORA_POLICY.md](COMPOUND_LORA_POLICY.md).
 
-The purpose is to make the minimum post-Base path executable before the final Base and public Adapter ABI are frozen:
+The current immutable Base target is the completed A2-512 release, `orbitune-a2-512-research-nc`. Experimental Adapters must remain bound to its exact checkpoint SHA (or to another explicitly named experimental Base); architecture or parameter-count similarity is never treated as compatibility.
+
+The executable post-Base path is:
 
 ```text
-immutable/local Compound checkpoint
+immutable Compound checkpoint
 + existing Compound JSONL data
 → freeze Base parameters
 → inject explicitly configured experimental LoRA
@@ -90,18 +92,61 @@ The experimental implementation enforces the following invariants:
 
 These checks exercise implementation safety. They do not establish musical quality, rights to redistribute a Base/Adapter, or compatibility with a future public Compound Adapter ABI.
 
+## Pre-merged Web candidate
+
+The browser does not need a dynamic LoRA ABI for the initial product path. A reviewed Adapter can be merged locally into its exact Base and then passed through the existing native-stream V2 export pipeline as an ordinary Compound model.
+
+First verify and pre-merge the Adapter:
+
+```bash
+python scripts/merge_compound_lora.py \
+  --base-checkpoint /path/to/model.pt \
+  --base-sha256 <exact-base-sha256> \
+  --base-model-id orbitune-a2-512-research-nc \
+  --adapter-dir /path/to/adapter \
+  --adapter-id <versioned-adapter-id> \
+  --output-checkpoint runs/premerged/model.pt \
+  --output-manifest runs/premerged/manifest.json
+```
+
+The merge command:
+
+- rejects the wrong Base SHA or model id before applying the Adapter;
+- uses the Adapter's exact target/rank/alpha/scaling metadata;
+- verifies bounded numerical parity between each eval-mode LoRA wrapper and its merged linear;
+- removes all LoRA wrappers so the result strictly reloads as a normal `CompoundHierarchicalGPT`;
+- records Adapter manifest/tensor SHA-256 values and merged-checkpoint identity;
+- writes `publication_eligible = false` intentionally.
+
+A successful merge is therefore **not** a publication approval. It only creates a technically inspectable derivative candidate.
+
+Next run the existing V2 export/parity path against the exact merged checkpoint:
+
+```bash
+python scripts/export_compound_web_v2.py \
+  --checkpoint runs/premerged/model.pt \
+  --checkpoint-sha256 <merged-checkpoint-sha256> \
+  --out-dir runs/premerged/web
+```
+
+The exact derivative must then pass native, ONNX Runtime and onnxruntime-web/WASM validation, generated-MIDI quality comparison, Adapter-data rights review and the inherited A2 research/non-commercial licensing boundary.
+
+After those gates, an approved Web release may use `kind = "lora-premerged"` and must include a versioned `adapter.id`. `scripts/build_compound_web_runtime_config.py` can aggregate reviewed additional LoRA releases with the canonical Base release, but rejects wrong-Base, wrong-runtime-ABI, unreviewed, commercialized, duplicate-id or missing-Adapter-identity variants.
+
+Changing Base/LoRA variant in the PWA starts a new stream. Reusing recurrent stream state across independently merged variants is not assumed to be valid.
+
 ## Tests
 
 Run the bounded CPU tests with:
 
 ```bash
-python -m pytest -q tests/test_compound_lora.py
+python -m pytest -q tests/test_compound_lora.py tests/test_compound_lora_merge.py tests/test_compound_web_release.py
 ```
 
-The tests cover no-op injection, trainable-parameter scope, Base immutability, Safetensors save/reload, Base-SHA rejection and a tiny end-to-end SFT script invocation.
+Coverage includes no-op injection, trainable-parameter scope, Base immutability, Safetensors save/reload, Base-SHA rejection, tiny end-to-end SFT invocation, wrapper-to-merged numerical parity, clean-model reload and strict `lora-premerged` Web release aggregation.
 
 ## Relationship to future reward-guided training
 
 Reward-guided post-training should reuse the same low-level LoRA injection, Base freezing and artifact binding rather than implementing a second Adapter mechanism. A separate research repository can own rollout logging, MIDI-to-audio rendering, aesthetic reward evaluation and GRPO while importing the Compound LoRA primitive from Orbitune.
 
-The public Adapter ABI should only be frozen after the final Base is selected and target modules/rank/scaling/merge behavior are measured, as required by the project policy.
+The public dynamic Adapter ABI should only be frozen after target modules/rank/scaling/merge behavior are measured on the immutable A2 Base. A pre-merged Web derivative does not require freezing that dynamic browser ABI, but it still requires exact Adapter identity, evaluation, rights review and parity on its own exported bytes.
