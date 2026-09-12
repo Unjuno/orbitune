@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Orbitune">
+  <rect width="512" height="512" rx="112" fill="#101217"/>
+  <circle cx="256" cy="256" r="156" fill="none" stroke="#f3f4f6" stroke-width="28"/>
+  <path d="M164 292c44-82 83-122 118-122 37 0 55 39 66 78 9 32 20 62 45 62" fill="none" stroke="#f3f4f6" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="164" cy="292" r="18" fill="#f3f4f6"/>
+  <circle cx="393" cy="310" r="18" fill="#f3f4f6"/>
+</svg>
