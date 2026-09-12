@@ -61,6 +61,10 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.origin === self.location.origin) {
+    // Model bytes are intentionally not placed in the shell cache. The app
+    // verifies their declared SHA-256 first and persists reviewed bytes in the
+    // dedicated model cache only after explicit user action.
+    if (url.pathname.includes('/models/')) return;
     const dynamic = event.request.mode === 'navigate' || url.pathname.endsWith('/compound-runtime-config.json');
     event.respondWith(dynamic ? networkFirst(event.request, SHELL_CACHE) : cacheFirst(event.request, SHELL_CACHE));
     return;
