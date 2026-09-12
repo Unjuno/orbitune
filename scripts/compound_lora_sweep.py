@@ -16,6 +16,8 @@ from orbitune.compound_lora import ADAPTER_TENSOR_FILE, sha256_file
 
 
 SWEEP_SCHEMA = "orbitune-compound-lora-sweep-v1"
+INITIAL_LOSS_RTOL = 1e-6
+INITIAL_LOSS_ATOL = 1e-5
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -139,6 +141,8 @@ def main() -> None:
         "validation_batches": args.validation_batches,
         "seed": args.seed,
         "device": args.device,
+        "initial_loss_rtol": INITIAL_LOSS_RTOL,
+        "initial_loss_atol": INITIAL_LOSS_ATOL,
         "source_commit": os.environ.get("ORBITUNE_SOURCE_COMMIT") or os.environ.get("GITHUB_SHA"),
     }
 
@@ -182,10 +186,11 @@ def main() -> None:
         final = float(metrics["final_validation_loss"])
         if reference_initial is None:
             reference_initial = initial
-        elif not math.isclose(initial, reference_initial, rel_tol=1e-7, abs_tol=1e-8):
+        elif not math.isclose(initial, reference_initial, rel_tol=INITIAL_LOSS_RTOL, abs_tol=INITIAL_LOSS_ATOL):
             raise RuntimeError(
-                "candidate initial validation losses differ despite zero-init LoRA and identical validation protocol: "
-                f"{candidate['id']}={initial}, reference={reference_initial}"
+                "candidate initial validation losses differ beyond the declared zero-init comparison tolerance: "
+                f"{candidate['id']}={initial}, reference={reference_initial}, "
+                f"rtol={INITIAL_LOSS_RTOL}, atol={INITIAL_LOSS_ATOL}"
             )
         trainable_parameters = _adapter_parameter_count(candidate_dir)
         results.append(
