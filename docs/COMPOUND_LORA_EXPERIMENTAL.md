@@ -55,9 +55,44 @@ The target/rank values above are examples for exercising the code path, not reco
 
 The script refuses to overwrite a non-empty output directory. It records the exact Base checkpoint SHA-256, model/tokenizer ABI, resolved target modules, dataset hashes and training settings.
 
+## Controlled target/rank screening
+
+Do not choose the Compound target modules or rank from the legacy Theory-REMI settings by analogy. `scripts/compound_lora_sweep.py` runs multiple experimental candidates through the same `compound_lora_sft.py` path while holding the comparison protocol fixed.
+
+The checked-in first-pass grid is [compound_lora_a2_screen_v1.json](../experiments/compound_lora_a2_screen_v1.json). It compares decoder-only q/q+v adaptation, rank 4 versus rank 8 at constant `alpha/rank = 2`, hierarchical-context q+v adaptation, and combined context+decoder q+v adaptation. This is an experiment definition, not a production recommendation.
+
+Example:
+
+```bash
+python scripts/compound_lora_sweep.py \
+  --base-checkpoint /path/to/a2/model.pt \
+  --base-id orbitune-a2-512-research-nc \
+  --train-jsonl /path/to/adapter-train.jsonl \
+  --validation-jsonl /path/to/adapter-validation.jsonl \
+  --spec experiments/compound_lora_a2_screen_v1.json \
+  --output-dir runs/a2-lora-screen-v1 \
+  --steps 1000 \
+  --batch-size 4 \
+  --seq-len 128 \
+  --validation-batches 16 \
+  --seed 17 \
+  --device cuda
+```
+
+Every candidate is launched with the same Base bytes, train/validation files, seed, optimization settings, step count and validation protocol. Because LoRA `B` is zero-initialized, the initial validation loss must agree across candidates; the sweep fails if that invariant is violated. The summary records exact Base/data/spec hashes, resolved targets, Adapter SHA-256, trainable parameter count, initial/final validation loss and a deterministic ML-only ranking.
+
+The output `sweep.json` is deliberately marked:
+
+```text
+status = experimental_ml_screen
+preference_claim = false
+```
+
+A lower held-out loss is not proof that listeners prefer the music. The leading candidates must advance to generated-MIDI structural checks and blinded human preference evaluation before any target/rank/scaling choice is frozen.
+
 ## Output
 
-A successful run writes:
+A successful single-candidate run writes:
 
 ```text
 runs/compound-lora-smoke/
@@ -140,10 +175,14 @@ Changing Base/LoRA variant in the PWA starts a new stream. Reusing recurrent str
 Run the bounded CPU tests with:
 
 ```bash
-python -m pytest -q tests/test_compound_lora.py tests/test_compound_lora_merge.py tests/test_compound_web_release.py
+python -m pytest -q \
+  tests/test_compound_lora.py \
+  tests/test_compound_lora_merge.py \
+  tests/test_compound_lora_sweep.py \
+  tests/test_compound_web_release.py
 ```
 
-Coverage includes no-op injection, trainable-parameter scope, Base immutability, Safetensors save/reload, Base-SHA rejection, tiny end-to-end SFT invocation, wrapper-to-merged numerical parity, clean-model reload and strict `lora-premerged` Web release aggregation.
+Coverage includes no-op injection, trainable-parameter scope, Base immutability, Safetensors save/reload, Base-SHA rejection, tiny end-to-end SFT invocation, controlled sweep reproducibility/invariants, wrapper-to-merged numerical parity, clean-model reload and strict `lora-premerged` Web release aggregation.
 
 ## Relationship to future reward-guided training
 
