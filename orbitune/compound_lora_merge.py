@@ -33,7 +33,7 @@ def merge_lora_linear(module: LoRALinear) -> nn.Linear:
         base(x) + scaling * B(A(x)).
 
     Therefore the exact merged weight is ``W + scaling * (B @ A)`` while
-    the Base bias is unchanged.  This helper deliberately returns a normal
+    the Base bias is unchanged. This helper deliberately returns a normal
     ``nn.Linear`` so the existing Compound checkpoint and Web-export paths do
     not need a LoRA-specific runtime ABI.
     """
@@ -63,19 +63,17 @@ def merge_lora_linear(module: LoRALinear) -> nn.Linear:
 def merge_lora_inplace(model: nn.Module) -> list[str]:
     """Replace every experimental Compound LoRA wrapper with merged linears.
 
-    The model must be in evaluation mode.  A snapshot of module names is taken
-    before mutation so nested replacement cannot change iteration semantics.
-    The returned names are sorted and can be recorded as derivative provenance.
+    The model must be in evaluation mode. A sorted snapshot of module names is
+    taken before mutation so nested replacement cannot change iteration
+    semantics and provenance order stays deterministic for any layer count.
     """
 
     if model.training:
         raise ValueError("model must be in eval mode before deterministic LoRA merge")
-    modules = list(iter_lora_modules(model))
+    modules = sorted(iter_lora_modules(model), key=lambda item: item[0])
     if not modules:
         raise ValueError("model contains no experimental Compound LoRA modules")
     names = [name for name, _ in modules]
-    if names != sorted(names):
-        raise RuntimeError("LoRA module enumeration is not deterministic")
     for name, module in modules:
         _replace_module(model, name, merge_lora_linear(module))
     if any(isinstance(module, LoRALinear) for module in model.modules()):
