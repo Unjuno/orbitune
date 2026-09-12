@@ -1,5 +1,7 @@
 import {
   CompoundEventType,
+  DEFAULT_SEED_RECORD,
+  createInitialStreamState,
   dequantizeTime,
   validateCompoundRecord,
 } from './compound-runtime.mjs';
@@ -8,6 +10,30 @@ import { midiPitchToFrequency } from './compound-player.mjs';
 const TICKS_PER_QUARTER = 96;
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+export async function createStreamingGenerator(runtime, { primerRecords = [] } = {}) {
+  if (!runtime?.advance || !runtime?.sampleNextRecord) throw new Error('runtime with advance() and sampleNextRecord() is required');
+  let state = createInitialStreamState();
+  const seeds = (primerRecords.length ? primerRecords : [DEFAULT_SEED_RECORD]).map((record) => Array.from(record, Number));
+  let ctx = null;
+  for (const record of seeds) {
+    const advanced = await runtime.advance(record, state);
+    ctx = advanced.ctx;
+    state = advanced.state;
+  }
+  if (!ctx) throw new Error('streaming generation requires at least one seed record');
+  return {
+    get state() { return state; },
+    get ctx() { return ctx; },
+    async next(options = {}) {
+      const record = await runtime.sampleNextRecord(ctx, options);
+      const advanced = await runtime.advance(record, state);
+      ctx = advanced.ctx;
+      state = advanced.state;
+      return Array.from(record, Number);
+    },
+  };
+}
 
 export class BoundedRecordQueue {
   constructor(maxRecords = 512) {
@@ -124,7 +150,7 @@ export class InfiniteCompoundStream {
     idleDelayMs = 20,
     onRecord = null,
   } = {}) {
-    if (!runtime?.createStreamingGenerator) throw new Error('runtime with createStreamingGenerator() is required');
+    if (!runtime?.advance || !runtime?.sampleNextRecord) throw new Error('Compound runtime is required');
     if (!sink?.enqueue || !sink?.lookaheadSeconds) throw new Error('stream sink is required');
     if (!(targetLookaheadSeconds > 0)) throw new Error('targetLookaheadSeconds must be positive');
     this.runtime = runtime;
@@ -145,7 +171,7 @@ export class InfiniteCompoundStream {
     this.recent.clear();
     this.generated = 0;
     this.options = { temperature, topP, random, normal };
-    this.generator = await this.runtime.createStreamingGenerator({ primerRecords });
+    this.generator = await createStreamingGenerator(this.runtime, { primerRecords });
     if (this.sink.start) await this.sink.start();
     this.running = true;
     this.loopPromise = this.#loop();
