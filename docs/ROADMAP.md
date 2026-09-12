@@ -26,46 +26,63 @@ Implemented and used by the documented research model:
 - checkpoint/resume with optimizer and RNG state
 - large indexed Aria + GigaMIDI research corpus path
 
-The tokenizer identifier remains `orbitune-compound-v0-experimental` because it is part of the trained checkpoint ABI; changing the identifier would not retroactively change the model.
+The tokenizer identifier remains `orbitune-compound-v0-experimental` because it is part of the trained checkpoint ABI.
 
-## Milestone C — frozen Research-NC Aria+GigaMIDI V1 — DONE
-
-Documented frozen checkpoint:
+## Milestone C — historical Research-NC Aria+GigaMIDI V1 — DONE
 
 ```text
 model id       research-nc-aria-gigamidi-v1
-architecture   orbitune-compound-hierarchical-gpt-v1
 step           100,000
 parameters     8,857,250
 events_seen    409,600,000
 ```
 
-The indexed train corpus contains 4,069,137,373 active next-event pairs. That is corpus capacity, not unique training exposure. The sampler draws with replacement.
+The indexed train corpus contains 4,069,137,373 active next-event pairs. That is corpus capacity, not unique training exposure. The historical 100k checkpoint remains a separate documentation-only identity.
 
-The checkpoint remains documentation-only in the public repository while redistribution review is incomplete.
-
-## Milestone D — native Compound Web ABI and Pages runtime — DONE FOR SOURCE
+## Milestone D — native Compound Web ABI, PWA and A2 browser Base — DONE
 
 Completed:
 
-- rejected the incorrect stateless/teacher-forced V1 Web export as a production ABI
-- defined native V2 `stream` + `decoder_prefix` graph contract
-- native stream-state parity validation
-- sequential intra-event decoder parity validation
-- exact greedy native-vs-Web rollout validation in local export work
-- `onnxruntime-web`/WASM smoke in local export work
+- rejected the incorrect stateless/teacher-forced Web export
+- defined native V2 `stream` + `decoder_prefix` contract
+- fixed-capacity tensorized stream-state export
+- native stream-state parity regression
+- sequential eight-stage decoder-prefix parity
+- deterministic Python ONNX Runtime parity
+- exact native-vs-`onnxruntime-web`/WASM greedy record parity
+- reproducible A2 graph bytes across two independent exports
 - browser-side Python-compatible rounding, masks and quantization
 - Compound → Standard MIDI conversion
-- Play / Stop WebAudio preview
-- SHA-bound fail-closed model variant loader
-- pre-merged LoRA variant **concept**
-- GitHub Pages source deployment
+- bounded generate-while-listening WebAudio stream
+- finite MIDI preview/export
+- installable PWA shell
+- explicit SHA-verified offline graph caching
+- Base/`lora-premerged` variant selector contract
+- GitHub Pages publication of the immutable A2 Base
 
-The source runtime is public. The actual Compound ONNX model files are not public yet. The Base V2 parity evidence does not validate a future LoRA-merged artifact; any merged variant must repeat parity on its own exact bytes.
+Public application:
+
+```text
+https://unjuno.github.io/orbitune/
+```
+
+Reviewed A2 graph identities:
+
+```text
+stream.onnx
+  SHA256  27be3d6a4db726f52d7fc7e8df2e7a24be04ab5bd76da243bd8dd92712f2e107
+  bytes   27,241,782
+
+decoder_prefix.onnx
+  SHA256  abb8326680222aff32d6b2fcb45356c748c523216cb0d75d6a755e615f419225
+  bytes   8,620,888
+```
+
+Large ONNX binaries remain outside Git. The main Pages build reproduces them from the pinned checkpoint and deploys only if exact hashes and parity pass.
 
 ## Milestone E — A2-512 full-parameter Base continuation — DONE
 
-The long-run continuation from the immutable historical 100k checkpoint is complete. The selected result is frozen as `orbitune-a2-512-research-nc`, externally published, and recorded by the canonical [A2-512 release manifest](../models/research_nc_aria_gigamidi_a2_512_v1/manifest.json).
+The continuation from the immutable historical 100k checkpoint is complete. The selected result is frozen as `orbitune-a2-512-research-nc` and published.
 
 ```text
 model id                     orbitune-a2-512-research-nc
@@ -77,107 +94,104 @@ strict load                  PASS
 external publication         Hugging Face: Unjuno/orbitune-a2-512
 training source commit       8489870f81a1591515a98e58554e533fcac9d095
 source provenance            reachable public commit
+browser Base                 published through GitHub Pages
 ```
 
-The final event count is cumulative sampled exposure, not exact unique corpus coverage. The historical `research-nc-aria-gigamidi-v1` record remains unchanged.
+The final event count is cumulative sampled exposure, not exact unique corpus coverage. The historical V1 identity remains unchanged.
 
 ## Milestone F — final Base selection and evaluation — DONE FOR A2-512
 
-Completed for the A2-512 release:
+Completed:
 
-- verify exact checkpoint identity and loadability
-- compare held-out loss against earlier milestones
-- run fixed generated-MIDI regression batches
-- separate parse validity from musical-quality claims
-- retain useful intermediate milestones for comparison
-- selected and published an exact immutable checkpoint
-- retained Web ONNX export/parity as separate follow-up work
+- exact checkpoint identity/loadability
+- held-out validation protocol
+- fixed generated-MIDI regressions
+- immutable A2 model identity
+- source provenance recovery
+- native V2 Web export
+- exact graph identity freeze
+- Python ORT parity
+- exact WASM greedy parity
+- public PWA Base release
 
-Do not silently repoint an existing Base id or Adapter dependency to newer bytes.
+A later model must receive a new identity rather than silently repointing A2.
 
-## Milestone G — Compound LoRA / Adapter ABI — AFTER TARGET BASE FREEZE
+## Milestone G — Compound LoRA target/rank measurement and Adapter ABI — NEXT
 
 Policy is defined in [COMPOUND_LORA_POLICY.md](COMPOUND_LORA_POLICY.md).
 
 Required work:
 
-- keep Base pretraining full-parameter; LoRA is post-Base adaptation
-- enumerate candidate Compound target modules on the exact frozen Base
-- measure rank/target tradeoffs rather than copying legacy rank-4 `q_proj`/`v_proj`
-- freeze a new Compound Adapter ABI identifier
+- use the immutable A2 checkpoint as the comparison Base
+- enumerate candidate target modules
+- measure target-module × rank × scaling tradeoffs rather than copying legacy rank-4 `q_proj`/`v_proj`
+- compare Base versus SFT-LoRA under held-out and generated-MIDI evaluation
+- freeze a new Compound Adapter ABI only after measured selection
 - define strict Safetensors tensor/metadata layout
-- bind every Adapter to exact Base id + checkpoint SHA-256
-- train with Base parameters frozen
-- establish held-out and generated-MIDI Adapter evaluation
-- add concrete Compound contribution schema/CLI only after the ABI is frozen
+- bind every Adapter to exact A2 Base id + checkpoint SHA-256
+- keep Base parameters frozen during Adapter training
+- define concrete contribution schema/CLI after ABI freeze
 
-Community Compound Adapter binaries remain gated until then.
+Community production Compound Adapter binaries remain gated until then.
 
 ## Milestone H — Compound LoRA Web deployment — AFTER ADAPTER VALIDATION
 
-Planned initial deployment strategy:
+Initial deployment strategy:
 
 ```text
-frozen Base + validated Adapter
-→ local merge
+immutable A2 Base + validated Adapter
+→ merge locally
 → export matched V2 stream + decoder graphs
-→ repeat native/Web parity on the exact merged bytes
-→ only then publish as lora-premerged variant
+→ freeze exact merged graph hashes
+→ rerun native/Python ORT/WASM parity on those bytes
+→ publish as kind = "lora-premerged" with adapter_id
 ```
 
-No LoRA-specific merged Compound Web artifact has been validated or published yet. Dynamic browser LoRA is optional later work and requires its own validated packing/numerical/runtime contract.
+The PWA already supports the variant shape, but no production Compound LoRA Web artifact is published yet. Dynamic browser-side LoRA remains optional later work.
 
-## Milestone I — model / ONNX publication — PYTORCH BASE DONE; ONNX GATED
+## Milestone I — Base model / ONNX publication — DONE FOR A2
 
-The PyTorch A2-512 Base is published with its research-NC restriction, exact hash, source provenance and evaluation metadata. Before exposing a browser variant:
+The A2 PyTorch checkpoint and its reviewed V2 browser graph pair are published under the same research-NC/noncommercial lineage. Training data is not distributed.
 
-- complete redistribution review for every restricted source lineage
-- verify exact Base and exported artifact hashes/sizes
-- provide real versioned artifact URLs with browser-compatible CORS
-- attach model card/provenance/evaluation evidence
-- keep research-NC restrictions intact
-- run clean-environment generation and native/Web parity against the exact release bytes
+The deployment gate is reproducible and fail-closed: any checkpoint SHA, graph SHA/size, native parity, Python ORT parity, WebAssembly parity, rights-state or runtime-config mismatch prevents Pages deployment.
 
-The A2-512 Hugging Face release does not imply that an ONNX browser variant or training corpus has been released.
-
-## Milestone J — post-training necessity gate — OPTIONAL
+## Milestone J — human-preference post-training necessity gate — NEXT AFTER SFT BASELINE
 
 Policy learning is not mandatory by default.
 
 ```text
-Base pretraining
-→ held-out rollout evaluation
-→ high-quality SFT comparison if needed
-→ DPO only if a reliable preference/selection gap remains
+immutable A2 Base
+→ measured LoRA/SFT baseline
+→ human listening/preference dataset
+→ verify a real preference/selection gap
+→ DPO only if pairwise preference learning is justified
 → reward-based RL only after reward validity + anti-collapse tests
 ```
 
-The branch is allowed to terminate at `NOT REQUIRED`.
-
-See `docs/POST_TRAINING_RESEARCH.md` for the research rationale.
+The branch may terminate at `NOT REQUIRED` if SFT/selection is sufficient.
 
 ## Ongoing engineering issues
 
-Tracked separately from Base training:
+- issue #48: resolved; checkpoint TEMPO ABI remains `1..999 BPM`, Python/Web Standard MIDI explicitly reject unrepresentable `1..3 BPM`
+- issue #49: historical golden-fixture follow-up is superseded in practical release coverage by the reproducible A2 native greedy fixture generated during the current Web export workflow; the issue itself may still be triaged/closed separately
+- issue #52: future performance research, not a release blocker
+- PR #55: separate TBPTT Base-training experiment; do not mix into the frozen A2/post-training baseline
+- branch protection / always-running required-check aggregation remains separate repository hardening
+- real mobile/tablet/browser performance measurement remains required before making device-wide real-time guarantees
 
-- issue #48 is resolved in source by preserving the checkpoint ABI domain `1..999 BPM` while explicitly rejecting unrepresentable `1..3 BPM` at both Python and Web Standard MIDI serialization boundaries
-- issue #49 remains a non-blocking Web-release follow-up: import the exact native Compound Web golden fixture into CI
-- issue #52 remains future performance research; it is not an A2-512 Base release blocker
-- PR #55 is a separate TBPTT training experiment and must not be mixed into this frozen release baseline
-- corpus accounting/provenance limitations already recorded in the V1 model documentation
-- future public artifact/Adapter release review
-
-## Current critical-path summary
+## Current critical path
 
 ```text
 DONE     repository/publication safety foundation
 DONE     Compound hierarchical Base implementation
-DONE     Aria+GigaMIDI V1 frozen at step 100k
-DONE     native Compound V2 Web runtime source + Pages deployment
-DONE     A2-512 training, evaluation, immutable freeze and external publication
-DONE     exact training-source commit preserved on a public provenance branch
-THEN     freeze and validate Compound LoRA ABI
-THEN     optional Adapter/pre-merged variants after their own parity validation
-GATE     exact ONNX review/parity before browser model release
-OPTIONAL SFT/DPO/RL only if Base evaluation demonstrates a need
+DONE     historical V1 frozen at step 100k
+DONE     A2-512 training/evaluation/freeze/publication
+DONE     exact A2 source provenance
+DONE     native V2 ONNX export + deterministic graph identities
+DONE     exact native/Python ORT/WASM Base parity
+DONE     public installable A2 Compound PWA + bounded continuous stream
+NEXT     Compound LoRA target/rank sweep and Base-vs-SFT evaluation
+THEN     freeze Compound Adapter ABI only from measured evidence
+THEN     human-preference dataset + DPO/RL necessity gate
+THEN     publish validated pre-merged LoRA variants through the same Web gate
 ```
