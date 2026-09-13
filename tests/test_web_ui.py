@@ -1,18 +1,28 @@
 from pathlib import Path
 
 
-def test_web_ui_exposes_base_adapter_controls_without_seed():
+def test_web_root_exposes_latest_a2_compound_controls():
     html = Path("web/index.html").read_text(encoding="utf-8")
-    assert 'id="base"' in html
-    assert 'id="adapter"' in html
-    assert 'id="bpm"' in html
-    assert 'id="bars"' in html
-    assert 'id="temperature"' in html
-    assert 'id="generate"' in html
-    assert 'id="download"' in html
-    assert 'id="seed"' not in html
-    assert "onnxruntime-web" in html
-    assert "./app.mjs" in html
+    for dom_id in (
+        "compound-variant",
+        "compound-model-meta",
+        "compound-temperature",
+        "compound-top-p",
+        "compound-live-start",
+        "compound-live-pause",
+        "compound-live-stop",
+        "compound-offline",
+        "compound-install",
+        "compound-generate",
+        "compound-download",
+        "compound-status",
+    ):
+        assert f'id="{dom_id}"' in html
+    assert "A2-512" in html
+    assert "onnxruntime-web@1.29.0" in html
+    assert "./compound-app.mjs" in html
+    assert "./app.mjs" not in html
+    assert "Theory-REMI" not in html
 
 
 def test_pages_workflow_builds_base_and_adapter_assets():
@@ -23,7 +33,7 @@ def test_pages_workflow_builds_base_and_adapter_assets():
     assert "--web-root web" in workflow
 
 
-def test_browser_app_reads_both_registries():
+def test_legacy_browser_module_still_reads_both_registries():
     app = Path("web/app.mjs").read_text(encoding="utf-8")
     assert "./data/bases.json" in app
     assert "./data/adapters.json" in app

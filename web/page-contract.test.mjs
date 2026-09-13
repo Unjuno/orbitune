@@ -10,55 +10,60 @@ function assertIds(html, ids) {
   }
 }
 
-test('landing page preserves the legacy runtime DOM contract and shared product stylesheet', () => {
-  const html = read('./index.html');
-  assert.match(html, /href=["']\.\/orbitune-ui\.css["']/);
-  assertIds(html, [
-    'base',
-    'base-meta',
-    'adapter',
-    'adapter-meta',
-    'bpm',
-    'bars',
-    'temperature',
-    'temperature-value',
-    'generate',
-    'download',
-    'status',
-  ]);
-  assert.match(html, /href=["']\.\/compound\.html["']/);
-});
+const compoundIds = [
+  'compound-variant',
+  'compound-model-meta',
+  'compound-events',
+  'compound-temperature',
+  'compound-temperature-value',
+  'compound-top-p',
+  'compound-top-p-value',
+  'compound-generate',
+  'compound-play',
+  'compound-stop',
+  'compound-download',
+  'compound-live-start',
+  'compound-live-pause',
+  'compound-live-stop',
+  'compound-offline',
+  'compound-install',
+  'compound-storage-status',
+  'compound-status',
+];
 
-test('Infinite MIDI page preserves the Compound application DOM contract and accessibility hooks', () => {
-  const html = read('./compound.html');
+function assertCompoundAppPage(html) {
   assert.match(html, /rel=["']manifest["']\s+href=["']\.\/manifest\.webmanifest["']/);
   assert.match(html, /href=["']\.\/orbitune-ui\.css["']/);
-  assertIds(html, [
-    'compound-variant',
-    'compound-model-meta',
-    'compound-events',
-    'compound-temperature',
-    'compound-temperature-value',
-    'compound-top-p',
-    'compound-top-p-value',
-    'compound-generate',
-    'compound-play',
-    'compound-stop',
-    'compound-download',
-    'compound-live-start',
-    'compound-live-pause',
-    'compound-live-stop',
-    'compound-offline',
-    'compound-install',
-    'compound-storage-status',
-    'compound-status',
-  ]);
+  assert.match(html, /onnxruntime-web@1\.29\.0\/dist\/ort\.min\.js/);
+  assert.match(html, /src=["']\.\/compound-app\.mjs["']/);
+  assertIds(html, compoundIds);
   assert.match(html, /id=["']compound-status["'][^>]*aria-live=["']polite["']/);
+}
+
+test('root Pages entry point runs the latest published A2-512 Compound app, not the legacy runtime', () => {
+  const html = read('./index.html');
+  assertCompoundAppPage(html);
+  assert.match(html, /A2-512/);
+  assert.doesNotMatch(html, /src=["']\.\/app\.mjs["']/);
+  assert.doesNotMatch(html, /Theory-REMI/);
 });
 
-test('PWA shell revisions and caches the shared UI asset', () => {
+test('compatibility Compound URL preserves the same application DOM contract', () => {
+  const html = read('./compound.html');
+  assertCompoundAppPage(html);
+});
+
+test('PWA installs and starts at the root A2 app', () => {
+  const manifest = JSON.parse(read('./manifest.webmanifest'));
+  assert.equal(manifest.id, './');
+  assert.equal(manifest.start_url, './');
+  assert.match(manifest.description, /A2-512/);
+});
+
+test('PWA shell revisions and caches the root and shared UI assets', () => {
   const serviceWorker = read('./sw.js');
-  assert.match(serviceWorker, /orbitune-shell-v2/);
+  assert.match(serviceWorker, /orbitune-shell-v3/);
+  assert.match(serviceWorker, /'\.\/'/);
   assert.match(serviceWorker, /'\.\/orbitune-ui\.css'/);
   assert.match(serviceWorker, /'\.\/index\.html'/);
   assert.match(serviceWorker, /'\.\/compound\.html'/);

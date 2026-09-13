@@ -4,147 +4,173 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#07080c" />
-  <meta name="description" content="Orbitune is a local-first infinite MIDI generator powered by the A2-512 Compound model." />
-  <title>Orbitune — Infinite local MIDI</title>
+  <meta name="description" content="Orbitune Infinite MIDI runs the latest published A2-512 Compound model locally in your browser for continuous generated music." />
+  <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./orbitune.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./orbitune-ui.css" />
+  <title>Orbitune Infinite MIDI</title>
 </head>
 <body>
   <div class="shell">
     <header class="site-header">
-      <a class="brand" href="./" aria-label="Orbitune home">
+      <a class="brand" href="./" aria-label="Orbitune Infinite MIDI">
         <span class="brand-mark" aria-hidden="true">O</span>
         <span>Orbitune</span>
-        <span class="brand-meta">local generative music</span>
+        <span class="brand-meta">Infinite MIDI</span>
       </a>
       <nav class="header-actions" aria-label="Primary">
+        <span class="badge">latest published Base · A2-512</span>
         <a class="header-link secondary-link" href="https://github.com/Unjuno/orbitune">GitHub</a>
-        <a class="header-link" href="./compound.html">Open app</a>
       </nav>
     </header>
 
     <main>
-      <section class="hero" aria-labelledby="hero-title">
+      <section class="hero compact" aria-labelledby="app-title">
         <div>
-          <p class="eyebrow">A2-512 · local-first · browser inference</p>
-          <h1 id="hero-title"><span class="gradient-text">Music that keeps going.</span></h1>
-          <p class="lede">Orbitune generates MIDI on your device as you listen. The Compound runtime carries a bounded musical state forward, so the stream can continue without keeping an ever-growing song history.</p>
-          <div class="cta-row">
-            <a class="button primary" href="./compound.html">Launch Infinite MIDI</a>
-            <a class="button secondary" href="https://github.com/Unjuno/orbitune">Explore the source</a>
-          </div>
-          <div class="badge-row" aria-label="Runtime capabilities">
+          <p class="eyebrow">A2-512 · research/non-commercial · on-device</p>
+          <h1 id="app-title"><span class="gradient-text">Infinite MIDI</span></h1>
+          <p class="lede">Start the latest published Orbitune Base and listen while it composes. Generation runs locally in the browser and carries bounded musical state forward instead of retaining an ever-growing song history.</p>
+          <div class="badge-row" aria-label="Application properties">
             <span class="badge">A2-512 Base</span>
-            <span class="badge">ONNX Runtime Web</span>
-            <span class="badge">PWA + offline cache</span>
-            <span class="badge">Research-NC</span>
+            <span class="badge">SHA-verified ONNX</span>
+            <span class="badge">ONNX Runtime Web 1.29.0</span>
+            <span class="badge">Installable PWA</span>
+            <span class="badge">Offline-ready</span>
           </div>
         </div>
 
-        <div class="hero-visual" aria-label="Animated representation of an endless generated music signal">
+        <div class="hero-visual" aria-hidden="true">
           <div class="signal-card">
-            <div class="signal-topline"><span>orbitune / live</span><span>local</span></div>
-            <div class="signal" aria-hidden="true">
-              <span class="signal-bar" style="height:36%"></span><span class="signal-bar" style="height:58%"></span><span class="signal-bar" style="height:82%"></span><span class="signal-bar" style="height:44%"></span><span class="signal-bar" style="height:72%"></span><span class="signal-bar" style="height:94%"></span><span class="signal-bar" style="height:48%"></span><span class="signal-bar" style="height:68%"></span><span class="signal-bar" style="height:88%"></span><span class="signal-bar" style="height:55%"></span><span class="signal-bar" style="height:76%"></span><span class="signal-bar" style="height:39%"></span><span class="signal-bar" style="height:84%"></span><span class="signal-bar" style="height:62%"></span><span class="signal-bar" style="height:96%"></span><span class="signal-bar" style="height:51%"></span><span class="signal-bar" style="height:74%"></span><span class="signal-bar" style="height:43%"></span>
+            <div class="signal-topline"><span>A2-512 / stream</span><span>state → future</span></div>
+            <div class="signal">
+              <span class="signal-bar" style="height:30%"></span><span class="signal-bar" style="height:47%"></span><span class="signal-bar" style="height:79%"></span><span class="signal-bar" style="height:60%"></span><span class="signal-bar" style="height:93%"></span><span class="signal-bar" style="height:52%"></span><span class="signal-bar" style="height:71%"></span><span class="signal-bar" style="height:42%"></span><span class="signal-bar" style="height:88%"></span><span class="signal-bar" style="height:67%"></span><span class="signal-bar" style="height:96%"></span><span class="signal-bar" style="height:48%"></span><span class="signal-bar" style="height:74%"></span><span class="signal-bar" style="height:58%"></span><span class="signal-bar" style="height:84%"></span><span class="signal-bar" style="height:38%"></span>
             </div>
             <div class="signal-bottom">
-              <div class="signal-stat"><strong>Bounded</strong><span>state</span></div>
-              <div class="signal-stat"><strong>Verified</strong><span>model bytes</span></div>
-              <div class="signal-stat"><strong>Endless</strong><span>stream</span></div>
+              <div class="signal-stat"><strong>Local</strong><span>inference</span></div>
+              <div class="signal-stat"><strong>12 sec</strong><span>look-ahead target</span></div>
+              <div class="signal-stat"><strong>Resettable</strong><span>trajectory</span></div>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="section" aria-labelledby="how-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Designed for listening, not waiting</p>
-            <h2 id="how-title">Generate. Hear. Continue.</h2>
-          </div>
-          <p>The published A2-512 Base runs locally in the browser. Future reviewed LoRA variants use the same Base-bound Web runtime rather than a separate playback stack.</p>
-        </div>
-        <div class="feature-grid">
-          <article class="feature-card">
-            <span class="feature-index">01</span>
-            <h3>Stream while it composes</h3>
-            <p>Generation advances in small batches while WebAudio schedules a bounded look-ahead buffer. You do not wait for a whole song to finish.</p>
-          </article>
-          <article class="feature-card">
-            <span class="feature-index">02</span>
-            <h3>Keep the model local</h3>
-            <p>ONNX graph bytes are SHA-256 verified before inference. The PWA can cache the reviewed model and runtime dependencies for offline use.</p>
-          </article>
-          <article class="feature-card">
-            <span class="feature-index">03</span>
-            <h3>Change the future, not the past</h3>
-            <p>The stream carries compressed model state forward. Stop or switch variants to begin a new trajectory; old music is not reconstructed from state alone.</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="section legacy-wrap" aria-labelledby="legacy-title">
-        <div class="section-heading">
-          <div>
-            <span class="legacy-note">Legacy reference surface</span>
-            <h2 id="legacy-title">Theory-REMI lab</h2>
-          </div>
-          <p>The controls below preserve the older Base + Adapter reference path. The current Compound A2-512 experience lives in Infinite MIDI.</p>
-        </div>
-
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h3>Legacy generator</h3>
-              <p>Repository-managed Base models and LoRA adapters.</p>
-            </div>
-          </div>
-          <div class="panel-body">
-            <div class="control-grid">
-              <div class="field">
-                <label for="base">Base</label>
-                <select id="base"></select>
-                <div id="base-meta" class="model-meta">Loading Base registry…</div>
+      <section class="app-layout" aria-label="Infinite MIDI controls">
+        <div class="app-main">
+          <section class="panel app-primary panel-accent" aria-labelledby="stream-title">
+            <div class="stream-intro">
+              <div>
+                <p class="eyebrow">Primary mode</p>
+                <h2 id="stream-title">Listen while it composes.</h2>
+                <p>Start once, then let the generator stay slightly ahead of playback. Stop resets the carried state; a new start begins a new trajectory.</p>
               </div>
-              <div class="field">
-                <label for="adapter">Adapter</label>
-                <select id="adapter"><option value="">Base only</option></select>
-                <div id="adapter-meta" class="model-meta">Loading Adapter registry…</div>
-              </div>
+              <div class="live-orb" aria-hidden="true"></div>
             </div>
 
             <div class="control-grid">
               <div class="field">
-                <label for="bpm">BPM</label>
-                <input id="bpm" type="number" min="40" max="220" value="84" inputmode="numeric" />
+                <label for="compound-temperature">Temperature <span id="compound-temperature-value" class="range-value">0.85</span></label>
+                <input id="compound-temperature" type="range" min="0" max="1.20" step="0.05" value="0.85" />
               </div>
               <div class="field">
-                <label for="bars">Length</label>
-                <select id="bars"><option value="4">4 bars</option><option value="8" selected>8 bars</option><option value="16">16 bars</option></select>
+                <label for="compound-top-p">Top-p <span id="compound-top-p-value" class="range-value">0.92</span></label>
+                <input id="compound-top-p" type="range" min="0.10" max="1" step="0.01" value="0.92" />
               </div>
             </div>
 
-            <div class="field">
-              <label for="temperature">Temperature <span id="temperature-value" class="range-value">0.85</span></label>
-              <input id="temperature" type="range" min="0.60" max="1.20" step="0.05" value="0.85" />
+            <div class="action-grid">
+              <button id="compound-live-start" class="primary" type="button" disabled>Start infinite stream</button>
+              <button id="compound-live-pause" class="secondary" type="button" disabled>Pause stream</button>
+              <button id="compound-live-stop" class="secondary" type="button" disabled>Stop / reset</button>
             </div>
+          </section>
 
-            <div class="action-grid two">
-              <button id="generate" type="button" disabled>Generate MIDI</button>
-              <a id="download" class="button secondary" hidden>Download MIDI</a>
+          <section class="panel" aria-labelledby="model-title">
+            <div class="panel-header">
+              <div>
+                <h2 id="model-title">Model</h2>
+                <p>The latest reviewed A2-512 research Base is selected by default. Reviewed pre-merged LoRA variants will appear here when published.</p>
+              </div>
             </div>
-          </div>
-          <pre id="status" class="status-terminal" aria-live="polite">Loading runtime status…</pre>
+            <div class="panel-body">
+              <div class="field">
+                <label for="compound-variant">Generation variant</label>
+                <select id="compound-variant"></select>
+                <div id="compound-model-meta" class="model-meta">Loading A2-512 runtime status…</div>
+              </div>
+
+              <div class="divider"></div>
+
+              <div id="compound-storage-status" class="storage-meta">Checking offline model storage…</div>
+              <div class="action-grid two">
+                <button id="compound-offline" class="secondary" type="button" disabled>Download for offline use</button>
+                <button id="compound-install" class="secondary" type="button" hidden>Install Orbitune app</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="finite-title">
+            <div class="panel-header">
+              <div>
+                <h2 id="finite-title">Finite MIDI export</h2>
+                <p>Generate a bounded clip with the same A2-512 runtime, preview it locally, or save the MIDI file.</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="field">
+                <label for="compound-events">New events</label>
+                <select id="compound-events"><option>64</option><option selected>128</option><option>256</option><option>512</option></select>
+              </div>
+              <div class="action-grid one">
+                <button id="compound-generate" class="secondary" type="button" disabled>Generate MIDI</button>
+              </div>
+              <div class="action-grid">
+                <button id="compound-play" class="secondary" type="button" disabled>Play preview</button>
+                <button id="compound-stop" class="secondary" type="button" disabled>Stop preview</button>
+                <a id="compound-download" class="button secondary" hidden>Download MIDI</a>
+              </div>
+            </div>
+          </section>
         </div>
+
+        <aside class="app-sidebar">
+          <section class="panel status-panel" aria-labelledby="status-title">
+            <div class="panel-header">
+              <div>
+                <span class="status-kicker">runtime</span>
+                <h3 id="status-title">Session status</h3>
+              </div>
+            </div>
+            <pre id="compound-status" class="status-terminal" aria-live="polite">Loading A2-512 runtime status…</pre>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3>What runs here</h3>
+                <p>This public app intentionally follows the newest reviewed non-commercial Base release.</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <ul class="info-list">
+                <li>Current Base: Orbitune A2-512 research/non-commercial checkpoint.</li>
+                <li>Generation and playback happen locally through ONNX Runtime Web/WASM.</li>
+                <li>Model bytes are SHA-256 verified before inference and can be cached for offline use.</li>
+                <li>The model carries fixed-size local, hierarchical, and recurrent state rather than the complete song history.</li>
+                <li>Changing Base/LoRA variants begins a fresh stream; recurrent state is not reused across variants.</li>
+              </ul>
+            </div>
+          </section>
+        </aside>
       </section>
     </main>
 
     <footer class="site-footer">
-      <span>Orbitune · local-first symbolic music generation</span>
-      <span class="footer-links"><a href="https://github.com/Unjuno/orbitune">Source</a><a href="./compound.html">Infinite MIDI</a></span>
+      <span>Orbitune A2-512 · research/non-commercial model lineage</span>
+      <span class="footer-links"><a href="./compound.html">Compatibility URL</a><a href="https://github.com/Unjuno/orbitune">Source</a></span>
     </footer>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-  <script type="module" src="./app.mjs"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.min.js"></script>
+  <script type="module" src="./compound-app.mjs"></script>
 </body>
 </html>
