@@ -3,72 +3,171 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#111111" />
+  <meta name="theme-color" content="#07080c" />
+  <meta name="description" content="Orbitune Infinite MIDI runs the A2-512 Compound model locally in your browser for continuous generated music." />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./orbitune.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./orbitune-ui.css" />
   <title>Orbitune Infinite MIDI</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, sans-serif; margin: 0 auto; padding: 1.25rem; max-width: 760px; }
-    label { display: block; margin-top: 1rem; font-weight: 650; }
-    input, select, button, a.button { width: 100%; box-sizing: border-box; padding: 0.8rem; margin-top: 0.35rem; font: inherit; }
-    button, a.button { cursor: pointer; font-weight: 700; text-align: center; }
-    button:disabled { cursor: not-allowed; opacity: 0.55; }
-    a.button { display: block; text-decoration: none; border: 1px solid currentColor; border-radius: 4px; }
-    .card { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 16px; padding: 1.1rem; margin-bottom: 1rem; }
-    .muted { opacity: 0.72; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
-    .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin-top: 1rem; }
-    .offline-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
-    pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; border-radius: 10px; background: color-mix(in srgb, currentColor 8%, transparent); }
-    @media (max-width: 620px) { .row, .actions, .offline-actions { grid-template-columns: 1fr; } }
-  </style>
 </head>
 <body>
-  <p><a href="./">← Legacy Theory-REMI page</a></p>
-  <h1>Orbitune Infinite MIDI</h1>
-  <p class="muted">Local-first Compound generation. A continuous stream keeps only bounded model/playback state instead of retaining the full musical history.</p>
+  <div class="shell">
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Orbitune home">
+        <span class="brand-mark" aria-hidden="true">O</span>
+        <span>Orbitune</span>
+        <span class="brand-meta">Infinite MIDI</span>
+      </a>
+      <nav class="header-actions" aria-label="Primary">
+        <a class="header-link secondary-link" href="https://github.com/Unjuno/orbitune">GitHub</a>
+        <a class="header-link" href="./">About</a>
+      </nav>
+    </header>
 
-  <section class="card">
-    <h2>Model</h2>
-    <label for="compound-variant">Base / pre-merged LoRA variant</label>
-    <select id="compound-variant"></select>
-    <div id="compound-model-meta" class="muted">Loading runtime status…</div>
-    <div id="compound-storage-status" class="muted">Checking offline model storage…</div>
-    <div class="offline-actions">
-      <button id="compound-offline" type="button" disabled>Download for offline use</button>
-      <button id="compound-install" type="button" hidden>Install Orbitune app</button>
-    </div>
-  </section>
+    <main>
+      <section class="hero compact" aria-labelledby="app-title">
+        <div>
+          <p class="eyebrow">A2-512 · on-device · continuous generation</p>
+          <h1 id="app-title"><span class="gradient-text">Infinite MIDI</span></h1>
+          <p class="lede">Start a local stream and listen while Orbitune composes the next events. The browser carries only bounded musical state and a short playback look-ahead.</p>
+          <div class="badge-row" aria-label="Application properties">
+            <span class="badge">SHA-verified ONNX</span>
+            <span class="badge">WASM runtime</span>
+            <span class="badge">Installable PWA</span>
+            <span class="badge">Offline-ready</span>
+          </div>
+        </div>
 
-  <section class="card">
-    <h2>Infinite stream</h2>
-    <p class="muted">Generate while listening. Stop discards the carried generation state; the previous stream cannot be reconstructed unless it was explicitly recorded elsewhere.</p>
-    <div class="row">
-      <div><label for="compound-temperature">Temperature: <span id="compound-temperature-value">0.85</span></label><input id="compound-temperature" type="range" min="0" max="1.20" step="0.05" value="0.85" /></div>
-      <div><label for="compound-top-p">Top-p: <span id="compound-top-p-value">0.92</span></label><input id="compound-top-p" type="range" min="0.10" max="1" step="0.01" value="0.92" /></div>
-    </div>
-    <div class="actions">
-      <button id="compound-live-start" type="button" disabled>Start infinite stream</button>
-      <button id="compound-live-pause" type="button" disabled>Pause stream</button>
-      <button id="compound-live-stop" type="button" disabled>Stop / reset</button>
-    </div>
-  </section>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="signal-card">
+            <div class="signal-topline"><span>A2-512 / stream</span><span>state → future</span></div>
+            <div class="signal">
+              <span class="signal-bar" style="height:30%"></span><span class="signal-bar" style="height:47%"></span><span class="signal-bar" style="height:79%"></span><span class="signal-bar" style="height:60%"></span><span class="signal-bar" style="height:93%"></span><span class="signal-bar" style="height:52%"></span><span class="signal-bar" style="height:71%"></span><span class="signal-bar" style="height:42%"></span><span class="signal-bar" style="height:88%"></span><span class="signal-bar" style="height:67%"></span><span class="signal-bar" style="height:96%"></span><span class="signal-bar" style="height:48%"></span><span class="signal-bar" style="height:74%"></span><span class="signal-bar" style="height:58%"></span><span class="signal-bar" style="height:84%"></span><span class="signal-bar" style="height:38%"></span>
+            </div>
+            <div class="signal-bottom">
+              <div class="signal-stat"><strong>Local</strong><span>inference</span></div>
+              <div class="signal-stat"><strong>12 sec</strong><span>look-ahead target</span></div>
+              <div class="signal-stat"><strong>Resettable</strong><span>trajectory</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-  <section class="card">
-    <h2>Finite MIDI export</h2>
-    <label for="compound-events">New events</label>
-    <select id="compound-events"><option>64</option><option selected>128</option><option>256</option><option>512</option></select>
-    <button id="compound-generate" type="button" disabled>Generate MIDI</button>
-    <div class="actions">
-      <button id="compound-play" type="button" disabled>Play preview</button>
-      <button id="compound-stop" type="button" disabled>Stop preview</button>
-      <a id="compound-download" class="button" hidden>Download MIDI</a>
-    </div>
-  </section>
+      <section class="app-layout" aria-label="Infinite MIDI controls">
+        <div class="app-main">
+          <section class="panel app-primary panel-accent" aria-labelledby="stream-title">
+            <div class="stream-intro">
+              <div>
+                <p class="eyebrow">Primary mode</p>
+                <h2 id="stream-title">Listen while it composes.</h2>
+                <p>Start once, then let the generator stay slightly ahead of playback. Stop resets the carried state; a new start begins a new trajectory.</p>
+              </div>
+              <div class="live-orb" aria-hidden="true"></div>
+            </div>
 
-  <pre id="compound-status">Loading Compound runtime status…</pre>
-  <p class="muted">Preview audio uses a lightweight WebAudio synth. Published model variants remain SHA-bound to the immutable Base and keep the research-NC/noncommercial lineage.</p>
+            <div class="control-grid">
+              <div class="field">
+                <label for="compound-temperature">Temperature <span id="compound-temperature-value" class="range-value">0.85</span></label>
+                <input id="compound-temperature" type="range" min="0" max="1.20" step="0.05" value="0.85" />
+              </div>
+              <div class="field">
+                <label for="compound-top-p">Top-p <span id="compound-top-p-value" class="range-value">0.92</span></label>
+                <input id="compound-top-p" type="range" min="0.10" max="1" step="0.01" value="0.92" />
+              </div>
+            </div>
+
+            <div class="action-grid">
+              <button id="compound-live-start" class="primary" type="button" disabled>Start infinite stream</button>
+              <button id="compound-live-pause" class="secondary" type="button" disabled>Pause stream</button>
+              <button id="compound-live-stop" class="secondary" type="button" disabled>Stop / reset</button>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="model-title">
+            <div class="panel-header">
+              <div>
+                <h2 id="model-title">Model</h2>
+                <p>Choose the immutable Base or a reviewed pre-merged LoRA variant when available.</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="field">
+                <label for="compound-variant">Generation variant</label>
+                <select id="compound-variant"></select>
+                <div id="compound-model-meta" class="model-meta">Loading runtime status…</div>
+              </div>
+
+              <div class="divider"></div>
+
+              <div id="compound-storage-status" class="storage-meta">Checking offline model storage…</div>
+              <div class="action-grid two">
+                <button id="compound-offline" class="secondary" type="button" disabled>Download for offline use</button>
+                <button id="compound-install" class="secondary" type="button" hidden>Install Orbitune app</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="finite-title">
+            <div class="panel-header">
+              <div>
+                <h2 id="finite-title">Finite MIDI export</h2>
+                <p>Generate a bounded clip, preview it locally, or save the MIDI file.</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="field">
+                <label for="compound-events">New events</label>
+                <select id="compound-events"><option>64</option><option selected>128</option><option>256</option><option>512</option></select>
+              </div>
+              <div class="action-grid one">
+                <button id="compound-generate" class="secondary" type="button" disabled>Generate MIDI</button>
+              </div>
+              <div class="action-grid">
+                <button id="compound-play" class="secondary" type="button" disabled>Play preview</button>
+                <button id="compound-stop" class="secondary" type="button" disabled>Stop preview</button>
+                <a id="compound-download" class="button secondary" hidden>Download MIDI</a>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="app-sidebar">
+          <section class="panel status-panel" aria-labelledby="status-title">
+            <div class="panel-header">
+              <div>
+                <span class="status-kicker">runtime</span>
+                <h3 id="status-title">Session status</h3>
+              </div>
+            </div>
+            <pre id="compound-status" class="status-terminal" aria-live="polite">Loading Compound runtime status…</pre>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3>How this stream behaves</h3>
+                <p>Important properties of the current runtime.</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <ul class="info-list">
+                <li>Generation and playback happen locally through ONNX Runtime Web/WASM.</li>
+                <li>The model carries fixed-size local, hierarchical, and recurrent state rather than the complete song history.</li>
+                <li>Changing Base/LoRA variants begins a fresh stream; recurrent state is not reused across variants.</li>
+                <li>Preview audio uses a lightweight WebAudio synthesizer. MIDI export preserves the symbolic output.</li>
+              </ul>
+            </div>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>Orbitune A2-512 · research/non-commercial model lineage</span>
+      <span class="footer-links"><a href="./">About</a><a href="https://github.com/Unjuno/orbitune">Source</a></span>
+    </footer>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.min.js"></script>
   <script type="module" src="./compound-app.mjs"></script>
 </body>
