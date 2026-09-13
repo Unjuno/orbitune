@@ -1,9 +1,9 @@
 {
   "name": "Orbitune Infinite MIDI",
   "short_name": "Orbitune",
-  "description": "Local-first continuous MIDI generation with the Orbitune A2-512 Compound model and reviewed LoRA variants.",
-  "id": "./compound.html",
-  "start_url": "./compound.html",
+  "description": "Local-first continuous MIDI generation with the latest published Orbitune A2-512 research/non-commercial Base and reviewed LoRA variants.",
+  "id": "./",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#07080c",
