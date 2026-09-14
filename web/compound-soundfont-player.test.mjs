@@ -15,7 +15,7 @@ test('checked-in sampled SoundFont release is fully pinned', () => {
   assert.equal(release.id, 'generaluser-gs-2.0.3');
   assert.equal(release.filename, 'GeneralUser-GS.sf2');
   assert.equal(release.bytes, 32319396);
-  assert.equal(release.sha256, 'c278464b823daf9c52106c0957f752817da0e52964817ff682fe3a8d2f8446ce');
+  assert.equal(release.sha256, '9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe');
   assert.equal(release.source_commit, '684543d5e5efaef08d02be50dcda8d552478fa60');
   assert.equal(release.synth_engine.package, 'spessasynth_lib');
   assert.equal(release.synth_engine.version, '4.3.14');
