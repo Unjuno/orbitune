@@ -14,13 +14,17 @@ test('PWA manifest launches the root Compound A2 streaming application', async (
   assert.ok(manifest.icons.some((icon) => icon.src === './orbitune-512.png' && icon.sizes === '512x512'));
 });
 
-test('service worker precaches the root streaming shell and sampled playback engine', async () => {
+test('service worker precaches decoding, event monitor and sampled playback shell', async () => {
   const source = await readFile(new URL('./sw.js', import.meta.url), 'utf8');
   for (const asset of [
     './',
     './index.html',
     './compound.html',
     './compound-app.mjs',
+    './compound-decoding-runtime.mjs',
+    './decoding-presets.mjs',
+    './compound-event-monitor.mjs',
+    './event-monitor.css',
     './compound-stream.mjs',
     './compound-soundfont-player.mjs',
     './vendor/spessasynth-bundle.mjs',
