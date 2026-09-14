@@ -3,17 +3,14 @@ import { CompoundEventType } from './compound-runtime.mjs';
 import {
   annotateNotesWithGmState,
   midiPitchToFrequency,
-  scheduleGmVoice,
 } from './compound-gm-synth.mjs';
+import { SampledSoundFontSynth } from './compound-soundfont-player.mjs';
 
 export { midiPitchToFrequency };
 
 export function buildPreviewSchedule(events, { defaultBpm = 120 } = {}) {
   if (!(defaultBpm > 0)) throw new Error('defaultBpm must be positive');
   const canonical = canonicalizeCompoundEvents(events);
-  // Python's MIDI writer sorts same-tick TEMPO meta messages by encoded bytes.
-  // Faster tempos (smaller microseconds/qn) come first, so the slowest BPM is
-  // the final effective tempo at that tick. Mirror that for preview timing.
   const tempoEvents = canonical.filter((event) => event.type === CompoundEventType.TEMPO).sort((a, b) => a.step - b.step || b.a1 - a.a1);
   const segments = [{ step: 0, seconds: 0, bpm: defaultBpm }];
   for (const tempo of tempoEvents) {
@@ -44,32 +41,37 @@ export function buildPreviewSchedule(events, { defaultBpm = 120 } = {}) {
 }
 
 export class CompoundPreviewPlayer {
-  constructor({ audioContextFactory = () => new (globalThis.AudioContext || globalThis.webkitAudioContext)() } = {}) {
-    this.audioContextFactory = audioContextFactory;
-    this.context = null;
-    this.nodes = [];
+  constructor({ soundFontSynth = null, soundFontSynthFactory = () => new SampledSoundFontSynth() } = {}) {
+    this.soundFontSynth = soundFontSynth;
+    this.soundFontSynthFactory = soundFontSynthFactory;
+  }
+
+  get synth() {
+    this.soundFontSynth ||= this.soundFontSynthFactory();
+    return this.soundFontSynth;
+  }
+
+  async prepare() {
+    await this.synth.ensureStarted();
+    return this.synth.release;
   }
 
   async play(events) {
+    const noteCount = buildPreviewSchedule(events).length;
+    if (!noteCount) throw new Error('generated MIDI contains no NOTE events to preview');
     this.stop();
-    const schedule = buildPreviewSchedule(events);
-    if (!schedule.length) throw new Error('generated MIDI contains no NOTE events to preview');
-    this.context ||= this.audioContextFactory();
-    if (this.context.state === 'suspended') await this.context.resume();
-    const origin = this.context.currentTime + 0.05;
-    for (const note of schedule.slice(0, 4096)) {
-      const start = origin + note.start;
-      const end = Math.max(start + 0.02, origin + note.end);
-      this.nodes.push(...scheduleGmVoice(this.context, note, { start, end }));
-    }
-    return schedule.length;
+    const result = await this.synth.schedule(events);
+    return result.noteCount;
   }
 
   stop() {
-    for (const node of this.nodes) {
-      try { node.stop?.(); } catch {}
-      try { node.disconnect?.(); } catch {}
-    }
-    this.nodes = [];
+    if (!this.soundFontSynth) return;
+    this.soundFontSynth.stop({ hard: true });
+  }
+
+  destroy() {
+    if (!this.soundFontSynth) return;
+    this.soundFontSynth.destroy();
+    this.soundFontSynth = null;
   }
 }
