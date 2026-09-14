@@ -1,7 +1,7 @@
 {
   "name": "Orbitune Infinite MIDI",
   "short_name": "Orbitune",
-  "description": "Local-first continuous MIDI generation with the latest published Orbitune A2-512 research/non-commercial Base and reviewed LoRA variants.",
+  "description": "Local-first A2-512 continuous MIDI generation with SHA-verified GeneralUser GS 2.0.3 sampled SoundFont playback.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

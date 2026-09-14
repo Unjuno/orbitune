@@ -54,6 +54,44 @@ jobs:
       - name: Build Base and Adapter registries and browser assets
         run: python scripts/build_registry.py --bases bases --adapters adapters --web-root web
 
+      - name: Build pinned sampled SoundFont playback assets
+        run: |
+          npm install --no-save --package-lock=false \
+            spessasynth_lib@4.3.14 \
+            spessasynth_core@4.3.22 \
+            stb-vorbis@0.0.6 \
+            esbuild@0.28.2
+          mkdir -p web/vendor web/soundfonts web/third_party
+          ./node_modules/.bin/esbuild web/spessasynth-entry.mjs \
+            --bundle \
+            --minify \
+            --format=esm \
+            --platform=browser \
+            --outfile=web/vendor/spessasynth-bundle.mjs
+          cp node_modules/spessasynth_lib/dist/spessasynth_processor.min.js web/vendor/spessasynth_processor.min.js
+          SPESSA_LICENSE="$(find node_modules/spessasynth_lib -maxdepth 2 -type f \( -iname 'LICENSE*' -o -iname 'LICENCE*' \) | head -n 1)"
+          test -n "$SPESSA_LICENSE"
+          cp "$SPESSA_LICENSE" web/third_party/spessasynth_lib-LICENSE.txt
+
+          SF_URL="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); process.stdout.write(r.source_url)")"
+          SF_BYTES="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); process.stdout.write(String(r.bytes))")"
+          SF_SHA256="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); process.stdout.write(r.sha256)")"
+          SF_COMMIT="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); process.stdout.write(r.source_commit)")"
+          SF_SYNTH_VERSION="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); process.stdout.write(r.synth_engine.version)")"
+          test "$SF_COMMIT" = "684543d5e5efaef08d02be50dcda8d552478fa60"
+          test "$SF_SYNTH_VERSION" = "4.3.14"
+
+          curl --fail --location --retry 3 \
+            --output web/soundfonts/GeneralUser-GS.sf2 \
+            "$SF_URL"
+          ACTUAL_SF_BYTES="$(stat -c%s web/soundfonts/GeneralUser-GS.sf2)"
+          ACTUAL_SF_SHA256="$(sha256sum web/soundfonts/GeneralUser-GS.sf2 | awk '{print $1}')"
+          echo "GeneralUser-GS.sf2 bytes=$ACTUAL_SF_BYTES expected=$SF_BYTES"
+          echo "GeneralUser-GS.sf2 sha256=$ACTUAL_SF_SHA256 expected=$SF_SHA256"
+          test "$ACTUAL_SF_BYTES" = "$SF_BYTES"
+          test "$ACTUAL_SF_SHA256" = "$SF_SHA256"
+          echo "sampled SoundFont release metadata PASS"
+
       - name: Install deterministic Web export dependencies
         if: github.event_name != 'pull_request'
         run: |

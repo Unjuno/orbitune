@@ -4,8 +4,8 @@ import {
   annotateNotesWithGmState,
   createGmChannelState,
   midiPitchToFrequency,
-  scheduleGmVoice,
 } from './compound-gm-synth.mjs';
+import { SampledSoundFontSynth } from './compound-soundfont-player.mjs';
 
 export function buildStreamingChunkTiming(events, { defaultBpm = 120, channelState = null } = {}) {
   if (!(defaultBpm > 0)) throw new Error('defaultBpm must be positive');
@@ -50,61 +50,69 @@ export function buildStreamingChunkTiming(events, { defaultBpm = 120, channelSta
 }
 
 export class CompoundStreamingPreviewPlayer {
-  constructor({ audioContextFactory = () => new (globalThis.AudioContext || globalThis.webkitAudioContext)(), leadSeconds = 0.12 } = {}) {
-    this.audioContextFactory = audioContextFactory;
+  constructor({
+    soundFontSynth = null,
+    soundFontSynthFactory = () => new SampledSoundFontSynth(),
+    leadSeconds = 0.12,
+  } = {}) {
+    this.soundFontSynth = soundFontSynth;
+    this.soundFontSynthFactory = soundFontSynthFactory;
     this.leadSeconds = leadSeconds;
-    this.context = null;
     this.cursorTime = null;
-    this.scheduled = [];
     this.channelState = createGmChannelState();
   }
 
-  async ensureStarted() {
-    this.context ||= this.audioContextFactory();
-    if (this.context.state === 'suspended') await this.context.resume();
-    if (this.cursorTime == null) this.cursorTime = this.context.currentTime + this.leadSeconds;
-    return this.context;
+  get synth() {
+    this.soundFontSynth ||= this.soundFontSynthFactory();
+    return this.soundFontSynth;
   }
 
-  prune() {
-    if (!this.context) return;
-    const cutoff = this.context.currentTime - 0.25;
-    this.scheduled = this.scheduled.filter((entry) => entry.end > cutoff);
+  get context() { return this.soundFontSynth?.context || null; }
+
+  async ensureStarted() {
+    await this.synth.ensureStarted();
+    if (this.cursorTime == null) this.cursorTime = this.synth.context.currentTime + this.leadSeconds;
+    return this.synth.context;
   }
+
+  prune() {}
 
   bufferedSeconds() {
-    if (!this.context || this.cursorTime == null) return 0;
-    return Math.max(0, this.cursorTime - this.context.currentTime);
+    const context = this.context;
+    if (!context || this.cursorTime == null) return 0;
+    return Math.max(0, this.cursorTime - context.currentTime);
   }
 
   async append(events, { defaultBpm = 120 } = {}) {
     const context = await this.ensureStarted();
-    this.prune();
     const timing = buildStreamingChunkTiming(events, {
       defaultBpm,
       channelState: this.channelState,
     });
     this.channelState = timing.finalChannelState;
     const origin = Math.max(this.cursorTime ?? 0, context.currentTime + 0.04);
-    for (const note of timing.notes) {
-      const start = origin + note.start;
-      const end = Math.max(start + 0.02, origin + note.end);
-      const nodes = scheduleGmVoice(context, note, { start, end });
-      for (const node of nodes) this.scheduled.push({ node, end: end + 0.05 });
-    }
+    const sampled = await this.synth.schedule(events, { origin, defaultBpm });
     this.cursorTime = origin + timing.spanSeconds;
-    return { ...timing, scheduledNotes: timing.notes.length, bufferedSeconds: this.bufferedSeconds() };
+    return {
+      ...timing,
+      scheduledNotes: sampled.noteCount,
+      bufferedSeconds: this.bufferedSeconds(),
+      soundFont: sampled.release?.display_name || sampled.release?.id || null,
+    };
   }
 
-  async pause() { if (this.context?.state === 'running') await this.context.suspend(); }
-  async resume() { if (this.context?.state === 'suspended') await this.context.resume(); }
+  async pause() { await this.soundFontSynth?.pause(); }
+  async resume() { await this.soundFontSynth?.resume(); }
 
   stop() {
-    for (const entry of this.scheduled) {
-      try { entry.node.stop?.(); } catch {}
-      try { entry.node.disconnect?.(); } catch {}
-    }
-    this.scheduled = [];
+    this.soundFontSynth?.stop({ hard: true });
+    this.cursorTime = null;
+    this.channelState = createGmChannelState();
+  }
+
+  destroy() {
+    this.soundFontSynth?.destroy();
+    this.soundFontSynth = null;
     this.cursorTime = null;
     this.channelState = createGmChannelState();
   }
