@@ -14,9 +14,9 @@ test('PWA manifest launches the root Compound A2 streaming application', async (
   assert.ok(manifest.icons.some((icon) => icon.src === './orbitune-512.png' && icon.sizes === '512x512'));
 });
 
-test('service worker precaches the root streaming shell', async () => {
+test('service worker precaches the root streaming shell and GM-aware renderer', async () => {
   const source = await readFile(new URL('./sw.js', import.meta.url), 'utf8');
-  for (const asset of ['./', './index.html', './compound.html', './compound-app.mjs', './compound-stream.mjs', './compound-live-player.mjs', './model-cache.mjs', './orbitune-192.png', './orbitune-512.png']) {
+  for (const asset of ['./', './index.html', './compound.html', './compound-app.mjs', './compound-stream.mjs', './compound-gm-synth.mjs', './compound-live-player.mjs', './model-cache.mjs', './orbitune-192.png', './orbitune-512.png']) {
     assert.ok(source.includes(`'${asset}'`), `${asset} missing from service-worker shell`);
   }
 });
