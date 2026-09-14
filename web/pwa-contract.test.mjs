@@ -42,12 +42,17 @@ test('offline runtime assets are pinned to the same latest stable ORT Web versio
   assert.ok(ORT_OFFLINE_ASSETS.every((url) => url.includes(`onnxruntime-web@${ORT_VERSION}/dist/`)));
 });
 
-test('Pages workflow pins and verifies sampled playback dependencies and SoundFont bytes', async () => {
+test('Pages workflow pins sampled playback dependencies and verifies SF2 against release metadata', async () => {
   const workflow = await readFile(new URL('../.github/workflows/pages.yml', import.meta.url), 'utf8');
   assert.ok(workflow.includes('spessasynth_lib@4.3.14'));
   assert.ok(workflow.includes('spessasynth_core@4.3.22'));
   assert.ok(workflow.includes('esbuild@0.28.2'));
-  assert.ok(workflow.includes('684543d5e5efaef08d02be50dcda8d552478fa60/GeneralUser-GS.sf2'));
-  assert.ok(workflow.includes('c278464b823daf9c52106c0957f752817da0e52964817ff682fe3a8d2f8446ce'));
-  assert.ok(workflow.includes('32319396'));
+  assert.ok(workflow.includes("JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8'))"));
+  assert.ok(workflow.includes('SF_URL='));
+  assert.ok(workflow.includes('SF_BYTES='));
+  assert.ok(workflow.includes('SF_SHA256='));
+  assert.ok(workflow.includes('684543d5e5efaef08d02be50dcda8d552478fa60'));
+  assert.ok(workflow.includes('ACTUAL_SF_BYTES='));
+  assert.ok(workflow.includes('ACTUAL_SF_SHA256='));
+  assert.ok(workflow.includes('test "$ACTUAL_SF_SHA256" = "$SF_SHA256"'));
 });
