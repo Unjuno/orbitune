@@ -30,10 +30,10 @@
         <div>
           <p class="eyebrow">A2-512 · compatibility URL · on-device</p>
           <h1 id="app-title"><span class="gradient-text">Infinite MIDI</span></h1>
-          <p class="lede">This compatibility URL runs the same A2-512 application as the root page, including selectable decoding methods, separate structural/instrument exploration and a live view of the MIDI events the model emits.</p>
+          <p class="lede">This compatibility URL runs the same A2-512 application as the root page, including selectable decoding methods, separate structural/instrument exploration and an interactive piano-roll view of the MIDI the model emits.</p>
           <div class="badge-row" aria-label="Application properties">
             <span class="badge">Nucleus / top-k / min-p / hybrid</span>
-            <span class="badge">Live MIDI event monitor</span>
+            <span class="badge">Interactive DAW piano roll</span>
             <span class="badge">GeneralUser GS 2.0.3 sampled SF2</span>
             <span class="badge">SpessaSynth 4.3.14</span>
             <span class="badge">SHA-verified ONNX + SF2</span>
@@ -178,5 +178,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.min.js"></script>
   <script type="module" src="./compound-app.mjs"></script>
+  <script type="module" src="./daw-ux.mjs"></script>
 </body>
 </html>
