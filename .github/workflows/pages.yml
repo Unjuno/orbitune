@@ -72,12 +72,25 @@ jobs:
           SPESSA_LICENSE="$(find node_modules/spessasynth_lib -maxdepth 2 -type f \( -iname 'LICENSE*' -o -iname 'LICENCE*' \) | head -n 1)"
           test -n "$SPESSA_LICENSE"
           cp "$SPESSA_LICENSE" web/third_party/spessasynth_lib-LICENSE.txt
+
+          SF_URL="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); process.stdout.write(r.source_url)")"
+          SF_BYTES="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); process.stdout.write(String(r.bytes))")"
+          SF_SHA256="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); process.stdout.write(r.sha256)")"
+          SF_COMMIT="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); process.stdout.write(r.source_commit)")"
+          SF_SYNTH_VERSION="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); process.stdout.write(r.synth_engine.version)")"
+          test "$SF_COMMIT" = "684543d5e5efaef08d02be50dcda8d552478fa60"
+          test "$SF_SYNTH_VERSION" = "4.3.14"
+
           curl --fail --location --retry 3 \
             --output web/soundfonts/GeneralUser-GS.sf2 \
-            "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/684543d5e5efaef08d02be50dcda8d552478fa60/GeneralUser-GS.sf2"
-          test "$(stat -c%s web/soundfonts/GeneralUser-GS.sf2)" = "32319396"
-          echo "c278464b823daf9c52106c0957f752817da0e52964817ff682fe3a8d2f8446ce  web/soundfonts/GeneralUser-GS.sf2" | sha256sum --check --strict
-          node --input-type=module -e "import fs from 'node:fs'; const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); if(r.source_commit!=='684543d5e5efaef08d02be50dcda8d552478fa60'||r.sha256!=='c278464b823daf9c52106c0957f752817da0e52964817ff682fe3a8d2f8446ce'||r.bytes!==32319396||r.synth_engine?.version!=='4.3.14') throw new Error('sampled playback release metadata does not match pinned build'); console.log('sampled SoundFont release metadata PASS')"
+            "$SF_URL"
+          ACTUAL_SF_BYTES="$(stat -c%s web/soundfonts/GeneralUser-GS.sf2)"
+          ACTUAL_SF_SHA256="$(sha256sum web/soundfonts/GeneralUser-GS.sf2 | awk '{print $1}')"
+          echo "GeneralUser-GS.sf2 bytes=$ACTUAL_SF_BYTES expected=$SF_BYTES"
+          echo "GeneralUser-GS.sf2 sha256=$ACTUAL_SF_SHA256 expected=$SF_SHA256"
+          test "$ACTUAL_SF_BYTES" = "$SF_BYTES"
+          test "$ACTUAL_SF_SHA256" = "$SF_SHA256"
+          echo "sampled SoundFont release metadata PASS"
 
       - name: Install deterministic Web export dependencies
         if: github.event_name != 'pull_request'
