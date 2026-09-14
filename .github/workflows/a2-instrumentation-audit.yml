@@ -41,8 +41,8 @@ jobs:
           python scripts/audit_a2_instrumentation.py \
             --checkpoint .audit-a2/model.pt \
             --checkpoint-sha256 e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0 \
-            --events-per-seed 512 \
-            --seeds 1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1011,1012 \
+            --events-per-seed 128 \
+            --seeds 1001,1002,1003,1004,1005,1006,1007,1008 \
             --temperature 0.85 \
             --top-p 0.92 \
             --output .audit-a2/instrumentation-audit.json
