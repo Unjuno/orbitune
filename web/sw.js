@@ -1,12 +1,16 @@
-const SHELL_CACHE = 'orbitune-shell-v5';
+const SHELL_CACHE = 'orbitune-shell-v6';
 const RUNTIME_CACHE = 'orbitune-runtime-deps-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',
   './compound.html',
   './orbitune-ui.css',
+  './event-monitor.css',
   './compound-app.mjs',
   './compound-runtime.mjs',
+  './compound-decoding-runtime.mjs',
+  './decoding-presets.mjs',
+  './compound-event-monitor.mjs',
   './compound-stream.mjs',
   './compound-midi.mjs',
   './compound-gm-synth.mjs',
