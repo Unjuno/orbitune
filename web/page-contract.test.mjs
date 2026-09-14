@@ -14,10 +14,21 @@ const compoundIds = [
   'compound-variant',
   'compound-model-meta',
   'compound-events',
+  'compound-decoding-preset',
+  'compound-decoding-strategy',
   'compound-temperature',
   'compound-temperature-value',
+  'compound-structure-temperature',
+  'compound-structure-temperature-value',
   'compound-top-p',
   'compound-top-p-value',
+  'compound-top-k',
+  'compound-top-k-value',
+  'compound-min-p',
+  'compound-min-p-value',
+  'compound-event-summary',
+  'compound-channel-monitor',
+  'compound-event-log',
   'compound-generate',
   'compound-play',
   'compound-stop',
@@ -34,12 +45,17 @@ const compoundIds = [
 function assertCompoundAppPage(html) {
   assert.match(html, /rel=["']manifest["']\s+href=["']\.\/manifest\.webmanifest["']/);
   assert.match(html, /href=["']\.\/orbitune-ui\.css["']/);
+  assert.match(html, /href=["']\.\/event-monitor\.css["']/);
   assert.match(html, /onnxruntime-web@1\.29\.0\/dist\/ort\.min\.js/);
   assert.match(html, /src=["']\.\/compound-app\.mjs["']/);
   assert.match(html, /GeneralUser GS 2\.0\.3/);
   assert.match(html, /SpessaSynth 4\.3\.14/);
+  assert.match(html, /top-k/i);
+  assert.match(html, /min-p/i);
+  assert.match(html, /Structure\/instrument temperature/);
   assertIds(html, compoundIds);
   assert.match(html, /id=["']compound-status["'][^>]*aria-live=["']polite["']/);
+  assert.match(html, /id=["']compound-event-log["'][^>]*aria-live=["']polite["']/);
 }
 
 test('root Pages entry point runs the latest published A2-512 Compound app, not the legacy runtime', () => {
@@ -62,14 +78,18 @@ test('PWA installs and starts at the root A2 app', () => {
   assert.match(manifest.description, /A2-512/);
 });
 
-test('PWA shell revisions and packages the sampled playback engine without shell-caching the SF2', () => {
+test('PWA shell revisions and packages decoding, event monitor and sampled playback', () => {
   const serviceWorker = read('./sw.js');
-  assert.match(serviceWorker, /orbitune-shell-v5/);
+  assert.match(serviceWorker, /orbitune-shell-v6/);
   for (const asset of [
     './',
     './orbitune-ui.css',
+    './event-monitor.css',
     './index.html',
     './compound.html',
+    './compound-decoding-runtime.mjs',
+    './decoding-presets.mjs',
+    './compound-event-monitor.mjs',
     './compound-soundfont-player.mjs',
     './vendor/spessasynth-bundle.mjs',
     './vendor/spessasynth_processor.min.js',
