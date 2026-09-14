@@ -8,6 +8,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./orbitune.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./orbitune-ui.css" />
+  <link rel="stylesheet" href="./event-monitor.css" />
   <title>Orbitune Infinite MIDI</title>
 </head>
 <body>
@@ -29,27 +30,27 @@
         <div>
           <p class="eyebrow">A2-512 · research/non-commercial · on-device</p>
           <h1 id="app-title"><span class="gradient-text">Infinite MIDI</span></h1>
-          <p class="lede">Generate with the latest published Orbitune Base and hear the model's actual MIDI instrumentation through a sampled General MIDI SoundFont. Program changes, banks, controllers and channel-10 drums are sent to a real SF2 synthesizer instead of an oscillator approximation.</p>
+          <p class="lede">Generate with the latest published Orbitune Base and hear the model's actual MIDI instrumentation through a sampled General MIDI SoundFont. Decoding can now keep note generation conservative while leaving structural and instrument choices more exploratory.</p>
           <div class="badge-row" aria-label="Application properties">
             <span class="badge">A2-512 Base</span>
+            <span class="badge">Nucleus / top-k / min-p / hybrid</span>
+            <span class="badge">Live MIDI event monitor</span>
             <span class="badge">GeneralUser GS 2.0.3 sampled SF2</span>
             <span class="badge">SpessaSynth 4.3.14</span>
             <span class="badge">SHA-verified model + SoundFont</span>
-            <span class="badge">ONNX Runtime Web 1.29.0</span>
-            <span class="badge">PWA + offline cache</span>
           </div>
         </div>
 
         <div class="hero-visual" aria-hidden="true">
           <div class="signal-card">
-            <div class="signal-topline"><span>A2-512 / stream</span><span>sampled playback</span></div>
+            <div class="signal-topline"><span>A2-512 / stream</span><span>events → instruments</span></div>
             <div class="signal">
               <span class="signal-bar" style="height:30%"></span><span class="signal-bar" style="height:47%"></span><span class="signal-bar" style="height:79%"></span><span class="signal-bar" style="height:60%"></span><span class="signal-bar" style="height:93%"></span><span class="signal-bar" style="height:52%"></span><span class="signal-bar" style="height:71%"></span><span class="signal-bar" style="height:42%"></span><span class="signal-bar" style="height:88%"></span><span class="signal-bar" style="height:67%"></span><span class="signal-bar" style="height:96%"></span><span class="signal-bar" style="height:48%"></span><span class="signal-bar" style="height:74%"></span><span class="signal-bar" style="height:58%"></span><span class="signal-bar" style="height:84%"></span><span class="signal-bar" style="height:38%"></span>
             </div>
             <div class="signal-bottom">
               <div class="signal-stat"><strong>Local</strong><span>generation</span></div>
+              <div class="signal-stat"><strong>Visible</strong><span>MIDI events</span></div>
               <div class="signal-stat"><strong>Sampled</strong><span>SF2 playback</span></div>
-              <div class="signal-stat"><strong>Verified</strong><span>asset bytes</span></div>
             </div>
           </div>
         </div>
@@ -62,21 +63,54 @@
               <div>
                 <p class="eyebrow">Primary mode</p>
                 <h2 id="stream-title">Listen while it composes.</h2>
-                <p>Start once, then let the generator stay slightly ahead of playback. The first sampled playback may fetch the pinned 30.8 MiB SoundFont; its byte size and SHA-256 are checked before it enters the local cache.</p>
+                <p>Start once, then let the generator stay slightly ahead of playback. You can change decoding while the stream is running; the new settings affect future events without resetting the model state.</p>
               </div>
               <div class="live-orb" aria-hidden="true"></div>
             </div>
 
-            <div class="control-grid">
+            <div class="decoding-grid" aria-label="Decoding controls">
               <div class="field">
-                <label for="compound-temperature">Temperature <span id="compound-temperature-value" class="range-value">0.85</span></label>
-                <input id="compound-temperature" type="range" min="0" max="1.20" step="0.05" value="0.85" />
+                <label for="compound-decoding-preset">Decoding preset</label>
+                <select id="compound-decoding-preset">
+                  <option value="balanced" selected>Balanced nucleus</option>
+                  <option value="conservative">Stable notes / open instruments</option>
+                  <option value="exploratory">Exploratory</option>
+                  <option value="topk">Top-k</option>
+                  <option value="minp">Min-p</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="compound-decoding-strategy">Method</label>
+                <select id="compound-decoding-strategy">
+                  <option value="nucleus" selected>Nucleus / top-p</option>
+                  <option value="top-k">Top-k</option>
+                  <option value="min-p">Min-p</option>
+                  <option value="hybrid">Hybrid</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="compound-temperature">Note/control temperature <span id="compound-temperature-value" class="range-value">0.85</span></label>
+                <input id="compound-temperature" type="range" min="0" max="1.30" step="0.05" value="0.85" />
+              </div>
+              <div class="field">
+                <label for="compound-structure-temperature">Structure/instrument temperature <span id="compound-structure-temperature-value" class="range-value">1.05</span></label>
+                <input id="compound-structure-temperature" type="range" min="0" max="1.50" step="0.05" value="1.05" />
               </div>
               <div class="field">
                 <label for="compound-top-p">Top-p <span id="compound-top-p-value" class="range-value">0.92</span></label>
                 <input id="compound-top-p" type="range" min="0.10" max="1" step="0.01" value="0.92" />
               </div>
+              <div class="field">
+                <label for="compound-top-k">Top-k <span id="compound-top-k-value" class="range-value">0</span></label>
+                <input id="compound-top-k" type="range" min="0" max="64" step="1" value="0" />
+              </div>
+              <div class="field decoding-control-wide">
+                <label for="compound-min-p">Min-p <span id="compound-min-p-value" class="range-value">0.00</span></label>
+                <input id="compound-min-p" type="range" min="0" max="0.20" step="0.01" value="0" />
+              </div>
             </div>
+            <p class="decoding-note">Structure/instrument temperature is applied to event type, channel, PROGRAM and BANK decisions. Note/control temperature remains separate, so lowering note randomness does not have to force instrument selection into the same low-temperature regime.</p>
 
             <div class="action-grid">
               <button id="compound-live-start" class="primary" type="button" disabled>Start infinite stream</button>
@@ -113,7 +147,7 @@
             <div class="panel-header">
               <div>
                 <h2 id="finite-title">Finite MIDI export</h2>
-                <p>Generate a bounded clip with the same A2-512 runtime, hear it through the sampled SF2 bank, or save the exact symbolic MIDI file.</p>
+                <p>Generate a bounded clip with the same decoding settings, inspect exactly which MIDI events and instruments were emitted, hear it through the sampled SF2 bank, or save the symbolic MIDI file.</p>
               </div>
             </div>
             <div class="panel-body">
@@ -144,6 +178,21 @@
             <pre id="compound-status" class="status-terminal" aria-live="polite">Loading A2-512 runtime status…</pre>
           </section>
 
+          <section class="panel" aria-labelledby="event-monitor-title">
+            <div class="panel-header">
+              <div>
+                <span class="status-kicker">generated MIDI</span>
+                <h3 id="event-monitor-title">What the model is emitting</h3>
+                <p>Bounded live view of active channel/program state and the most recent generated events.</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div id="compound-event-summary" class="event-monitor-summary">events 0 · NOTE 0 · PROGRAM 0 · BANK 0 · CC 0</div>
+              <div id="compound-channel-monitor" class="event-monitor-channels"></div>
+              <div id="compound-event-log" class="event-monitor-log" aria-live="polite"></div>
+            </div>
+          </section>
+
           <section class="panel">
             <div class="panel-header">
               <div>
@@ -154,11 +203,10 @@
             <div class="panel-body">
               <ul class="info-list">
                 <li>Generation: Orbitune A2-512 research/non-commercial checkpoint through ONNX Runtime Web/WASM.</li>
+                <li>Decoding: selectable nucleus, top-k, min-p or hybrid filtering with separate structural/instrument temperature.</li>
                 <li>Playback: GeneralUser GS 2.0.3 SF2 through SpessaSynth 4.3.14 AudioWorklet synthesis.</li>
                 <li>PROGRAM, BANK, CC, pedal, pitch bend, pressure and MIDI channel 10 percussion are sent to the SoundFont synthesizer as MIDI messages.</li>
-                <li>Both ONNX model graphs and the SoundFont are bound to reviewed SHA-256 values before use.</li>
-                <li>The model carries bounded recurrent/context state rather than an ever-growing song history.</li>
-                <li>Changing Base/LoRA variants begins a fresh stream; recurrent state is not reused across variants.</li>
+                <li>The live monitor keeps only a bounded recent event list; the model runtime still uses bounded recurrent/context state.</li>
               </ul>
             </div>
           </section>
