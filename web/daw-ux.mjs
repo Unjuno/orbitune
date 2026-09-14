@@ -132,12 +132,14 @@ export function installDawUx() {
     return result;
   };
 
-  // compound-app creates the monitor before this enhancement module executes.
-  // Relocate its already-rendered panel immediately; future renders are handled
-  // by the prototype hook above.
+  // compound-app creates and initially renders the monitor before this module.
+  // Move that already-rendered panel now, then trigger one of its existing
+  // control listeners so the patched render path applies immediately.
   if (typeof document !== 'undefined') {
     ensureUxStyles();
     relocatePanel();
+    const zoom = document.getElementById('compound-daw-zoom');
+    if (zoom) zoom.dispatchEvent(new Event('change'));
   }
 }
 
