@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DECODING_PRESETS, decodingPreset } from './decoding-presets.mjs';
 
-test('decoding presets separate instrument exploration from note temperature', () => {
+test('decoding presets separate structural exploration from note temperature', () => {
   assert.equal(DECODING_PRESETS.conservative.temperature, 0.58);
-  assert.ok(DECODING_PRESETS.conservative.instrumentTemperature > DECODING_PRESETS.conservative.temperature);
+  assert.ok(DECODING_PRESETS.conservative.structureTemperature > DECODING_PRESETS.conservative.temperature);
   assert.equal(DECODING_PRESETS.topk.strategy, 'top-k');
   assert.equal(DECODING_PRESETS.minp.strategy, 'min-p');
 });
