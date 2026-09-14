@@ -54,6 +54,31 @@ jobs:
       - name: Build Base and Adapter registries and browser assets
         run: python scripts/build_registry.py --bases bases --adapters adapters --web-root web
 
+      - name: Build pinned sampled SoundFont playback assets
+        run: |
+          npm install --no-save --package-lock=false \
+            spessasynth_lib@4.3.14 \
+            spessasynth_core@4.3.22 \
+            stb-vorbis@0.0.6 \
+            esbuild@0.28.2
+          mkdir -p web/vendor web/soundfonts web/third_party
+          ./node_modules/.bin/esbuild web/spessasynth-entry.mjs \
+            --bundle \
+            --minify \
+            --format=esm \
+            --platform=browser \
+            --outfile=web/vendor/spessasynth-bundle.mjs
+          cp node_modules/spessasynth_lib/dist/spessasynth_processor.min.js web/vendor/spessasynth_processor.min.js
+          SPESSA_LICENSE="$(find node_modules/spessasynth_lib -maxdepth 2 -type f \( -iname 'LICENSE*' -o -iname 'LICENCE*' \) | head -n 1)"
+          test -n "$SPESSA_LICENSE"
+          cp "$SPESSA_LICENSE" web/third_party/spessasynth_lib-LICENSE.txt
+          curl --fail --location --retry 3 \
+            --output web/soundfonts/GeneralUser-GS.sf2 \
+            "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/684543d5e5efaef08d02be50dcda8d552478fa60/GeneralUser-GS.sf2"
+          test "$(stat -c%s web/soundfonts/GeneralUser-GS.sf2)" = "32319396"
+          echo "c278464b823daf9c52106c0957f752817da0e52964817ff682fe3a8d2f8446ce  web/soundfonts/GeneralUser-GS.sf2" | sha256sum --check --strict
+          node --input-type=module -e "import fs from 'node:fs'; const r=JSON.parse(fs.readFileSync('web/soundfont-release.json','utf8')); if(r.source_commit!=='684543d5e5efaef08d02be50dcda8d552478fa60'||r.sha256!=='c278464b823daf9c52106c0957f752817da0e52964817ff682fe3a8d2f8446ce'||r.bytes!==32319396||r.synth_engine?.version!=='4.3.14') throw new Error('sampled playback release metadata does not match pinned build'); console.log('sampled SoundFont release metadata PASS')"
+
       - name: Install deterministic Web export dependencies
         if: github.event_name != 'pull_request'
         run: |
