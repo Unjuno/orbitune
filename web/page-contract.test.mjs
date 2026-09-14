@@ -60,11 +60,12 @@ test('PWA installs and starts at the root A2 app', () => {
   assert.match(manifest.description, /A2-512/);
 });
 
-test('PWA shell revisions and caches the root and shared UI assets', () => {
+test('PWA shell revisions and caches the GM-aware preview renderer', () => {
   const serviceWorker = read('./sw.js');
-  assert.match(serviceWorker, /orbitune-shell-v3/);
+  assert.match(serviceWorker, /orbitune-shell-v4/);
   assert.match(serviceWorker, /'\.\/'/);
   assert.match(serviceWorker, /'\.\/orbitune-ui\.css'/);
   assert.match(serviceWorker, /'\.\/index\.html'/);
   assert.match(serviceWorker, /'\.\/compound\.html'/);
+  assert.match(serviceWorker, /'\.\/compound-gm-synth\.mjs'/);
 });
