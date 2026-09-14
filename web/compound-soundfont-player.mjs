@@ -61,7 +61,7 @@ export async function loadVerifiedSoundFontBytes({
       try {
         await verifySoundFontBytes(bytes, metadata);
         return { bytes, release: metadata, source: 'cache' };
-      } catch (error) {
+      } catch {
         await cache.delete(assetUrl);
       }
     }
@@ -73,6 +73,17 @@ export async function loadVerifiedSoundFontBytes({
   await verifySoundFontBytes(bytes, metadata);
   if (cache && persist) await cache.put(assetUrl, new Response(bytes, { headers: { 'content-type': 'audio/sf2' } }));
   return { bytes, release: metadata, source: 'network' };
+}
+
+export async function warmOfflineSoundFont(options = {}) {
+  const loaded = await loadVerifiedSoundFontBytes({ ...options, persist: true });
+  return {
+    id: loaded.release.id,
+    displayName: loaded.release.display_name || loaded.release.id,
+    bytes: loaded.bytes.byteLength,
+    source: loaded.source,
+    sha256: loaded.release.sha256,
+  };
 }
 
 function compareBytes(a, b) {
@@ -100,7 +111,7 @@ function buildTempoMap(canonical, defaultBpm) {
     }
     return segment.seconds + (step - segment.step) / 96 * 60 / segment.bpm;
   };
-  return { segments, secondsAt, finalBpm: segments.at(-1).bpm };
+  return { secondsAt, finalBpm: segments.at(-1).bpm };
 }
 
 function pushEventMessages(timeline, event) {
@@ -160,6 +171,7 @@ export class SampledSoundFontSynth {
     this.synth = null;
     this.release = null;
     this.initializing = null;
+    this.workletLoaded = false;
   }
 
   async ensureStarted() {
@@ -172,6 +184,9 @@ export class SampledSoundFontSynth {
       const context = this.context ||= this.audioContextFactory();
       if (!context?.audioWorklet?.addModule) throw new Error('AudioWorklet is required for sampled SoundFont playback');
       if (context.state === 'suspended') await context.resume();
+      const workletPromise = this.workletLoaded
+        ? Promise.resolve()
+        : context.audioWorklet.addModule(this.workletUrl).then(() => { this.workletLoaded = true; });
       const [{ WorkletSynthesizer }, loaded] = await Promise.all([
         this.moduleLoader(),
         loadVerifiedSoundFontBytes({
@@ -180,7 +195,7 @@ export class SampledSoundFontSynth {
           releaseUrl: this.releaseUrl,
           assetUrl: this.soundFontUrl,
         }),
-        context.audioWorklet.addModule(this.workletUrl),
+        workletPromise,
       ]);
       if (typeof WorkletSynthesizer !== 'function') throw new Error('SpessaSynth WorkletSynthesizer export is unavailable');
       const synth = new WorkletSynthesizer(context);
@@ -203,7 +218,6 @@ export class SampledSoundFontSynth {
   async schedule(events, { origin = null, defaultBpm = 120 } = {}) {
     await this.ensureStarted();
     const schedule = buildSampledPlaybackSchedule(events, { defaultBpm });
-    if (!schedule.noteCount) throw new Error('generated MIDI contains no NOTE events to preview');
     const start = origin ?? (this.context.currentTime + 0.05);
     for (const item of schedule.timeline) {
       this.synth.sendMessage(item.message, 0, { time: start + item.time });
@@ -219,19 +233,20 @@ export class SampledSoundFontSynth {
     if (this.context?.state === 'suspended') await this.context.resume();
   }
 
-  stop({ reset = true } = {}) {
+  stop({ hard = false } = {}) {
     try { this.synth?.stopAll?.(true); } catch {}
-    if (reset) {
-      try { this.synth?.reset?.(); } catch {}
-      try { this.synth?.midiChannels?.[9]?.setDrums?.(true); } catch {}
+    if (hard) {
+      try { this.synth?.destroy?.(); } catch {}
+      this.synth = null;
+      this.release = null;
+      this.initializing = null;
+      return;
     }
+    try { this.synth?.reset?.(); } catch {}
+    try { this.synth?.midiChannels?.[9]?.setDrums?.(true); } catch {}
   }
 
   destroy() {
-    this.stop();
-    try { this.synth?.destroy?.(); } catch {}
-    this.synth = null;
-    this.release = null;
-    this.initializing = null;
+    this.stop({ hard: true });
   }
 }
