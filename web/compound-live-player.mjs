@@ -1,8 +1,13 @@
 import { canonicalizeCompoundEvents } from './compound-midi.mjs';
 import { CompoundEventType } from './compound-runtime.mjs';
-import { midiPitchToFrequency } from './compound-player.mjs';
+import {
+  annotateNotesWithGmState,
+  createGmChannelState,
+  midiPitchToFrequency,
+  scheduleGmVoice,
+} from './compound-gm-synth.mjs';
 
-export function buildStreamingChunkTiming(events, { defaultBpm = 120 } = {}) {
+export function buildStreamingChunkTiming(events, { defaultBpm = 120, channelState = null } = {}) {
   if (!(defaultBpm > 0)) throw new Error('defaultBpm must be positive');
   const canonical = canonicalizeCompoundEvents(events);
   const tempos = canonical
@@ -20,16 +25,28 @@ export function buildStreamingChunkTiming(events, { defaultBpm = 120 } = {}) {
     for (const candidate of segments) { if (candidate.step > step) break; segment = candidate; }
     return segment.seconds + (step - segment.step) / 96 * 60 / segment.bpm;
   }
-  const notes = canonical.filter((event) => event.type === CompoundEventType.NOTE).map((event) => ({
+  const resolved = annotateNotesWithGmState(canonical, { initialState: channelState || createGmChannelState() });
+  const notes = resolved.notes.map((event) => ({
     start: secondsAt(event.step),
     end: secondsAt(event.step + event.a2),
     channel: event.channel,
     pitch: event.a1,
     velocity: event.a3,
     frequency: midiPitchToFrequency(event.a1),
+    program: event.program,
+    bankMsb: event.bankMsb,
+    bankLsb: event.bankLsb,
+    family: event.family,
+    percussion: event.percussion,
   }));
   const spanStep = canonical.reduce((maximum, event) => Math.max(maximum, event.step), 0);
-  return { notes, spanSeconds: secondsAt(spanStep), finalBpm: segments.at(-1).bpm, spanStep };
+  return {
+    notes,
+    spanSeconds: secondsAt(spanStep),
+    finalBpm: segments.at(-1).bpm,
+    spanStep,
+    finalChannelState: resolved.finalState,
+  };
 }
 
 export class CompoundStreamingPreviewPlayer {
@@ -39,6 +56,7 @@ export class CompoundStreamingPreviewPlayer {
     this.context = null;
     this.cursorTime = null;
     this.scheduled = [];
+    this.channelState = createGmChannelState();
   }
 
   async ensureStarted() {
@@ -62,19 +80,17 @@ export class CompoundStreamingPreviewPlayer {
   async append(events, { defaultBpm = 120 } = {}) {
     const context = await this.ensureStarted();
     this.prune();
-    const timing = buildStreamingChunkTiming(events, { defaultBpm });
+    const timing = buildStreamingChunkTiming(events, {
+      defaultBpm,
+      channelState: this.channelState,
+    });
+    this.channelState = timing.finalChannelState;
     const origin = Math.max(this.cursorTime ?? 0, context.currentTime + 0.04);
     for (const note of timing.notes) {
-      const osc = context.createOscillator(); const gain = context.createGain();
-      osc.type = 'triangle'; osc.frequency.value = note.frequency;
-      const amplitude = Math.min(0.12, Math.max(0.005, note.velocity / 127 * 0.08));
-      const start = origin + note.start; const end = Math.max(start + 0.02, origin + note.end);
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(amplitude, start + 0.01);
-      gain.gain.setValueAtTime(amplitude, Math.max(start + 0.011, end - 0.03));
-      gain.gain.exponentialRampToValueAtTime(0.0001, end);
-      osc.connect(gain); gain.connect(context.destination); osc.start(start); osc.stop(end + 0.01);
-      this.scheduled.push({ node: osc, end: end + 0.01 });
+      const start = origin + note.start;
+      const end = Math.max(start + 0.02, origin + note.end);
+      const nodes = scheduleGmVoice(context, note, { start, end });
+      for (const node of nodes) this.scheduled.push({ node, end: end + 0.05 });
     }
     this.cursorTime = origin + timing.spanSeconds;
     return { ...timing, scheduledNotes: timing.notes.length, bufferedSeconds: this.bufferedSeconds() };
@@ -84,8 +100,12 @@ export class CompoundStreamingPreviewPlayer {
   async resume() { if (this.context?.state === 'suspended') await this.context.resume(); }
 
   stop() {
-    for (const entry of this.scheduled) { try { entry.node.stop(); } catch {} try { entry.node.disconnect(); } catch {} }
+    for (const entry of this.scheduled) {
+      try { entry.node.stop?.(); } catch {}
+      try { entry.node.disconnect?.(); } catch {}
+    }
     this.scheduled = [];
     this.cursorTime = null;
+    this.channelState = createGmChannelState();
   }
 }

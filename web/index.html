@@ -32,6 +32,7 @@
           <p class="lede">Start the latest published Orbitune Base and listen while it composes. Generation runs locally in the browser and carries bounded musical state forward instead of retaining an ever-growing song history.</p>
           <div class="badge-row" aria-label="Application properties">
             <span class="badge">A2-512 Base</span>
+            <span class="badge">GM-aware instruments</span>
             <span class="badge">SHA-verified ONNX</span>
             <span class="badge">ONNX Runtime Web 1.29.0</span>
             <span class="badge">Installable PWA</span>
@@ -47,7 +48,7 @@
             </div>
             <div class="signal-bottom">
               <div class="signal-stat"><strong>Local</strong><span>inference</span></div>
-              <div class="signal-stat"><strong>12 sec</strong><span>look-ahead target</span></div>
+              <div class="signal-stat"><strong>GM-aware</strong><span>preview</span></div>
               <div class="signal-stat"><strong>Resettable</strong><span>trajectory</span></div>
             </div>
           </div>
@@ -61,7 +62,7 @@
               <div>
                 <p class="eyebrow">Primary mode</p>
                 <h2 id="stream-title">Listen while it composes.</h2>
-                <p>Start once, then let the generator stay slightly ahead of playback. Stop resets the carried state; a new start begins a new trajectory.</p>
+                <p>Start once, then let the generator stay slightly ahead of playback. Program changes, banks, and MIDI channel 10 percussion are reflected in the local preview.</p>
               </div>
               <div class="live-orb" aria-hidden="true"></div>
             </div>
@@ -112,7 +113,7 @@
             <div class="panel-header">
               <div>
                 <h2 id="finite-title">Finite MIDI export</h2>
-                <p>Generate a bounded clip with the same A2-512 runtime, preview it locally, or save the MIDI file.</p>
+                <p>Generate a bounded clip with the same A2-512 runtime, preview its generated instrumentation locally, or save the exact symbolic MIDI file.</p>
               </div>
             </div>
             <div class="panel-body">
@@ -154,6 +155,7 @@
               <ul class="info-list">
                 <li>Current Base: Orbitune A2-512 research/non-commercial checkpoint.</li>
                 <li>Generation and playback happen locally through ONNX Runtime Web/WASM.</li>
+                <li>The preview interprets generated PROGRAM/BANK state and channel 10 percussion instead of forcing every note through one oscillator timbre.</li>
                 <li>Model bytes are SHA-256 verified before inference and can be cached for offline use.</li>
                 <li>The model carries fixed-size local, hierarchical, and recurrent state rather than the complete song history.</li>
                 <li>Changing Base/LoRA variants begins a fresh stream; recurrent state is not reused across variants.</li>

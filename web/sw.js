@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'orbitune-shell-v3';
+const SHELL_CACHE = 'orbitune-shell-v4';
 const RUNTIME_CACHE = 'orbitune-runtime-deps-v1';
 const SHELL_ASSETS = [
   './',
@@ -9,6 +9,7 @@ const SHELL_ASSETS = [
   './compound-runtime.mjs',
   './compound-stream.mjs',
   './compound-midi.mjs',
+  './compound-gm-synth.mjs',
   './compound-player.mjs',
   './compound-live-player.mjs',
   './compound-variant.mjs',

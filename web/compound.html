@@ -20,7 +20,7 @@
       </a>
       <nav class="header-actions" aria-label="Primary">
         <a class="header-link secondary-link" href="https://github.com/Unjuno/orbitune">GitHub</a>
-        <a class="header-link" href="./">About</a>
+        <a class="header-link" href="./">Main app</a>
       </nav>
     </header>
 
@@ -29,8 +29,9 @@
         <div>
           <p class="eyebrow">A2-512 · on-device · continuous generation</p>
           <h1 id="app-title"><span class="gradient-text">Infinite MIDI</span></h1>
-          <p class="lede">Start a local stream and listen while Orbitune composes the next events. The browser carries only bounded musical state and a short playback look-ahead.</p>
+          <p class="lede">Start a local stream and listen while Orbitune composes the next events. Program changes, banks, and MIDI percussion are now reflected in the local WebAudio preview.</p>
           <div class="badge-row" aria-label="Application properties">
+            <span class="badge">GM-aware instruments</span>
             <span class="badge">SHA-verified ONNX</span>
             <span class="badge">WASM runtime</span>
             <span class="badge">Installable PWA</span>
@@ -46,7 +47,7 @@
             </div>
             <div class="signal-bottom">
               <div class="signal-stat"><strong>Local</strong><span>inference</span></div>
-              <div class="signal-stat"><strong>12 sec</strong><span>look-ahead target</span></div>
+              <div class="signal-stat"><strong>GM-aware</strong><span>preview</span></div>
               <div class="signal-stat"><strong>Resettable</strong><span>trajectory</span></div>
             </div>
           </div>
@@ -111,7 +112,7 @@
             <div class="panel-header">
               <div>
                 <h2 id="finite-title">Finite MIDI export</h2>
-                <p>Generate a bounded clip, preview it locally, or save the MIDI file.</p>
+                <p>Generate a bounded clip, preview the generated instrumentation locally, or save the exact symbolic MIDI file.</p>
               </div>
             </div>
             <div class="panel-body">
@@ -154,7 +155,7 @@
                 <li>Generation and playback happen locally through ONNX Runtime Web/WASM.</li>
                 <li>The model carries fixed-size local, hierarchical, and recurrent state rather than the complete song history.</li>
                 <li>Changing Base/LoRA variants begins a fresh stream; recurrent state is not reused across variants.</li>
-                <li>Preview audio uses a lightweight WebAudio synthesizer. MIDI export preserves the symbolic output.</li>
+                <li>Preview audio follows generated PROGRAM/BANK state, maps GM program families to distinct WebAudio timbres, and renders channel 10 as percussion. MIDI export preserves the exact symbolic output.</li>
               </ul>
             </div>
           </section>
@@ -164,7 +165,7 @@
 
     <footer class="site-footer">
       <span>Orbitune A2-512 · research/non-commercial model lineage</span>
-      <span class="footer-links"><a href="./">About</a><a href="https://github.com/Unjuno/orbitune">Source</a></span>
+      <span class="footer-links"><a href="./">Main app</a><a href="https://github.com/Unjuno/orbitune">Source</a></span>
     </footer>
   </div>
 

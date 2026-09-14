@@ -1,7 +1,12 @@
 import { canonicalizeCompoundEvents } from './compound-midi.mjs';
 import { CompoundEventType } from './compound-runtime.mjs';
+import {
+  annotateNotesWithGmState,
+  midiPitchToFrequency,
+  scheduleGmVoice,
+} from './compound-gm-synth.mjs';
 
-export function midiPitchToFrequency(pitch) { return 440 * 2 ** ((pitch - 69) / 12); }
+export { midiPitchToFrequency };
 
 export function buildPreviewSchedule(events, { defaultBpm = 120 } = {}) {
   if (!(defaultBpm > 0)) throw new Error('defaultBpm must be positive');
@@ -22,16 +27,29 @@ export function buildPreviewSchedule(events, { defaultBpm = 120 } = {}) {
     for (const candidate of segments) { if (candidate.step > step) break; segment = candidate; }
     return segment.seconds + (step - segment.step) / 96 * 60 / segment.bpm;
   }
-  return canonical.filter((event) => event.type === CompoundEventType.NOTE).map((event) => ({
-    start: secondsAt(event.step), end: secondsAt(event.step + event.a2), channel: event.channel,
-    pitch: event.a1, velocity: event.a3, frequency: midiPitchToFrequency(event.a1),
+  const { notes } = annotateNotesWithGmState(canonical);
+  return notes.map((event) => ({
+    start: secondsAt(event.step),
+    end: secondsAt(event.step + event.a2),
+    channel: event.channel,
+    pitch: event.a1,
+    velocity: event.a3,
+    frequency: midiPitchToFrequency(event.a1),
+    program: event.program,
+    bankMsb: event.bankMsb,
+    bankLsb: event.bankLsb,
+    family: event.family,
+    percussion: event.percussion,
   }));
 }
 
 export class CompoundPreviewPlayer {
   constructor({ audioContextFactory = () => new (globalThis.AudioContext || globalThis.webkitAudioContext)() } = {}) {
-    this.audioContextFactory = audioContextFactory; this.context = null; this.nodes = [];
+    this.audioContextFactory = audioContextFactory;
+    this.context = null;
+    this.nodes = [];
   }
+
   async play(events) {
     this.stop();
     const schedule = buildPreviewSchedule(events);
@@ -40,18 +58,18 @@ export class CompoundPreviewPlayer {
     if (this.context.state === 'suspended') await this.context.resume();
     const origin = this.context.currentTime + 0.05;
     for (const note of schedule.slice(0, 4096)) {
-      const osc = this.context.createOscillator(); const gain = this.context.createGain();
-      osc.type = 'triangle'; osc.frequency.value = note.frequency;
-      const amplitude = Math.min(0.12, Math.max(0.005, note.velocity / 127 * 0.08));
-      const start = origin + note.start; const end = Math.max(start + 0.02, origin + note.end);
-      gain.gain.setValueAtTime(0.0001, start); gain.gain.exponentialRampToValueAtTime(amplitude, start + 0.01);
-      gain.gain.setValueAtTime(amplitude, Math.max(start + 0.011, end - 0.03)); gain.gain.exponentialRampToValueAtTime(0.0001, end);
-      osc.connect(gain); gain.connect(this.context.destination); osc.start(start); osc.stop(end + 0.01); this.nodes.push(osc);
+      const start = origin + note.start;
+      const end = Math.max(start + 0.02, origin + note.end);
+      this.nodes.push(...scheduleGmVoice(this.context, note, { start, end }));
     }
     return schedule.length;
   }
+
   stop() {
-    for (const node of this.nodes) { try { node.stop(); } catch {} try { node.disconnect(); } catch {} }
+    for (const node of this.nodes) {
+      try { node.stop?.(); } catch {}
+      try { node.disconnect?.(); } catch {}
+    }
     this.nodes = [];
   }
 }
