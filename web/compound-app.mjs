@@ -1,4 +1,7 @@
 import { CompoundBrowserRuntime } from './compound-runtime.mjs';
+import { CompoundDecodingRuntime } from './compound-decoding-runtime.mjs';
+import { DECODING_PRESETS, decodingPreset } from './decoding-presets.mjs';
+import { CompoundEventMonitor } from './compound-event-monitor.mjs';
 import { compoundEventsToMidiBytes, decodeCompoundRecords } from './compound-midi.mjs';
 import { CompoundPreviewPlayer } from './compound-player.mjs';
 import { CompoundStreamingPreviewPlayer } from './compound-live-player.mjs';
@@ -11,10 +14,18 @@ import { PwaInstallController, registerOrbituneServiceWorker, warmOfflineRuntime
 const variantSelect = document.getElementById('compound-variant');
 const modelMeta = document.getElementById('compound-model-meta');
 const eventCount = document.getElementById('compound-events');
+const decodingPresetSelect = document.getElementById('compound-decoding-preset');
+const decodingStrategy = document.getElementById('compound-decoding-strategy');
 const temperature = document.getElementById('compound-temperature');
 const temperatureValue = document.getElementById('compound-temperature-value');
+const structureTemperature = document.getElementById('compound-structure-temperature');
+const structureTemperatureValue = document.getElementById('compound-structure-temperature-value');
 const topP = document.getElementById('compound-top-p');
 const topPValue = document.getElementById('compound-top-p-value');
+const topK = document.getElementById('compound-top-k');
+const topKValue = document.getElementById('compound-top-k-value');
+const minP = document.getElementById('compound-min-p');
+const minPValue = document.getElementById('compound-min-p-value');
 const generateButton = document.getElementById('compound-generate');
 const playButton = document.getElementById('compound-play');
 const stopButton = document.getElementById('compound-stop');
@@ -42,12 +53,47 @@ const finitePlayer = new CompoundPreviewPlayer();
 const livePlayer = new CompoundStreamingPreviewPlayer();
 const persistentModelFetch = createPersistentModelFetch();
 const installController = new PwaInstallController();
+const eventMonitor = new CompoundEventMonitor({
+  channelsElement: document.getElementById('compound-channel-monitor'),
+  recentElement: document.getElementById('compound-event-log'),
+  summaryElement: document.getElementById('compound-event-summary'),
+});
 
 function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 function setStatus(message) { status.textContent = message; }
 function updateLabels() {
   temperatureValue.textContent = Number(temperature.value).toFixed(2);
+  structureTemperatureValue.textContent = Number(structureTemperature.value).toFixed(2);
   topPValue.textContent = Number(topP.value).toFixed(2);
+  topKValue.textContent = String(Number(topK.value));
+  minPValue.textContent = Number(minP.value).toFixed(2);
+}
+function currentDecodingOptions() {
+  return {
+    strategy: decodingStrategy.value,
+    temperature: Number(temperature.value),
+    structureTemperature: Number(structureTemperature.value),
+    topP: Number(topP.value),
+    topK: Number(topK.value),
+    minP: Number(minP.value),
+  };
+}
+function applyDecodingPreset(name) {
+  if (name === 'custom') return;
+  const preset = decodingPreset(name);
+  decodingStrategy.value = preset.strategy;
+  temperature.value = String(preset.temperature);
+  structureTemperature.value = String(preset.structureTemperature);
+  topP.value = String(preset.topP);
+  topK.value = String(preset.topK);
+  minP.value = String(preset.minP);
+  updateLabels();
+  runtime?.configure?.(currentDecodingOptions());
+}
+function markDecodingCustom() {
+  decodingPresetSelect.value = 'custom';
+  updateLabels();
+  runtime?.configure?.(currentDecodingOptions());
 }
 async function loadJson(url) {
   const response = await fetch(url, { cache: 'no-cache' });
@@ -61,8 +107,12 @@ async function ensureRuntime() {
   const variant = selectedVariant();
   if (!variant) throw new Error('No published Compound model variant is available');
   if (!globalThis.ort) throw new Error('ONNX Runtime Web failed to load');
-  if (runtime && loadedVariant === variant.id) return runtime;
-  runtime = new CompoundBrowserRuntime(globalThis.ort);
+  if (runtime && loadedVariant === variant.id) {
+    runtime.configure(currentDecodingOptions());
+    return runtime;
+  }
+  const baseRuntime = new CompoundBrowserRuntime(globalThis.ort);
+  runtime = new CompoundDecodingRuntime(baseRuntime, currentDecodingOptions());
   setStatus(`Loading and SHA-256 verifying ${variant.display_name || variant.id}…`);
   await runtime.loadModels({
     streamUrl: variant.stream.url,
@@ -131,21 +181,27 @@ async function runLiveLoop() {
       if (livePaused) { await sleep(100); continue; }
       const buffered = livePlayer.bufferedSeconds();
       if (buffered > 12) { await sleep(200); continue; }
+      runtime.configure(currentDecodingOptions());
       liveSession.temperature = Number(temperature.value);
       liveSession.topP = Number(topP.value);
       const batch = await liveSession.generateBatch(16, { signal: liveAbort.signal });
       const localEvents = decodeCompoundRecords(batch.records);
+      eventMonitor.consume(localEvents);
       const playback = await livePlayer.append(localEvents, { defaultBpm: liveBpm });
       liveBpm = playback.finalBpm;
       liveGenerated += batch.records.length;
+      const decoding = currentDecodingOptions();
       setStatus([
         'Live stream running locally with sampled SoundFont playback.',
         `variant=${selectedVariant()?.id || 'unknown'}`,
+        `decoding=${decoding.strategy}`,
+        `temperature=${decoding.temperature.toFixed(2)}`,
+        `structure_temperature=${decoding.structureTemperature.toFixed(2)}`,
         `soundfont=${playback.soundFont || 'GeneralUser GS 2.0.3'}`,
         `generated_events=${liveGenerated}`,
         `buffered_seconds=${playback.bufferedSeconds.toFixed(1)}`,
         `state_steps=${batch.state.steps}`,
-        'History is not retained; Stop starts a new stream.',
+        'Decoding controls affect future events without resetting model state.',
       ].join('\n'));
     }
   } catch (error) {
@@ -158,12 +214,14 @@ async function runLiveLoop() {
 async function startLive() {
   if (liveRunning) return;
   finitePlayer.stop();
+  eventMonitor.reset();
   liveAbort = new AbortController();
   liveGenerated = 0; liveBpm = 120; livePaused = false;
   try {
     setStatus('Loading SHA-256 verified GeneralUser GS 2.0.3 sampled SoundFont…');
     await livePlayer.ensureStarted();
     const activeRuntime = await ensureRuntime();
+    activeRuntime.configure(currentDecodingOptions());
     liveSession = new CompoundStreamSession(activeRuntime, {
       temperature: Number(temperature.value),
       topP: Number(topP.value),
@@ -196,7 +254,11 @@ async function stopLive({ keepStatus = false } = {}) {
 }
 
 async function initialize() {
-  updateLabels();
+  for (const [name, preset] of Object.entries(DECODING_PRESETS)) {
+    if (![...decodingPresetSelect.options].some((option) => option.value === name)) decodingPresetSelect.add(new Option(preset.label, name));
+  }
+  applyDecodingPreset(decodingPresetSelect.value || 'balanced');
+  eventMonitor.render();
   registerOrbituneServiceWorker().catch((error) => console.warn('Service worker registration failed', error));
   installController.subscribe((available) => { installButton.hidden = !available; });
   try {
@@ -223,30 +285,48 @@ async function initialize() {
   for (const variant of variants) variantSelect.appendChild(new Option(variant.display_name || variant.id, variant.id));
   setLiveControls();
   await updateStorageStatus();
-  setStatus('Ready. Generation uses A2-512 locally; playback uses the SHA-256 verified GeneralUser GS 2.0.3 sampled SoundFont through SpessaSynth 4.3.14.');
+  setStatus('Ready. Generation uses A2-512 locally with selectable decoding; playback uses the SHA-256 verified GeneralUser GS 2.0.3 sampled SoundFont.');
 }
 
 async function generate() {
   generateButton.disabled = true; playButton.disabled = true; stopButton.disabled = true; downloadLink.hidden = true; finitePlayer.stop();
+  eventMonitor.reset();
   if (objectUrl) URL.revokeObjectURL(objectUrl); objectUrl = null; generatedEvents = [];
   try {
-    const activeRuntime = await ensureRuntime(); const count = Number(eventCount.value); const temp = Number(temperature.value); const p = Number(topP.value);
+    const activeRuntime = await ensureRuntime();
+    const count = Number(eventCount.value);
+    const decoding = currentDecodingOptions();
+    activeRuntime.configure(decoding);
     const started = performance.now();
-    const result = await activeRuntime.generate({ maxNewEvents: count, temperature: temp, topP: p, onProgress: ({ generated, total }) => {
+    const result = await activeRuntime.generate({ maxNewEvents: count, ...decoding, onProgress: ({ generated, total }) => {
       if (generated === 1 || generated % 16 === 0 || generated === total) setStatus(`Generating… ${generated}/${total} events`);
     }});
     generatedEvents = decodeCompoundRecords(result.records);
+    eventMonitor.consume(generatedEvents);
     const midi = compoundEventsToMidiBytes(generatedEvents);
     objectUrl = URL.createObjectURL(new Blob([midi], { type: 'audio/midi' }));
     downloadLink.href = objectUrl; downloadLink.download = `orbitune-${selectedVariant()?.id || 'compound'}-${count}events.mid`; downloadLink.hidden = false;
     playButton.disabled = !generatedEvents.some((event) => event.type === 0); stopButton.disabled = false;
-    setStatus([`Generation complete.`, `variant=${selectedVariant()?.id || 'unknown'}`, `new_events=${count}`, `decoded_events=${generatedEvents.length}`, `temperature=${temp.toFixed(2)}`, `top_p=${p.toFixed(2)}`, `elapsed_ms=${(performance.now() - started).toFixed(0)}`].join('\n'));
+    setStatus([
+      'Generation complete.',
+      `variant=${selectedVariant()?.id || 'unknown'}`,
+      `decoding=${decoding.strategy}`,
+      `new_events=${count}`,
+      `decoded_events=${generatedEvents.length}`,
+      `temperature=${decoding.temperature.toFixed(2)}`,
+      `structure_temperature=${decoding.structureTemperature.toFixed(2)}`,
+      `top_p=${decoding.topP.toFixed(2)}`,
+      `top_k=${decoding.topK}`,
+      `min_p=${decoding.minP.toFixed(2)}`,
+      `elapsed_ms=${(performance.now() - started).toFixed(0)}`,
+    ].join('\n'));
   } catch (error) { setStatus(`Generation failed: ${error.message}`); }
   finally { setLiveControls(); }
 }
 
-temperature.addEventListener('input', updateLabels); topP.addEventListener('input', updateLabels);
-variantSelect.addEventListener('change', async () => { await stopLive({ keepStatus: true }); runtime = null; loadedVariant = null; await updateStorageStatus(); });
+decodingPresetSelect.addEventListener('change', () => applyDecodingPreset(decodingPresetSelect.value));
+for (const control of [decodingStrategy, temperature, structureTemperature, topP, topK, minP]) control.addEventListener('input', markDecodingCustom);
+variantSelect.addEventListener('change', async () => { await stopLive({ keepStatus: true }); runtime = null; loadedVariant = null; eventMonitor.reset(); await updateStorageStatus(); });
 generateButton.addEventListener('click', generate);
 playButton.addEventListener('click', async () => {
   try {
