@@ -36,6 +36,8 @@ function assertCompoundAppPage(html) {
   assert.match(html, /href=["']\.\/orbitune-ui\.css["']/);
   assert.match(html, /onnxruntime-web@1\.29\.0\/dist\/ort\.min\.js/);
   assert.match(html, /src=["']\.\/compound-app\.mjs["']/);
+  assert.match(html, /GeneralUser GS 2\.0\.3/);
+  assert.match(html, /SpessaSynth 4\.3\.14/);
   assertIds(html, compoundIds);
   assert.match(html, /id=["']compound-status["'][^>]*aria-live=["']polite["']/);
 }
@@ -48,7 +50,7 @@ test('root Pages entry point runs the latest published A2-512 Compound app, not 
   assert.doesNotMatch(html, /Theory-REMI/);
 });
 
-test('compatibility Compound URL preserves the same application DOM contract', () => {
+test('compatibility Compound URL preserves the same sampled application contract', () => {
   const html = read('./compound.html');
   assertCompoundAppPage(html);
 });
@@ -60,12 +62,20 @@ test('PWA installs and starts at the root A2 app', () => {
   assert.match(manifest.description, /A2-512/);
 });
 
-test('PWA shell revisions and caches the GM-aware preview renderer', () => {
+test('PWA shell revisions and packages the sampled playback engine without shell-caching the SF2', () => {
   const serviceWorker = read('./sw.js');
-  assert.match(serviceWorker, /orbitune-shell-v4/);
-  assert.match(serviceWorker, /'\.\/'/);
-  assert.match(serviceWorker, /'\.\/orbitune-ui\.css'/);
-  assert.match(serviceWorker, /'\.\/index\.html'/);
-  assert.match(serviceWorker, /'\.\/compound\.html'/);
-  assert.match(serviceWorker, /'\.\/compound-gm-synth\.mjs'/);
+  assert.match(serviceWorker, /orbitune-shell-v5/);
+  for (const asset of [
+    './',
+    './orbitune-ui.css',
+    './index.html',
+    './compound.html',
+    './compound-soundfont-player.mjs',
+    './vendor/spessasynth-bundle.mjs',
+    './vendor/spessasynth_processor.min.js',
+    './soundfont-release.json',
+    './third_party/GeneralUser-GS-LICENSE.txt',
+  ]) assert.ok(serviceWorker.includes(`'${asset}'`), `${asset} missing from service-worker shell`);
+  assert.match(serviceWorker, /url\.pathname\.includes\('\/soundfonts\/'\)/);
+  assert.doesNotMatch(serviceWorker, /'\.\/soundfonts\/GeneralUser-GS\.sf2'/);
 });
