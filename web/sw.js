@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'orbitune-shell-v4';
+const SHELL_CACHE = 'orbitune-shell-v5';
 const RUNTIME_CACHE = 'orbitune-runtime-deps-v1';
 const SHELL_ASSETS = [
   './',
@@ -10,6 +10,7 @@ const SHELL_ASSETS = [
   './compound-stream.mjs',
   './compound-midi.mjs',
   './compound-gm-synth.mjs',
+  './compound-soundfont-player.mjs',
   './compound-player.mjs',
   './compound-live-player.mjs',
   './compound-variant.mjs',
@@ -17,6 +18,11 @@ const SHELL_ASSETS = [
   './model-cache.mjs',
   './pwa.mjs',
   './compound-runtime-config.json',
+  './soundfont-release.json',
+  './vendor/spessasynth-bundle.mjs',
+  './vendor/spessasynth_processor.min.js',
+  './third_party/GeneralUser-GS-LICENSE.txt',
+  './third_party/spessasynth_lib-LICENSE.txt',
   './manifest.webmanifest',
   './orbitune.svg',
   './orbitune-192.png',
@@ -65,10 +71,9 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.origin === self.location.origin) {
-    // Model bytes are intentionally not placed in the shell cache. The app
-    // verifies their declared SHA-256 first and persists reviewed bytes in the
-    // dedicated model cache only after explicit user action.
-    if (url.pathname.includes('/models/')) return;
+    // Large verified binaries are managed by their dedicated caches. Avoid
+    // duplicating model/SoundFont bytes inside the PWA shell cache.
+    if (url.pathname.includes('/models/') || url.pathname.includes('/soundfonts/')) return;
     const dynamic = event.request.mode === 'navigate' || url.pathname.endsWith('/compound-runtime-config.json');
     event.respondWith(dynamic ? networkFirst(event.request, SHELL_CACHE) : cacheFirst(event.request, SHELL_CACHE));
     return;
