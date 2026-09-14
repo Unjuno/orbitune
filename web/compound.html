@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#07080c" />
-  <meta name="description" content="Orbitune Infinite MIDI runs the A2-512 Compound model locally in your browser for continuous generated music." />
+  <meta name="description" content="Orbitune Infinite MIDI runs A2-512 locally with GeneralUser GS sampled SoundFont playback." />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./orbitune.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./orbitune-ui.css" />
@@ -27,28 +27,28 @@
     <main>
       <section class="hero compact" aria-labelledby="app-title">
         <div>
-          <p class="eyebrow">A2-512 · on-device · continuous generation</p>
+          <p class="eyebrow">A2-512 · sampled SF2 playback · on-device</p>
           <h1 id="app-title"><span class="gradient-text">Infinite MIDI</span></h1>
-          <p class="lede">Start a local stream and listen while Orbitune composes the next events. Program changes, banks, and MIDI percussion are now reflected in the local WebAudio preview.</p>
+          <p class="lede">This compatibility URL runs the same application as the root page: A2-512 generation plus GeneralUser GS 2.0.3 sampled SoundFont playback through SpessaSynth 4.3.14.</p>
           <div class="badge-row" aria-label="Application properties">
-            <span class="badge">GM-aware instruments</span>
-            <span class="badge">SHA-verified ONNX</span>
-            <span class="badge">WASM runtime</span>
-            <span class="badge">Installable PWA</span>
+            <span class="badge">GeneralUser GS 2.0.3 sampled SF2</span>
+            <span class="badge">SpessaSynth 4.3.14</span>
+            <span class="badge">SHA-verified ONNX + SF2</span>
+            <span class="badge">WASM generation</span>
             <span class="badge">Offline-ready</span>
           </div>
         </div>
 
         <div class="hero-visual" aria-hidden="true">
           <div class="signal-card">
-            <div class="signal-topline"><span>A2-512 / stream</span><span>state → future</span></div>
+            <div class="signal-topline"><span>A2-512 / stream</span><span>sampled playback</span></div>
             <div class="signal">
               <span class="signal-bar" style="height:30%"></span><span class="signal-bar" style="height:47%"></span><span class="signal-bar" style="height:79%"></span><span class="signal-bar" style="height:60%"></span><span class="signal-bar" style="height:93%"></span><span class="signal-bar" style="height:52%"></span><span class="signal-bar" style="height:71%"></span><span class="signal-bar" style="height:42%"></span><span class="signal-bar" style="height:88%"></span><span class="signal-bar" style="height:67%"></span><span class="signal-bar" style="height:96%"></span><span class="signal-bar" style="height:48%"></span><span class="signal-bar" style="height:74%"></span><span class="signal-bar" style="height:58%"></span><span class="signal-bar" style="height:84%"></span><span class="signal-bar" style="height:38%"></span>
             </div>
             <div class="signal-bottom">
-              <div class="signal-stat"><strong>Local</strong><span>inference</span></div>
-              <div class="signal-stat"><strong>GM-aware</strong><span>preview</span></div>
-              <div class="signal-stat"><strong>Resettable</strong><span>trajectory</span></div>
+              <div class="signal-stat"><strong>Local</strong><span>generation</span></div>
+              <div class="signal-stat"><strong>Sampled</strong><span>SoundFont</span></div>
+              <div class="signal-stat"><strong>Verified</strong><span>bytes</span></div>
             </div>
           </div>
         </div>
@@ -61,7 +61,7 @@
               <div>
                 <p class="eyebrow">Primary mode</p>
                 <h2 id="stream-title">Listen while it composes.</h2>
-                <p>Start once, then let the generator stay slightly ahead of playback. Stop resets the carried state; a new start begins a new trajectory.</p>
+                <p>PROGRAM, BANK, controllers and channel-10 percussion are sent to the sampled SF2 synthesizer. First playback may download the pinned 30.8 MiB SoundFont after SHA-256 verification.</p>
               </div>
               <div class="live-orb" aria-hidden="true"></div>
             </div>
@@ -100,9 +100,9 @@
 
               <div class="divider"></div>
 
-              <div id="compound-storage-status" class="storage-meta">Checking offline model storage…</div>
+              <div id="compound-storage-status" class="storage-meta">Checking offline package storage…</div>
               <div class="action-grid two">
-                <button id="compound-offline" class="secondary" type="button" disabled>Download for offline use</button>
+                <button id="compound-offline" class="secondary" type="button" disabled>Download model + SoundFont</button>
                 <button id="compound-install" class="secondary" type="button" hidden>Install Orbitune app</button>
               </div>
             </div>
@@ -112,7 +112,7 @@
             <div class="panel-header">
               <div>
                 <h2 id="finite-title">Finite MIDI export</h2>
-                <p>Generate a bounded clip, preview the generated instrumentation locally, or save the exact symbolic MIDI file.</p>
+                <p>Generate a bounded clip, preview it through GeneralUser GS, or save the exact symbolic MIDI file.</p>
               </div>
             </div>
             <div class="panel-body">
@@ -124,7 +124,7 @@
                 <button id="compound-generate" class="secondary" type="button" disabled>Generate MIDI</button>
               </div>
               <div class="action-grid">
-                <button id="compound-play" class="secondary" type="button" disabled>Play preview</button>
+                <button id="compound-play" class="secondary" type="button" disabled>Play sampled preview</button>
                 <button id="compound-stop" class="secondary" type="button" disabled>Stop preview</button>
                 <a id="compound-download" class="button secondary" hidden>Download MIDI</a>
               </div>
@@ -146,17 +146,19 @@
           <section class="panel">
             <div class="panel-header">
               <div>
-                <h3>How this stream behaves</h3>
-                <p>Important properties of the current runtime.</p>
+                <h3>Playback contract</h3>
+                <p>The browser renderer no longer substitutes generated instrumentation with oscillator families.</p>
               </div>
             </div>
             <div class="panel-body">
               <ul class="info-list">
-                <li>Generation and playback happen locally through ONNX Runtime Web/WASM.</li>
-                <li>The model carries fixed-size local, hierarchical, and recurrent state rather than the complete song history.</li>
-                <li>Changing Base/LoRA variants begins a fresh stream; recurrent state is not reused across variants.</li>
-                <li>Preview audio follows generated PROGRAM/BANK state, maps GM program families to distinct WebAudio timbres, and renders channel 10 as percussion. MIDI export preserves the exact symbolic output.</li>
+                <li>A2-512 generation runs locally through ONNX Runtime Web/WASM.</li>
+                <li>GeneralUser GS 2.0.3 is a real sampled SF2 bank rendered through SpessaSynth 4.3.14.</li>
+                <li>Model graphs and SoundFont bytes are independently SHA-256 verified.</li>
+                <li>The SoundFont is served from Orbitune Pages rather than hotlinked from its upstream download.</li>
+                <li>Infinite generation retains bounded model state; sampled synth state resets on Stop.</li>
               </ul>
+              <p><a href="./third_party/GeneralUser-GS-LICENSE.txt">GeneralUser GS License v2.0</a></p>
             </div>
           </section>
         </aside>
@@ -165,7 +167,7 @@
 
     <footer class="site-footer">
       <span>Orbitune A2-512 · research/non-commercial model lineage</span>
-      <span class="footer-links"><a href="./">Main app</a><a href="https://github.com/Unjuno/orbitune">Source</a></span>
+      <span class="footer-links"><a href="./third_party/GeneralUser-GS-LICENSE.txt">SoundFont license</a><a href="./">Main app</a><a href="https://github.com/Unjuno/orbitune">Source</a></span>
     </footer>
   </div>
 
