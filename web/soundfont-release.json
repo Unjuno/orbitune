@@ -1,0 +1,19 @@
+{
+  "schema": "orbitune-web-soundfont-v1",
+  "id": "generaluser-gs-2.0.3",
+  "display_name": "GeneralUser GS 2.0.3",
+  "format": "sf2",
+  "filename": "GeneralUser-GS.sf2",
+  "bytes": 32319396,
+  "sha256": "c278464b823daf9c52106c0957f752817da0e52964817ff682fe3a8d2f8446ce",
+  "source_repository": "mrbumpy409/GeneralUser-GS",
+  "source_commit": "684543d5e5efaef08d02be50dcda8d552478fa60",
+  "source_url": "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/684543d5e5efaef08d02be50dcda8d552478fa60/GeneralUser-GS.sf2",
+  "license": "GeneralUser GS License v2.0",
+  "redistribution_note": "Bundled into the GitHub Pages build from the pinned upstream commit. License text and attribution are published alongside the asset.",
+  "synth_engine": {
+    "package": "spessasynth_lib",
+    "version": "4.3.14",
+    "license": "Apache-2.0"
+  }
+}
