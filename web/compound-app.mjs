@@ -2,6 +2,7 @@ import { CompoundBrowserRuntime } from './compound-runtime.mjs';
 import { compoundEventsToMidiBytes, decodeCompoundRecords } from './compound-midi.mjs';
 import { CompoundPreviewPlayer } from './compound-player.mjs';
 import { CompoundStreamingPreviewPlayer } from './compound-live-player.mjs';
+import { warmOfflineSoundFont } from './compound-soundfont-player.mjs';
 import { CompoundStreamSession } from './compound-stream.mjs';
 import { availableCompoundVariants, validateCompoundRuntimeConfig } from './compound-variant.mjs';
 import { cacheVariantArtifacts, createPersistentModelFetch, getVariantCacheStatus } from './model-cache.mjs';
@@ -78,17 +79,17 @@ async function ensureRuntime() {
 async function updateStorageStatus() {
   const variant = selectedVariant();
   if (!variant) {
-    storageStatus.textContent = 'Offline model: unavailable until a model variant is published.';
+    storageStatus.textContent = 'Offline package: unavailable until a model variant is published.';
     offlineButton.disabled = true;
     return;
   }
   const cached = await getVariantCacheStatus(variant);
-  let suffix = cached.ready ? 'ready' : cached.supported ? 'not downloaded' : 'unsupported by this browser';
+  let suffix = cached.ready ? 'model ready' : cached.supported ? 'model not downloaded' : 'unsupported by this browser';
   if (navigator.storage?.estimate) {
     const estimate = await navigator.storage.estimate();
     if (estimate.usage != null && estimate.quota) suffix += ` · storage ${(estimate.usage / 1048576).toFixed(0)}/${(estimate.quota / 1048576).toFixed(0)} MiB`;
   }
-  storageStatus.textContent = `Offline model: ${suffix}.`;
+  storageStatus.textContent = `Offline package: ${suffix}. SoundFont is verified and cached on first playback or explicit offline preparation.`;
   offlineButton.disabled = !cached.supported;
 }
 
@@ -104,8 +105,10 @@ async function prepareOffline() {
     await cacheVariantArtifacts(variant, {
       onArtifact: ({ name, status: state }) => setStatus(`Offline model ${name}: ${state}`),
     });
+    setStatus('Downloading and SHA-256 verifying GeneralUser GS 2.0.3 sampled SoundFont…');
+    const soundFont = await warmOfflineSoundFont();
     await updateStorageStatus();
-    setStatus('Offline preparation complete. The selected model and runtime dependencies are cached locally.');
+    setStatus(`Offline preparation complete. Model, runtime and ${soundFont.displayName} (${(soundFont.bytes / 1048576).toFixed(1)} MiB) are cached locally.`);
   } catch (error) {
     setStatus(`Offline preparation failed: ${error.message}`);
   } finally {
@@ -136,8 +139,9 @@ async function runLiveLoop() {
       liveBpm = playback.finalBpm;
       liveGenerated += batch.records.length;
       setStatus([
-        'Live stream running locally.',
+        'Live stream running locally with sampled SoundFont playback.',
         `variant=${selectedVariant()?.id || 'unknown'}`,
+        `soundfont=${playback.soundFont || 'GeneralUser GS 2.0.3'}`,
         `generated_events=${liveGenerated}`,
         `buffered_seconds=${playback.bufferedSeconds.toFixed(1)}`,
         `state_steps=${batch.state.steps}`,
@@ -157,6 +161,7 @@ async function startLive() {
   liveAbort = new AbortController();
   liveGenerated = 0; liveBpm = 120; livePaused = false;
   try {
+    setStatus('Loading SHA-256 verified GeneralUser GS 2.0.3 sampled SoundFont…');
     await livePlayer.ensureStarted();
     const activeRuntime = await ensureRuntime();
     liveSession = new CompoundStreamSession(activeRuntime, {
@@ -187,7 +192,7 @@ async function stopLive({ keepStatus = false } = {}) {
   liveRunning = false; livePaused = false; liveSession = null; liveAbort = null;
   livePlayer.stop();
   setLiveControls();
-  if (!keepStatus) setStatus(`Stream stopped after ${liveGenerated} generated events. Starting again creates a new non-reversible stream state.`);
+  if (!keepStatus) setStatus(`Stream stopped after ${liveGenerated} generated events. Starting again creates a new stream and sampled-synth state.`);
 }
 
 async function initialize() {
@@ -218,7 +223,7 @@ async function initialize() {
   for (const variant of variants) variantSelect.appendChild(new Option(variant.display_name || variant.id, variant.id));
   setLiveControls();
   await updateStorageStatus();
-  setStatus('Ready. Finite MIDI and continuous streaming generation run locally through ONNX Runtime Web/WASM.');
+  setStatus('Ready. Generation uses A2-512 locally; playback uses the SHA-256 verified GeneralUser GS 2.0.3 sampled SoundFont through SpessaSynth 4.3.14.');
 }
 
 async function generate() {
@@ -243,12 +248,22 @@ async function generate() {
 temperature.addEventListener('input', updateLabels); topP.addEventListener('input', updateLabels);
 variantSelect.addEventListener('change', async () => { await stopLive({ keepStatus: true }); runtime = null; loadedVariant = null; await updateStorageStatus(); });
 generateButton.addEventListener('click', generate);
-playButton.addEventListener('click', async () => { try { const notes = await finitePlayer.play(generatedEvents); setStatus(`${status.textContent}\npreview_notes=${notes}`); } catch (error) { setStatus(`Playback failed: ${error.message}`); } });
+playButton.addEventListener('click', async () => {
+  try {
+    setStatus('Loading SHA-256 verified GeneralUser GS 2.0.3 sampled SoundFont…');
+    const notes = await finitePlayer.play(generatedEvents);
+    setStatus(`Sampled preview running.\npreview_notes=${notes}\nsoundfont=GeneralUser GS 2.0.3\nsynth=SpessaSynth 4.3.14`);
+  } catch (error) { setStatus(`Playback failed: ${error.message}`); }
+});
 stopButton.addEventListener('click', () => finitePlayer.stop());
 liveStartButton.addEventListener('click', startLive);
 livePauseButton.addEventListener('click', toggleLivePause);
 liveStopButton.addEventListener('click', () => stopLive());
 offlineButton.addEventListener('click', prepareOffline);
 installButton.addEventListener('click', async () => { try { await installController.prompt(); } catch (error) { setStatus(`Install failed: ${error.message}`); } });
-window.addEventListener('beforeunload', () => { if (liveAbort) liveAbort.abort(); livePlayer.stop(); finitePlayer.stop(); if (objectUrl) URL.revokeObjectURL(objectUrl); });
+window.addEventListener('beforeunload', () => {
+  if (liveAbort) liveAbort.abort();
+  livePlayer.destroy(); finitePlayer.destroy();
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+});
 initialize();
