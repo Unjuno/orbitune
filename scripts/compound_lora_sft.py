@@ -20,7 +20,8 @@ from orbitune.compound_lora import (
     sha256_file,
     trainable_parameter_names,
 )
-from orbitune.compound_training import load_compound_jsonl, sample_compound_batch
+from orbitune.compound_lora_data import load_lora_data_source
+from orbitune.compound_training import sample_compound_batch
 
 
 def _device(name: str) -> torch.device:
@@ -64,6 +65,13 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _source_arg(args: argparse.Namespace, generic_name: str, legacy_name: str) -> str:
+    value = getattr(args, generic_name, None) or getattr(args, legacy_name, None)
+    if not value:
+        raise SystemExit(f"one of --{generic_name.replace('_', '-')} or --{legacy_name.replace('_', '-')} is required")
+    return str(value)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -73,8 +81,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--base-checkpoint", required=True)
     parser.add_argument("--base-id", required=True)
-    parser.add_argument("--train-jsonl", required=True)
-    parser.add_argument("--validation-jsonl", required=True)
+    train_group = parser.add_mutually_exclusive_group(required=True)
+    train_group.add_argument(
+        "--train-source",
+        help="Compound JSONL file or indexed Compound split directory/index.json.",
+    )
+    train_group.add_argument(
+        "--train-jsonl",
+        help="Backward-compatible alias for a Compound JSONL training source.",
+    )
+    validation_group = parser.add_mutually_exclusive_group(required=True)
+    validation_group.add_argument(
+        "--validation-source",
+        help="Compound JSONL file or indexed Compound split directory/index.json.",
+    )
+    validation_group.add_argument(
+        "--validation-jsonl",
+        help="Backward-compatible alias for a Compound JSONL validation source.",
+    )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument(
         "--target-module",
@@ -137,8 +161,12 @@ def main() -> None:
     assert_only_lora_trainable(model)
     frozen_before = base_parameter_digests(model)
 
-    train_songs = load_compound_jsonl(args.train_jsonl)
-    validation_songs = load_compound_jsonl(args.validation_jsonl)
+    train_path = _source_arg(args, "train_source", "train_jsonl")
+    validation_path = _source_arg(args, "validation_source", "validation_jsonl")
+    train_source = load_lora_data_source(train_path)
+    validation_source = load_lora_data_source(validation_path)
+    train_songs = train_source.songs
+    validation_songs = validation_source.songs
 
     initial_validation = _validation_loss(
         model,
@@ -192,10 +220,10 @@ def main() -> None:
     source_commit = os.environ.get("ORBITUNE_SOURCE_COMMIT") or os.environ.get("GITHUB_SHA")
     training_config: dict[str, object] = {
         "base_checkpoint": str(base_path),
-        "train_jsonl": str(args.train_jsonl),
-        "train_jsonl_sha256": sha256_file(args.train_jsonl),
-        "validation_jsonl": str(args.validation_jsonl),
-        "validation_jsonl_sha256": sha256_file(args.validation_jsonl),
+        "train_source": str(train_path),
+        "train_source_identity": train_source.identity,
+        "validation_source": str(validation_path),
+        "validation_source_identity": validation_source.identity,
         "target_patterns": list(args.target_modules),
         "resolved_targets": resolved_targets,
         "rank": args.rank,
@@ -210,6 +238,13 @@ def main() -> None:
         "seed": args.seed,
         "device": str(device),
     }
+    if train_source.kind == "jsonl":
+        training_config["train_jsonl"] = str(train_path)
+        training_config["train_jsonl_sha256"] = str(train_source.identity["sha256"])
+    if validation_source.kind == "jsonl":
+        training_config["validation_jsonl"] = str(validation_path)
+        training_config["validation_jsonl_sha256"] = str(validation_source.identity["sha256"])
+
     manifest = save_adapter(
         model,
         output_dir,
