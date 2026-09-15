@@ -13,6 +13,7 @@ from typing import Any
 from safetensors.torch import load_file as load_safetensors
 
 from orbitune.compound_lora import ADAPTER_TENSOR_FILE, sha256_file
+from orbitune.compound_lora_data import load_lora_data_source
 
 
 SWEEP_SCHEMA = "orbitune-compound-lora-sweep-v1"
@@ -85,6 +86,13 @@ def _assert_each_pattern_resolved(candidate_id: str, patterns: list[str], resolv
         )
 
 
+def _source_arg(args: argparse.Namespace, generic_name: str, legacy_name: str) -> str:
+    value = getattr(args, generic_name, None) or getattr(args, legacy_name, None)
+    if not value:
+        raise SystemExit(f"one of --{generic_name.replace('_', '-')} or --{legacy_name.replace('_', '-')} is required")
+    return str(value)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -94,8 +102,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--base-checkpoint", required=True)
     parser.add_argument("--base-id", required=True)
-    parser.add_argument("--train-jsonl", required=True)
-    parser.add_argument("--validation-jsonl", required=True)
+    train_group = parser.add_mutually_exclusive_group(required=True)
+    train_group.add_argument("--train-source", help="Compound JSONL or indexed Compound split.")
+    train_group.add_argument("--train-jsonl", help="Backward-compatible JSONL training source alias.")
+    validation_group = parser.add_mutually_exclusive_group(required=True)
+    validation_group.add_argument("--validation-source", help="Compound JSONL or indexed Compound split.")
+    validation_group.add_argument("--validation-jsonl", help="Backward-compatible JSONL validation source alias.")
     parser.add_argument("--spec", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--steps", type=int, default=100)
@@ -122,16 +134,20 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     base_path = Path(args.base_checkpoint)
-    train_path = Path(args.train_jsonl)
-    validation_path = Path(args.validation_jsonl)
+    train_path = Path(_source_arg(args, "train_source", "train_jsonl"))
+    validation_path = Path(_source_arg(args, "validation_source", "validation_jsonl"))
     spec_path = Path(args.spec)
     candidates = _load_spec(spec_path)
+    train_source = load_lora_data_source(train_path)
+    validation_source = load_lora_data_source(validation_path)
 
     common = {
         "base_id": args.base_id,
         "base_checkpoint_sha256": sha256_file(base_path),
-        "train_jsonl_sha256": sha256_file(train_path),
-        "validation_jsonl_sha256": sha256_file(validation_path),
+        "train_source": str(train_path),
+        "train_source_identity": train_source.identity,
+        "validation_source": str(validation_path),
+        "validation_source_identity": validation_source.identity,
         "spec_sha256": sha256_file(spec_path),
         "steps": args.steps,
         "batch_size": args.batch_size,
@@ -145,6 +161,10 @@ def main() -> None:
         "initial_loss_atol": INITIAL_LOSS_ATOL,
         "source_commit": os.environ.get("ORBITUNE_SOURCE_COMMIT") or os.environ.get("GITHUB_SHA"),
     }
+    if train_source.kind == "jsonl":
+        common["train_jsonl_sha256"] = train_source.identity["sha256"]
+    if validation_source.kind == "jsonl":
+        common["validation_jsonl_sha256"] = validation_source.identity["sha256"]
 
     results: list[dict[str, Any]] = []
     reference_initial: float | None = None
@@ -155,8 +175,8 @@ def main() -> None:
             "scripts/compound_lora_sft.py",
             "--base-checkpoint", str(base_path),
             "--base-id", args.base_id,
-            "--train-jsonl", str(train_path),
-            "--validation-jsonl", str(validation_path),
+            "--train-source", str(train_path),
+            "--validation-source", str(validation_path),
             "--output-dir", str(candidate_dir),
             "--rank", str(candidate["rank"]),
             "--alpha", str(candidate["alpha"]),
@@ -180,6 +200,12 @@ def main() -> None:
 
         metrics = json.loads((candidate_dir / "metrics.json").read_text(encoding="utf-8"))
         adapter = json.loads((candidate_dir / "adapter.json").read_text(encoding="utf-8"))
+        training = json.loads((candidate_dir / "training.json").read_text(encoding="utf-8"))
+        config = training["config"]
+        if config.get("train_source_identity") != train_source.identity:
+            raise RuntimeError(f"candidate {candidate['id']} train source identity changed")
+        if config.get("validation_source_identity") != validation_source.identity:
+            raise RuntimeError(f"candidate {candidate['id']} validation source identity changed")
         resolved_targets = list(adapter["target_modules"])
         _assert_each_pattern_resolved(candidate["id"], candidate["target_modules"], resolved_targets)
         initial = float(metrics["initial_validation_loss"])
