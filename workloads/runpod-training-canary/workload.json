@@ -5,7 +5,7 @@
   "repository": "Unjuno/orbitune",
   "dockerfile": "workloads/runpod-training-canary/Dockerfile",
   "image_repository": "ghcr.io/unjuno/orbitune-runpod-canary",
-  "entrypoint": ["python", "workloads/runpod-training-canary/entrypoint.py"],
+  "entrypoint": ["python", "workloads/runpod-training-canary/signed_entrypoint_v3.py"],
   "network_required_at_runtime": false,
   "interactive": false,
   "finite": true,
@@ -39,7 +39,7 @@
     "required_for_authenticated_paid_completion": ["completion.json"],
     "bounded_log_transport": {
       "result_marker": "GPU_CONTROL_RESULT_JSON_V1:",
-      "completion_marker": "GPU_CONTROL_COMPLETION_JSON_V2:",
+      "completion_marker": "GPU_CONTROL_COMPLETION_JSON_V3:",
       "max_marker_bytes": 16384,
       "hash_and_emit_same_byte_snapshot": true
     },
@@ -50,6 +50,7 @@
   },
   "acceptance": {
     "process_exit_code": 0,
+    "process_exit_code_must_be_authenticated": true,
     "result_status": "pass",
     "device_type": "cuda",
     "cuda_available": true,
@@ -69,8 +70,9 @@
     "docker_socket_required": false,
     "runtime_network_required": false,
     "source_identity": "baked-into-image-at-build-time",
-    "completion_evidence_protocol": "gpu-control-hmac-sha256-v2",
+    "completion_evidence_protocol": "gpu-control-hmac-sha256-v3",
     "completion_evidence_file": "/outputs/completion.json",
+    "completion_signed_process_exit_code": true,
     "completion_provider_job_id_binding": "control-plane-receipt-only",
     "completion_secret_persistence": "forbidden",
     "completion_environment_owner": "gpu-control-only",
