@@ -176,6 +176,44 @@ python scripts/compound_cfe_train.py train \
 
 Do not copy the example values without running the CFE sweep on the target GPU.
 
+### Sampling semantics: `--steps` is exposure, not an epoch
+
+`--sampler` defaults to `window`: legacy RNG windows drawn **with replacement**
+over the concatenated corpus. In window mode `--steps` / `events_seen` measure
+sample exposure only — events are reused, short songs can be skipped entirely,
+and `events_seen` may exceed the corpus size without a single full pass. Every
+run before `--sampler epoch` existed (for example the `a2_512` lineage up to
+step 220,813, 4,096,016,384 sampled events) is an exposure run, not a corpus
+pass, and must not be reported as "N epochs".
+
+A literal one-pass epoch needs the epoch mode explicitly:
+
+```bash
+python scripts/compound_cfe_train.py train \
+  --train-jsonl <index.jsonl>[,<index.jsonl>...] \
+  --validation-jsonl <index.jsonl>[,<index.jsonl>...] \
+  --checkpoint <run>/model.pt \
+  --steps 0 \
+  --sampler epoch \
+  --epoch-seed 2026 \
+  --weighted-loss \
+  --eval-every-events 20000000 \
+  --checkpoint-every-events 30000000
+```
+
+- `epoch`: `EpochAwareNoReplacementSampler` visits every song exactly once per
+  epoch in a deterministic shuffle; `epoch_sampler_state`
+  (schema `orbitune-epoch-sampler-v2`) round-trips on resume, and an epoch ends
+  exactly when `epoch_events_seen == epoch_events_total` (emits
+  `epoch_complete`, then advances `epoch_index` and starts the next pass).
+- `--weighted-loss`: per-event manifest `sampling_weight`, default **ON** in
+  epoch mode and forced **OFF** in window mode (window has no weight channel).
+  Padding and idle lanes are masked with `event_weight = 0`.
+- `--steps 0` runs until a `--stop-after-*` trigger or an external stop file;
+  use `--stop-after-events` / `--stop-after-epochs` for a bounded run.
+- For reference, the combined Aria + GigaMIDI indexed train split is
+  **4,069,137,373 events = 1 epoch** (2,263,855 songs).
+
 ## Acceptance criteria before long training
 
 A long run is acceptable only when all are known:
