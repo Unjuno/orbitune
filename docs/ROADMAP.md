@@ -69,9 +69,9 @@ The long-run continuation from the immutable historical 100k checkpoint is compl
 
 ```text
 model id                     orbitune-a2-512-research-nc
-final step                   220,813
-final events_seen            4,096,016,384
-checkpoint SHA-256           e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0
+final step                   586,076
+final events_seen            14,268,978,580
+checkpoint SHA-256           25d43bd663501b5daf1b9708efe31706fd86a344f036ebe7be7a66df683eedda
 checkpoint frozen            yes
 strict load                  PASS
 external publication         Hugging Face: Unjuno/orbitune-a2-512

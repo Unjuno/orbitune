@@ -42,14 +42,14 @@ jobs:
         run: |
           mkdir -p .artifacts/a2
           curl --fail --location --retry 3 --output .artifacts/a2/model.pt \
-            "https://huggingface.co/Unjuno/orbitune-a2-512/resolve/45579e28a32d5847f3121142aca9382b4e4aaedc/model.pt?download=true"
-          echo "e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0  .artifacts/a2/model.pt" | sha256sum --check --strict
+            "https://huggingface.co/Unjuno/orbitune-a2-512/resolve/8a362fb907f96176929e6df941885bc87fbabf3d/model.pt?download=true"
+          echo "25d43bd663501b5daf1b9708efe31706fd86a344f036ebe7be7a66df683eedda  .artifacts/a2/model.pt" | sha256sum --check --strict
       - name: Export V2 graphs and validate native/ORT parity
         run: |
           mkdir -p .artifacts/a2/web
           python scripts/export_compound_web_v2.py \
             --checkpoint .artifacts/a2/model.pt \
-            --checkpoint-sha256 e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0 \
+            --checkpoint-sha256 25d43bd663501b5daf1b9708efe31706fd86a344f036ebe7be7a66df683eedda \
             --out-dir .artifacts/a2/web \
             --native-parity-steps 96 \
             --ort-parity-steps 24 \

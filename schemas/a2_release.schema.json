@@ -24,8 +24,8 @@
       "properties": {
         "encode_semantics": {"const": "a2"},
         "seq_len": {"const": 512},
-        "final_step": {"const": 220813},
-        "final_events_seen": {"const": 4096016384}
+        "final_step": {"const": 586076},
+        "final_events_seen": {"const": 14268978580}
       }
     },
     "validation": {"type": "object"},
