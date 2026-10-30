@@ -5,7 +5,7 @@
 Current default:
 
 - Model: `orbitune-a2-512-research-nc`
-- Checkpoint SHA-256: `e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0`
+- Checkpoint SHA-256: `25d43bd663501b5daf1b9708efe31706fd86a344f036ebe7be7a66df683eedda`
 - Browser runtime: `native-stream-state+decoder-prefix-v2`
 - ONNX Runtime Web stable release: `1.29.0`
 

@@ -7,7 +7,7 @@ This runbook is for the **target/rank ML screen only**. It does not establish a 
 Use the immutable A2-512 Base checkpoint and keep its exact SHA-256 binding:
 
 - Base id: `orbitune-a2-512-research-nc`
-- checkpoint SHA-256: `e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0`
+- checkpoint SHA-256: `25d43bd663501b5daf1b9708efe31706fd86a344f036ebe7be7a66df683eedda`
 - sweep spec: `experiments/compound_lora_a2_screen_v1.json`
 
 The LoRA screen can now read the indexed Compound corpus directly. No giant intermediate JSONL export is required.

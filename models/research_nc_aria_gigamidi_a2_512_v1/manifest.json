@@ -9,9 +9,9 @@
   "parameter_count": 8857250,
   "checkpoint": {
     "filename": "model.pt",
-    "url": "https://huggingface.co/Unjuno/orbitune-a2-512/resolve/45579e28a32d5847f3121142aca9382b4e4aaedc/model.pt",
-    "sha256": "e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0",
-    "bytes": 106635500,
+    "url": "https://huggingface.co/Unjuno/orbitune-a2-512/resolve/8a362fb907f96176929e6df941885bc87fbabf3d/model.pt",
+    "sha256": "25d43bd663501b5daf1b9708efe31706fd86a344f036ebe7be7a66df683eedda",
+    "bytes": 117969708,
     "strict_load": "PASS"
   },
   "license": "CC-BY-NC-SA-4.0",
@@ -23,19 +23,38 @@
     "seq_len": 512,
     "precision": "bf16",
     "compile": false,
-    "initial_step": 109500,
-    "initial_events_seen": 448512000,
-    "final_step": 220813,
-    "final_events_seen": 4096016384
+    "initial_step": 220813,
+    "initial_events_seen": 4096016384,
+    "final_step": 586076,
+    "final_events_seen": 14268978580,
+    "new_steps": 365263,
+    "new_events_seen": 10172962196,
+    "epoch_events_total": 4069137373,
+    "epochs_completed_since_start": 2,
+    "final_epoch_progress": 0.5,
+    "stop_reason": "stop_after_events"
   },
   "validation": {
-    "protocol": "a2-seq512-v1",
-    "loss": -1.5476370453834534,
-    "events": 98304,
-    "window_hash": "0d76ff62fc73b22190f14b4377d2bc8e0da48710da398ef09efaac35fcd4da4e"
+    "protocol": "a2-fullval-seq512-v1",
+    "loss": -1.5539828093466837,
+    "uniform_mean_of_global_head_means": -1.5899417966887846,
+    "events": 21669376,
+    "window_count": 42323,
+    "batch_size": 32,
+    "seq_len": 512,
+    "window_hash": "0d76ff62fc73b22190f14b4377d2bc8e0da48710da398ef09efaac35fcd4da4e",
+    "published_baseline_loss": -1.430447,
+    "improvement_vs_published": 0.1235358093466837,
+    "screening_protocol": {
+      "protocol": "a2-seq512-v1",
+      "loss_at_step_585754": -1.5766820907592773,
+      "events": 98304,
+      "window_hash": "0d76ff62fc73b22190f14b4377d2bc8e0da48710da398ef09efaac35fcd4da4e"
+    }
   },
   "lineage": {
-    "parent_sha256": "4be09e0869af256f8be62e5e596b72471f15f49a6abbedc613a6a3571fd5bca8",
+    "parent_sha256": "e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0",
+    "parent_step": 220813,
     "source_commit": "8489870f81a1591515a98e58554e533fcac9d095",
     "source_provenance_status": "resolved_reachable_public_commit",
     "source_ref": "refs/heads/provenance/a2-512-training-source",
@@ -46,6 +65,6 @@
     "provider": "huggingface",
     "repository": "Unjuno/orbitune-a2-512"
   },
-  "hub_commit": "45579e28a32d5847f3121142aca9382b4e4aaedc",
-  "completed_at": "2026-09-11T21:28:40+09:00"
+  "hub_commit": "8a362fb907f96176929e6df941885bc87fbabf3d",
+  "completed_at": "2026-10-31T02:10:06+09:00"
 }

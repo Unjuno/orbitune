@@ -19,13 +19,13 @@ Local-first symbolic MIDI generation with a hierarchical Compound Transformer an
 
 ## What is available
 
-The completed `orbitune-a2-512-research-nc` checkpoint is publicly available from [Hugging Face](https://huggingface.co/Unjuno/orbitune-a2-512). Its immutable SHA-256 is `e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0`. Weights remain outside Git, and a source clone alone is not a pretrained installation.
+The completed `orbitune-a2-512-research-nc` checkpoint is publicly available from [Hugging Face](https://huggingface.co/Unjuno/orbitune-a2-512). Its immutable SHA-256 is `25d43bd663501b5daf1b9708efe31706fd86a344f036ebe7be7a66df683eedda`. Weights remain outside Git, and a source clone alone is not a pretrained installation.
 
 The Compound browser runtime remains fail-closed because this release is a PyTorch training checkpoint, not a browser-ready ONNX graph pair. The [historical publication record](models/research_nc_aria_gigamidi_v1/publication.json) continues to describe the older documentation-only model.
 
 The reported frozen research checkpoint is `research-nc-aria-gigamidi-v1`, at global step 100,000. Its recorded indexed train corpus contains 4,069,137,373 active next-event pairs. **Corpus capacity is not the number of unique events consumed by training.** The checkpoint record reports cumulative `events_seen = 409,600,000`; replacement sampling means this is not an exact epoch/coverage claim. See the [data card](models/research_nc_aria_gigamidi_v1/training_data.md) and [reproducibility notes](models/research_nc_aria_gigamidi_v1/reproducibility.md).
 
-The A2-512 continuation completed at global step 220,813 and 4,096,016,384 cumulative events. It is frozen under a new identity and does not overwrite the historical 100k checkpoint. Its [machine-readable release manifest](models/research_nc_aria_gigamidi_a2_512_v1/manifest.json) is the canonical current-state record.
+The A2-512 continuation completed at global step 586,076 and 14,268,978,580 cumulative events. It is frozen under a new identity and does not overwrite the historical 100k checkpoint. Its [machine-readable release manifest](models/research_nc_aria_gigamidi_a2_512_v1/manifest.json) is the canonical current-state record.
 
 ## Quick start: source checkout
 

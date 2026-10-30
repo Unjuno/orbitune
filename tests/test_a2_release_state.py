@@ -22,7 +22,7 @@ def test_a2_release_manifest_is_canonical_and_complete() -> None:
     manifest = json.loads((MODEL_DIR / "manifest.json").read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     Draft202012Validator(schema).validate(manifest)
-    assert manifest["checkpoint"]["sha256"] == "e5bd2080ccf084edaa33c0df9864e4d353b4fe184ed199a2ea89a1cc06324fe0"
+    assert manifest["checkpoint"]["sha256"] == "25d43bd663501b5daf1b9708efe31706fd86a344f036ebe7be7a66df683eedda"
     assert manifest["lineage"]["source_commit"] == "8489870f81a1591515a98e58554e533fcac9d095"
 
 
